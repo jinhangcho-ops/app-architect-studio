@@ -95,3 +95,37 @@ textarea.spec { width: 100%; min-height: 90px; font-family: ui-monospace, monosp
 .action input[type='number'] { width: 64px; }
 .action .write { padding-left: 12px; }
 .lab button { margin-left: 4px; }
+
+/* 설계서 (화면 미리보기 + A4 인쇄) */
+.report-overlay { position: fixed; inset: 0; z-index: 50; background: #e9ecf0; overflow: auto; }
+.report-bar { position: sticky; top: 0; z-index: 1; display: flex; gap: 8px; align-items: center; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.report { width: 210mm; max-width: 100%; margin: 16px auto; padding: 14mm; background: #fff; box-shadow: 0 1px 4px #0002; font-size: 10.5pt; line-height: 1.5; }
+.report h1 { font-size: 18pt; margin: 0 0 4px; }
+.r-title { border-bottom: 2px solid var(--ink); margin-bottom: 10px; }
+.r-h { font-size: 13pt; margin: 18px 0 6px; padding-bottom: 2px; border-bottom: 1px solid var(--line); }
+.report ul { margin: 4px 0; padding-left: 18px; }
+.r-kv, .r-grid { border-collapse: collapse; width: 100%; margin: 4px 0 8px; }
+.r-kv th { text-align: left; width: 28%; color: var(--muted); font-weight: 500; }
+.r-kv th, .r-kv td, .r-grid th, .r-grid td { border-bottom: 1px solid var(--line); padding: 3px 6px; vertical-align: top; }
+.r-grid th { background: #f3f5f8; text-align: left; }
+.r-card { border: 1px solid var(--line); border-radius: 6px; margin: 8px 0; padding: 6px 8px; break-inside: avoid; }
+.r-card.v-fail { border: 2px solid var(--fail); } .r-card.v-conditional { border: 2px solid var(--cond); }
+.r-card-head { display: flex; justify-content: space-between; border-bottom: 1px solid var(--line); padding-bottom: 4px; margin-bottom: 4px; }
+.r-card table { border-collapse: collapse; width: 100%; }
+.r-card th { text-align: left; width: 22%; vertical-align: top; color: var(--muted); font-weight: 500; padding: 2px 6px 2px 0; white-space: nowrap; }
+.r-card td { padding: 2px 0; }
+.r-diagram { width: 100%; height: auto; max-height: 120mm; }
+.r-node { fill: #fff; stroke: var(--line); stroke-width: 2; }
+.r-node.v-ok { stroke: var(--ok); } .r-node.v-conditional { stroke: var(--cond); } .r-node.v-fail { stroke: var(--fail); } .r-node.v-unknown { stroke: var(--unknown); }
+.r-node-layer { font-size: 10px; fill: var(--muted); } .r-node-name { font-size: 13px; fill: var(--ink); font-weight: 600; }
+.r-src li { word-break: break-all; font-size: 9pt; }
+
+@page { size: A4; margin: 12mm; }
+@media print {
+  body { background: #fff; }
+  .app, .no-print { display: none !important; }
+  .report-overlay { position: static; overflow: visible; background: #fff; }
+  .report { width: auto; margin: 0; padding: 0; box-shadow: none; }
+  .r-h { break-after: avoid; }
+  section { break-inside: auto; }
+}

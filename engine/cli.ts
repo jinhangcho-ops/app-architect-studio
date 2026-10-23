@@ -17,7 +17,8 @@ const show = (mt: Metric) => (mt.unit === '비율' ? `${(mt.value * 100).toFixed
 try {
   const catalog = loadCatalog(catalogDir);
   const project = loadProject(projectPath, catalog.items);
-  const today = new Date().toISOString().slice(0, 10);
+  // 사용자 PC의 날짜 (toISOString은 UTC라 한국에서는 오전 9시 전에 어제 날짜가 된다)
+  const today = new Date().toLocaleDateString('sv-SE');
   const a = analyze(project, { catalog: catalog.byId, rules: catalog.rules, prices: loadPrices(pricesDir), laws: loadLaws(fileURLToPath(new URL('../data/laws', import.meta.url))) }, today);
   const nameOf = (id: string) => project.nodes.find((n) => n.id === id)!.name;
   console.log(`# ${project.name}\n`);

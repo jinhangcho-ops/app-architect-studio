@@ -4,7 +4,9 @@ import { LAYERS, LAYER_NAMES, type Layer } from '../../engine/model';
 import { Canvas } from './Canvas';
 import { catalog, examples } from './data';
 import { mergeCodeAnalysis } from './codeImport';
-import { addNode, run } from './edit';
+import { addNode, findPlans, run } from './edit';
+import type { OptimizeResult } from '../../engine/optimize';
+import { Report } from './Report';
 import { EdgePanel, NodePanel } from './NodePanel';
 import { OptimizePanel } from './OptimizePanel';
 import { View3D } from './View3D';
@@ -12,7 +14,8 @@ import { ProjectPanel } from './ProjectPanel';
 import { ResultsPanel } from './ResultsPanel';
 import { exportProject, useStore } from './store';
 
-const today = new Date().toISOString().slice(0, 10);
+// 사용자 PC의 날짜 (toISOString은 UTC라 한국에서는 오전 9시 전에 어제 날짜가 된다). sv-SE 형식이 YYYY-MM-DD
+const today = new Date().toLocaleDateString('sv-SE');
 
 export function App() {
   const { project, positions, selected, load, edit, relayout, select } = useStore();
@@ -22,6 +25,7 @@ export function App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
   const [view, setView] = useState<'2d' | '3d'>('2d');
+  const [report, setReport] = useState<{ plans?: OptimizeResult }>();
 
   const add = (layer: Layer) => {
     let id = '';
@@ -52,6 +56,7 @@ export function App() {
   };
 
   return (
+    <>
     <div className="app">
       <header className="toolbar">
         <strong className="brand">App Architect Studio</strong>
@@ -84,6 +89,8 @@ export function App() {
           e.target.value = '';
         }} />
         <button onClick={save}>저장</button>
+        {/* 최선 조합(7번째 절)은 설계서를 열 때 한 번 찾는다 */}
+        <button className="primary" onClick={() => setReport({ plans: findPlans(project, today).result })}>설계서 PDF</button>
       </header>
       <aside className="left"><ProjectPanel /></aside>
       <main className="center">
@@ -105,5 +112,8 @@ export function App() {
         {tab === 'selected' && !selected && <p className="muted">캔버스에서 노드나 연결선을 고르세요.</p>}
       </aside>
     </div>
+    {/* 인쇄할 때 .app은 숨기고 설계서만 남기므로 .app 밖에 둔다 */}
+    {report && <Report project={project} analysis={result.analysis} positions={positions} plans={report.plans} today={today} onClose={() => setReport(undefined)} />}
+    </>
   );
 }
