@@ -171,6 +171,16 @@ export const Deploy = z.object({
   }).optional(),
 });
 
+// 와이어프레임: 화면마다 영역·컨트롤 상자 (좌표는 화면 틀 안의 px)
+export const WIRE_KINDS = ['header', 'nav', 'sidebar', 'main', 'form', 'table', 'list', 'card', 'modal', 'footer', 'text', 'image', 'button', 'input', 'select', 'tabs'] as const;
+export const WireItem = z.object({
+  id: z.string(),
+  kind: z.enum(WIRE_KINDS),
+  label: z.string().default(''),
+  x: z.number(), y: z.number(), w: z.number().positive(), h: z.number().positive(),
+});
+export const Screen = z.object({ name: z.string().min(1), items: z.array(WireItem).default([]) });
+
 // 데이터 명세: 테이블·컬럼·인덱스. 크기 계산과 SQLite 실험이 이 정의를 그대로 쓴다
 export const COLUMN_TYPES = ['int', 'bigint', 'float', 'numeric', 'bool', 'uuid', 'timestamp', 'date', 'text', 'json', 'bytes'] as const;
 /** SQLite 저장 클래스. 같은 시각도 integer(epoch)면 8바이트, text(ISO)면 24바이트처럼 크기가 달라진다 */
@@ -312,6 +322,8 @@ export const Project = z.object({
       /** 개인정보를 외부 연동(제3자)으로 보냄 */
       sends_external: z.boolean().default(false),
     }).optional(),
+    /** 화면 노드의 와이어프레임 (UI/UX 설계). 계산에는 쓰지 않는다 */
+    wireframe: z.object({ screens: z.array(Screen) }).optional(),
     /** 6단계 HTML 와이어프레임에서 뽑은 화면 영역 */
     html: z.object({ file: z.string(), regions: z.array(z.object({ role: z.string(), selector: z.string(), controls: z.array(z.string()) })) }).optional(),
     min_instances: z.number().int().nonnegative().default(1),
@@ -384,6 +396,8 @@ export const EdgeSchema = Project.shape.edges.unwrap().element;
 export type ProjectEdge = Project['edges'][number];
 export type ProjectNode = Project['nodes'][number];
 export type Deploy = z.infer<typeof Deploy>;
+export type WireItem = z.infer<typeof WireItem>;
+export type Screen = z.infer<typeof Screen>;
 export type PriceRow = z.infer<typeof PriceRow>;
 export type Persona = z.infer<typeof Persona>;
 

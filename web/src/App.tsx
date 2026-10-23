@@ -16,6 +16,7 @@ import { Report } from './Report';
 import { Tooltip } from './Tooltip';
 import { KpiStrip, LimitChart } from './Overview';
 import { NodeInside, TableSidePanel } from './NodeInside';
+import { Palette } from './Palette';
 import { EdgePanel, NodePanel } from './NodePanel';
 import { OptimizePanel } from './OptimizePanel';
 import { View3D } from './View3D';
@@ -73,7 +74,7 @@ export function App() {
   const go = (h: Hit) => {
     setTab('selected');
     if (h.kind === 'node') { setFocus(undefined); select({ kind: 'node', id: h.node }); set({ flyTo: h.node }); }
-    else { setFocus(h.node); select({ kind: 'table', node: h.node, table: h.table }); }
+    else { setFocus(h.node, 'tables'); select({ kind: 'table', node: h.node, table: h.table }); }
   };
   const paste = () => {
     if (!clipboard) return;
@@ -208,7 +209,7 @@ export function App() {
         <button className="primary" onClick={() => setReport({ plans: findPlans(project, today).result })}>설계서 PDF</button>
       </header>
       <KpiStrip analysis={result.analysis} />
-      <aside className="left"><ProjectPanel /></aside>
+      <aside className="left">{focus ? <Palette nodeId={focus} analysis={result.analysis} /> : <ProjectPanel />}</aside>
       <main className="center">
         <div className="stage">
           {focus

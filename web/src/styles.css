@@ -291,3 +291,45 @@ textarea.spec { width: 100%; min-height: 90px; font-family: ui-monospace, monosp
 .dctl .res b { font-size: 15px; font-variant-numeric: tabular-nums; }
 .dctl .res b.over { color: var(--fail); } .dctl .res b.okc { color: var(--ok); }
 .dnote { margin: 0; padding: 0 14px 8px; background: var(--panel); color: var(--cond); font-size: 12px; }
+
+/* 세부 구성 왼편 기능 목록 */
+.palette { min-height: 100%; padding: 12px; }
+.palette h3 { margin: 0 0 4px; font-size: 13px; }
+.palette h4 { margin: 14px 0 6px; font-size: 11px; color: var(--muted); font-weight: 600; }
+.phint { font-size: 11px; margin: 0; }
+.pchip { display: flex; align-items: center; gap: 6px; padding: 6px 9px; margin-bottom: 4px; background: var(--panel-2); border: 1px solid var(--line-2); border-left: 3px solid var(--dim); border-radius: 7px; cursor: grab; font-size: 12px; }
+.pchip:hover { border-color: #3a4656; }
+.pchip.off { cursor: default; opacity: 0.55; }
+.pchip.v-ok { border-left-color: var(--ok); } .pchip.v-conditional { border-left-color: var(--cond); } .pchip.v-fail { border-left-color: var(--fail); }
+.pchip-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pchip-v, .pchip-on { font-size: 10px; color: var(--muted); white-space: nowrap; }
+.pchip-on { color: var(--ok); }
+.fchips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; color: var(--muted); font-size: 11px; }
+.fchip { padding: 2px 8px; border: 1px solid var(--line-2); border-radius: 10px; color: var(--ink); background: var(--panel-2); cursor: grab; }
+
+/* 와이어프레임 */
+.wire { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.wscreen { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 10px; border: 1px solid var(--line-2); border-radius: 7px; color: var(--muted); cursor: pointer; }
+.wscreen.on { color: var(--ink); border-color: var(--accent); }
+.wscreen button { border: 0; background: none; padding: 0 4px; color: var(--muted); }
+.wscreen input { width: 90px; padding: 1px 4px; }
+.wwrap { flex: 1; min-height: 0; position: relative; overflow: hidden; outline: none; background-image: radial-gradient(#253041 1px, transparent 1px); background-size: 24px 24px; }
+.wframe { position: absolute; background: #f4f6f9; border-radius: 6px; box-shadow: 0 0 0 1px var(--line-2), 0 8px 30px #0008; overflow: hidden; }
+.wempty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: #8a94a3; }
+.wi { position: absolute; display: flex; align-items: center; justify-content: center; border: 1.5px solid #9aa4b2; border-radius: 4px; background: #ffffffcc; color: #3b4452; font-size: 12px; cursor: move; user-select: none; touch-action: none; overflow: hidden; }
+.wi.sel { border-color: #2b5fd9; box-shadow: 0 0 0 2px #2b5fd955; }
+.wi .wl { padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wi input { width: 90%; color: #1d2433; background: #fff; border-color: #2b5fd9; }
+.wi-header, .wi-nav, .wi-footer { background: #e3e7ee; justify-content: flex-start; padding-left: 10px; }
+.wi-sidebar, .wi-main, .wi-form, .wi-list, .wi-card, .wi-table { align-items: flex-start; justify-content: flex-start; padding: 6px; border-style: dashed; background: #ffffff88; }
+.wi-table { background: repeating-linear-gradient(#ffffff88 0 23px, #c9d0da 23px 24px); border-style: solid; }
+.wi-list { background: repeating-linear-gradient(#ffffff88 0 35px, #dde2e9 35px 36px); }
+.wi-modal { background: #fff; box-shadow: 0 6px 20px #0003; border-style: solid; }
+.wi-image { background: linear-gradient(to top right, transparent calc(50% - 1px), #b6bfcb, transparent calc(50% + 1px)), linear-gradient(to bottom right, transparent calc(50% - 1px), #b6bfcb, transparent calc(50% + 1px)), #eef1f5; }
+.wi-button { background: #3b4452; color: #fff; border-color: #3b4452; border-radius: 6px; }
+.wi-input, .wi-select { justify-content: flex-start; padding-left: 8px; background: #fff; color: #8a94a3; }
+.wi-select::after { content: '▾'; position: absolute; right: 8px; }
+.wi-text { border-color: transparent; background: none; justify-content: flex-start; }
+.wi-text.sel { border-color: #2b5fd9; }
+.wi-tabs { background: linear-gradient(#3b4452, #3b4452) left bottom / 25% 2px no-repeat, #fff; }
+.wsize { position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; background: #2b5fd9; cursor: nwse-resize; border-radius: 2px 0 2px 0; }

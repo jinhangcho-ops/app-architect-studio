@@ -7,7 +7,9 @@ import { judgeItem } from '../../engine/judge';
 import { LAYER_NAMES, VERDICT_NAMES, type Verdict } from '../../engine/model';
 import type { CatalogItem, Project } from '../../engine/schema';
 import { catalog } from './data';
-import { applyAlternative, updateNode } from './edit';
+import { applyAlternative, dropRemove, updateNode } from './edit';
+import { overPalette } from './Palette';
+import { useState } from 'react';
 import { useStore } from './store';
 
 /** 안쪽 다이어그램을 맞출 때 글자가 읽히는 크기 아래로는 줄이지 않는다 (좁은 화면에서는 끌어서 본다) */
@@ -95,13 +97,15 @@ const nodeTypes = { part: PartBlock, alt: AltBlock, peer: PeerBlock };
 
 /** 탭 안쪽 도구줄 (돌아가기·제목은 세부 구성 머리에 있다) */
 export function InsideBar({ children }: { children?: React.ReactNode }) {
-  return <div className="inside-bar"><span className="spacer" />{children}</div>;
+  return <div className="inside-bar">{children}</div>;
 }
 
 export function PartsInside({ nodeId, analysis, canEnter }: { nodeId: string; analysis?: Analysis; canEnter: (layer: string) => boolean }) {
   const { project: p, edit, select, setFocus } = useStore();
   const n = p.nodes.find((x) => x.id === nodeId)!;
   const parts = partsOf(p, analysis, catalog.byId, nodeId);
+  // 끄는 동안만 옮긴 자리 (놓으면 제자리로)
+  const [moved, setMoved] = useState<Record<string, { x: number; y: number }>>({});
   const extrasToAdd = catalog.items.filter((i) => i.role === '보조' && i.attaches_to.includes(n.layer) && !n.extras.includes(i.id));
   const primaries = catalog.items.filter((i) => i.role === '주' && i.attaches_to.includes(n.layer));
 
@@ -141,6 +145,7 @@ export function PartsInside({ nodeId, analysis, canEnter }: { nodeId: string; an
   return (
     <div className="inside">
       <InsideBar>
+        <span className="spacer" />
         <Select aria-label="주 항목" value={n.primary ?? ''} onChange={(e) => edit((x) => updateNode(x, nodeId, { primary: e.target.value || undefined }))}>
           <option value="">주 항목 고르기</option>
           {primaries.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
@@ -151,11 +156,19 @@ export function PartsInside({ nodeId, analysis, canEnter }: { nodeId: string; an
         </Select>
       </InsideBar>
       {!parts.length && <p className="muted inside-empty">항목이 없습니다. 위에서 주 항목을 고르세요.</p>}
-      <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} colorMode="dark" fitView fitViewOptions={READABLE} onPaneClick={() => select(null)} nodesConnectable={false}>
+      <ReactFlow nodes={nodes.map((x) => (moved[x.id] ? { ...x, position: moved[x.id] } : x))} edges={edges} nodeTypes={nodeTypes} colorMode="dark" fitView fitViewOptions={READABLE}
+        onPaneClick={() => select(null)} nodesConnectable={false}
+        onNodesChange={(changes) => { for (const c of changes) if (c.type === 'position' && c.position) setMoved((m) => ({ ...m, [c.id]: c.position! })); }}
+        // 보조 항목 블록을 왼편 목록으로 끌어 놓으면 뺀다
+        onNodeDragStop={(e, node) => {
+          setMoved((m) => { const { [node.id]: _, ...rest } = m; return rest; });
+          const id = node.id.slice(2);
+          if (node.id.startsWith('p:') && n.extras.includes(id) && overPalette(e)) edit((x) => dropRemove(x, nodeId, { kind: 'remove', what: 'extra', id }));
+        }}>
         <Background />
         <Controls />
       </ReactFlow>
-      <p className="inside-hint muted">대안의 "교체"로 바꾸면 바깥 계산(비용·한계·판정)에 바로 반영됩니다 · 이웃 블록을 두 번 누르면 그 블록 안으로 갑니다</p>
+      <p className="inside-hint muted">왼편 목록에서 끌어 놓으면 주 항목은 교체, 보조 항목은 추가 · 보조 항목 블록을 왼편으로 끌어 내면 빠짐 · 이웃 블록을 두 번 누르면 그 블록 안으로 갑니다</p>
     </div>
   );
 }

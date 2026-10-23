@@ -23,8 +23,14 @@ const UNIT: Record<Layer, { name: string; unit: string; route: string }> = {
   analytics: { name: '노드', unit: '개', route: '처리 방식' },
 };
 
+/** 사용자 기기에서 도는 블록: 로컬 exe 전체, 또는 데이터를 기기에 두는 노드 */
+export const isLocal = (p: Project, n: Project['nodes'][number]) => p.deploy.mode === 'local_exe' || n.region === 'local';
+
 export type ServerLayout = {
   name: string; unit: string; route: string;
+  /** 사용자 기기에서 돈다: 서버 대수 대신 기기 1대의 메모리 점유를 보여 준다 */
+  local: boolean;
+  memoryMb?: number;
   /** 이벤트 피크에 떠 있는 대수 (계산값) 또는 이중화 대수 */
   count: number;
   /** 대마다 이벤트 피크 사용률 (대당 처리량을 모르면 없음) */
@@ -48,10 +54,14 @@ export function serverLayout(p: Project, a: Analysis | undefined, byId: Map<stri
   const name = (nid: string) => p.nodes.find((x) => x.id === nid)?.name ?? nid;
   const u = UNIT[n.layer];
   const knob = per.rps ? 'min_instances' : 'replicas';
+  const local = isLocal(p, n);
   return {
     ...u,
-    count: na?.instances?.event.value ?? n.replicas,
-    util: na?.utilization?.event.value,
+    ...(local && { name: '사용자 기기', unit: '대', route: '실행 방식' }),
+    local,
+    memoryMb: local ? a?.localMemory?.mb.value : undefined,
+    count: local ? 1 : na?.instances?.event.value ?? n.replicas,
+    util: local ? a?.localMemory?.share?.value : na?.utilization?.event.value,
     knob,
     knobValue: knob === 'min_instances' ? n.min_instances : n.replicas,
     max: Number.isFinite(per.max) ? per.max : 50,
@@ -78,10 +88,12 @@ export function ServersInside({ nodeId, analysis }: { nodeId: string; analysis?:
   const [fit, setFit] = useState('');
   useEffect(() => {
     const el = wrap.current!;
-    const ro = new ResizeObserver(() => {
+    const update = () => {
       const k = Math.min(1, (el.clientWidth - 8) / W, (el.clientHeight - 8) / H);
       setFit(`translate(${Math.max(0, (el.clientWidth - W * k) / 2)}px, ${Math.max(4, (el.clientHeight - H * k) / 2)}px) scale(${k})`);
-    });
+    };
+    update();
+    const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -111,7 +123,7 @@ export function ServersInside({ nodeId, analysis }: { nodeId: string; analysis?:
               );
             })}
           </svg>
-          <div className="dbox" style={{ left: 16, top: mid - 36, width: 150, height: 72 }}><small>들어오는 곳</small><b>{s.inbound.join(' · ') || '—'}</b></div>
+          <div className="dbox" style={{ left: 16, top: mid - 36, width: 150, height: 72 }}><small>들어오는 곳</small><b>{s.inbound.join(' · ') || (s.local ? '사용자' : '—')}</b></div>
           <div className="dbox router" style={{ left: 206, top: mid - 36, width: 150, height: 72 }}><small>{s.route}</small><b>{item?.name ?? '항목 없음'}</b></div>
           {Array.from({ length: boxes }, (_, i) => (
             <div key={i} className="dinst" style={{ left: 420, top: y0 + i * (bh + gap), width: 170, height: bh, borderLeftColor: col }}>
@@ -125,14 +137,14 @@ export function ServersInside({ nodeId, analysis }: { nodeId: string; analysis?:
       </div>
 
       <div className="dctl">
-        <div className="ctl">
+        {!s.local && <div className="ctl">
           <span>{s.knob === 'min_instances' ? `최소 ${s.name} 수` : `이중화 ${s.name} 수`}</span>
           <div className="step">
             <button aria-label="줄이기" disabled={s.knobValue <= (s.knob === 'replicas' ? 1 : 0)} onClick={() => setKnob(s.knobValue - 1)}>−</button>
             <output>{s.knobValue}{s.unit}</output>
             <button aria-label="늘리기" disabled={s.knobValue >= s.max} onClick={() => setKnob(s.knobValue + 1)}>+</button>
           </div>
-        </div>
+        </div>}
         {s.methods.length > 1 && (
           <div className="ctl">
             <span>{s.route}</span>
@@ -141,15 +153,21 @@ export function ServersInside({ nodeId, analysis }: { nodeId: string; analysis?:
             </Select>
           </div>
         )}
-        <div className="res">
+        {s.local ? <div className="res">
+          <div><span>사용자마다</span><b>기기 1대</b></div>
+          <div><span>앱 메모리</span><b>{s.memoryMb !== undefined ? `${fmt(s.memoryMb)} MB` : '—'}</b></div>
+          <div><span>기기 메모리 대비</span><b className={s.util === undefined ? '' : over ? 'over' : 'okc'}>{s.util === undefined ? '—' : `${Math.round(s.util * 100)}%`}</b></div>
+          <div><span>서버 트래픽</span><b>{p.deploy.mode === 'local_exe' ? '없음 (로컬 실행)' : '기기 안 처리'}</b></div>
+        </div> : <div className="res">
           <div><span>떠 있는 {s.name} (이벤트 피크)</span><b>{s.count}{s.unit}</b></div>
           <div><span>사용률 (이벤트 피크)</span><b className={s.util === undefined ? '' : over ? 'over' : 'okc'}>{s.util === undefined ? '—' : `${Math.round(s.util * 100)}%`}</b></div>
           <div><span>한계 사용자</span><b>{s.limitUsers ? `약 ${fmt(s.limitUsers)}명` : '—'}</b></div>
           <div><span>목표 사용률 {target}</span><b className={s.util === undefined ? '' : over ? 'over' : 'okc'}>{s.util === undefined ? '대당 처리량 모름' : over ? '넘었어요' : '안쪽이에요'}</b></div>
-        </div>
+        </div>}
       </div>
-      {s.max < 50 && s.knobValue >= s.max && <p className="dnote">이 방식은 최대 {s.max}{s.unit}까지예요. 더 늘리려면 방식을 바꾸세요.</p>}
-      {!analysis?.nodes[nodeId]?.load && <p className="dnote">{LAYER_NAMES[n.layer]} 노드로 들어오는 요청이 없어 사용률을 계산하지 않아요.</p>}
+      {s.local && s.memoryMb === undefined && <p className="dnote">왼쪽 프로젝트의 로컬 메모리(런타임·라이브러리)를 넣으면 기기 메모리 점유를 계산해요.</p>}
+      {!s.local && s.max < 50 && s.knobValue >= s.max && <p className="dnote">이 방식은 최대 {s.max}{s.unit}까지예요. 더 늘리려면 방식을 바꾸세요.</p>}
+      {!s.local && !analysis?.nodes[nodeId]?.load && <p className="dnote">{LAYER_NAMES[n.layer]} 노드로 들어오는 요청이 없어 사용률을 계산하지 않아요.</p>}
     </div>
   );
 }

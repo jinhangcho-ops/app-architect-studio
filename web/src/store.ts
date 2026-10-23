@@ -5,6 +5,7 @@ import type { Project } from '../../engine/schema';
 import { catalog, examples } from './data';
 import { autoLayout, type XY } from './layout';
 
+export type DetailTab = 'servers' | 'tables' | 'parts' | 'wireframe';
 export type Selection = { kind: 'node'; id: string } | { kind: 'edge'; from: string; to: string } | { kind: 'table'; node: string; table: string } | null;
 
 type State = {
@@ -19,7 +20,9 @@ type State = {
   select: (s: Selection) => void;
   /** 안으로 들어가 본 블록(노드 id). 없으면 전체 다이어그램 */
   focus?: string;
-  setFocus: (id?: string) => void;
+  /** 세부 구성에서 연 탭 */
+  focusTab: DetailTab;
+  setFocus: (id?: string, tab?: DetailTab) => void;
   /** 되돌리기(Ctrl+Z)·다시 하기(Ctrl+Y)용 이전·다음 프로젝트 */
   past: Project[];
   future: Project[];
@@ -29,7 +32,7 @@ type State = {
   clipboard?: Project['nodes'][number];
   /** 찾기에서 고른 노드로 캔버스를 옮기라는 요청 (캔버스가 처리하고 지운다) */
   flyTo?: string;
-  set: (patch: Partial<Pick<State, 'clipboard' | 'flyTo'>>) => void;
+  set: (patch: Partial<Pick<State, 'clipboard' | 'flyTo' | 'focusTab'>>) => void;
 };
 
 const HISTORY = 100;
@@ -68,7 +71,8 @@ export const useStore = create<State>((set) => ({
   move: (id, xy) => set((s) => ({ positions: { ...s.positions, [id]: xy } })),
   relayout: () => set((s) => ({ positions: autoLayout(s.project) })),
   select: (selected) => set({ selected }),
-  setFocus: (focus) => set({ focus, selected: null }),
+  focusTab: 'servers',
+  setFocus: (focus, tab = 'servers') => set({ focus, focusTab: tab, selected: null }),
   set: (patch) => set(patch),
   undo: () => set((s) => {
     if (!s.past.length) return {};

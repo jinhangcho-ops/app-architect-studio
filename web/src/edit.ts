@@ -4,7 +4,7 @@ import { parseProject } from '../../engine/data';
 import type { NodeJudgement } from '../../engine/judge';
 import { LAYER_NAMES, type Layer, type Verdict } from '../../engine/model';
 import { optimize, type OptimizeResult } from '../../engine/optimize';
-import { EdgeSchema, NodeSchema, Table as TableSchema, withPrimary, type Project, type ProjectEdge, type ProjectNode } from '../../engine/schema';
+import { EdgeSchema, NodeSchema, selectedFeatures, storageProfileOf, Table as TableSchema, withPrimary, type Project, type ProjectEdge, type ProjectNode, type Screen, type WireItem } from '../../engine/schema';
 import { catalog, engineData } from './data';
 
 export type RunResult = { analysis?: Analysis; error?: string };
@@ -190,3 +190,68 @@ export function pasteNode(p: Project, node: ProjectNode): { project: Project; id
   const id = `${node.id}-${k}`;
   return { project: { ...p, nodes: [...p.nodes, { ...node, id, name: `${node.name} (복사)` }] }, id };
 }
+
+// ── 세부 구성의 끌어 놓기 ──
+/** 왼편 목록에서 끌어 온 것 / 다이어그램에서 왼편으로 끌어 낸 것 */
+export type Drag =
+  | { kind: 'item'; id: string }
+  | { kind: 'table' }
+  | { kind: 'action' }
+  | { kind: 'feature'; id: string }
+  | { kind: 'ui'; ui: WireItem['kind'] }
+  | { kind: 'remove'; what: 'extra' | 'feature' | 'table'; id: string }
+  | { kind: 'remove'; what: 'wire'; screen: number; id: string };
+
+/** 주 항목을 놓으면 교체, 보조 항목을 놓으면 추가 */
+export function dropItem(p: Project, nodeId: string, itemId: string): Project {
+  const n = p.nodes.find((x) => x.id === nodeId)!;
+  const it = catalog.byId.get(itemId);
+  if (!it || !it.attaches_to.includes(n.layer)) return p;
+  if (it.role === '주') return updateNode(p, nodeId, { primary: itemId });
+  return n.extras.includes(itemId) ? p : updateNode(p, nodeId, { extras: [...n.extras, itemId] });
+}
+
+/** 저장 기능 켜기·끄기. 처음 고르면 권장 기능에서 시작하고, 하나만 고르는 묶음은 같은 묶음의 다른 기능을 끈다 */
+export function setFeature(p: Project, nodeId: string, featureId: string, on: boolean): Project {
+  const n = p.nodes.find((x) => x.id === nodeId)!;
+  const sp = storageProfileOf(n.primary ? catalog.byId.get(n.primary) : undefined, catalog.byId);
+  const f = sp?.features.find((x) => x.id === featureId);
+  if (!sp || !f) return p;
+  let ids = selectedFeatures(sp, n).map((x) => x.id).filter((id) => id !== featureId);
+  if (on && sp.groups[f.group]?.one) ids = ids.filter((id) => sp.features.find((x) => x.id === id)?.group !== f.group);
+  return updateNode(p, nodeId, { storage_features: on ? [...ids, featureId] : ids });
+}
+
+/** 다이어그램에서 왼편으로 끌어 낸 것 빼기 */
+export function dropRemove(p: Project, nodeId: string, d: Extract<Drag, { kind: 'remove' }>): Project {
+  const n = p.nodes.find((x) => x.id === nodeId)!;
+  if (d.what === 'extra') return updateNode(p, nodeId, { extras: n.extras.filter((e) => e !== d.id) });
+  if (d.what === 'feature') return setFeature(p, nodeId, d.id, false);
+  if (d.what !== 'wire') return removeTable(p, nodeId, d.id);
+  return mapScreens(p, nodeId, (ss) => ss.map((s, i) => (i !== d.screen ? s : { ...s, items: s.items.filter((x) => x.id !== d.id) })));
+}
+
+// ── 와이어프레임 ──
+const screensOf = (n: ProjectNode): Screen[] => n.wireframe?.screens ?? [{ name: '화면 1', items: [] }];
+export const mapScreens = (p: Project, nodeId: string, fn: (ss: Screen[]) => Screen[]): Project =>
+  updateNode(p, nodeId, { wireframe: { screens: fn(screensOf(p.nodes.find((x) => x.id === nodeId)!)) } });
+
+export function addScreen(p: Project, nodeId: string): Project {
+  return mapScreens(p, nodeId, (ss) => {
+    let k = ss.length + 1;
+    while (ss.some((s) => s.name === `화면 ${k}`)) k++;
+    return [...ss, { name: `화면 ${k}`, items: [] }];
+  });
+}
+
+export function addWire(p: Project, nodeId: string, screen: number, item: Omit<WireItem, 'id'>): Project {
+  return mapScreens(p, nodeId, (ss) => ss.map((s, i) => {
+    if (i !== screen) return s;
+    let k = s.items.length + 1;
+    while (s.items.some((x) => x.id === `w${k}`)) k++;
+    return { ...s, items: [...s.items, { ...item, id: `w${k}` }] };
+  }));
+}
+
+export const updateWire = (p: Project, nodeId: string, screen: number, id: string, patch: Partial<WireItem>): Project =>
+  mapScreens(p, nodeId, (ss) => ss.map((s, i) => (i !== screen ? s : { ...s, items: s.items.map((x) => (x.id === id ? { ...x, ...patch } : x)) })));
