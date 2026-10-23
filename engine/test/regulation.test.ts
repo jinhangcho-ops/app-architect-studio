@@ -40,6 +40,12 @@ describe('관문: 설계서 15절 표시 예시', () => {
     expect(of('plain')).toEqual([]);
   });
 
+  it('노드에 리전이 없으면 프로젝트 기본 리전(비용과 같은 규칙)으로 저장 국가를 본다', () => {
+    const q = Project.parse({ name: 'q', cost: { region: 'aws:ap-northeast-1' },
+      nodes: [{ id: 'db', name: 'DB', layer: 'db', privacy: { personal: true, subjects: ['KR'] } }] });
+    expect(checkRegulation(q, laws).map((h) => `${h.law} ${h.article}`)).toContain('개인정보 보호법 제28조의8');
+  });
+
   it('조문 내용은 없고, 원문 대조 여부와 출처·기준일이 붙음', () => {
     for (const h of hits) {
       expect(Object.keys(h).sort()).toEqual(['article', 'asOf', 'law', 'nodeId', 'reason', 'source', 'verified']);

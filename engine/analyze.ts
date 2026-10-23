@@ -114,8 +114,12 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
   const hourlyOf = (n: ProjectNode, factor: number) => {
     const load = loads?.get(n.id);
     const per = perInstance(n, d.catalog);
-    if (load && per.rps && shape) return hourlyInstances(load.rps.normal * factor, shape, per.rps.value, u, n.min_instances, per.max);
-    return Array<number>(24).fill(n.min_instances);
+    // 이중화(replicas > 1)는 부하와 무관하게 늘 떠 있어야 하는 대수다. 1이면 0대까지 줄어드는 워커를 막지 않도록 하한으로 쓰지 않는다
+    const floor = n.replicas > 1 ? n.replicas : 0;
+    const hourly = load && per.rps && shape
+      ? hourlyInstances(load.rps.normal * factor, shape, per.rps.value, u, n.min_instances, per.max)
+      : Array<number>(24).fill(n.min_instances);
+    return hourly.map((x) => Math.max(x, floor));
   };
   const costAt = (factor: number) => {
     const { lines, missing } = costLines(p, t, loads, d.catalog, hourlyOf, factor);

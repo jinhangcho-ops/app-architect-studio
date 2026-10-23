@@ -5,10 +5,12 @@ import { REGION_COUNTRY, type LawRow, type Project, type ProjectNode } from './s
 export type LawHit = { nodeId: string; law: string; article: string; reason: string; verified: boolean; source: string; asOf: string };
 
 /** 노드 하나의 트리거 변수. subject_KR처럼 나라마다 참거짓 변수를 만든다 */
-export function privacyVars(n: ProjectNode, countries: string[]): Vars | undefined {
+/** defaultRegion: 노드에 리전이 없을 때 쓰는 프로젝트 기본 리전 (비용 계산과 같은 규칙) */
+export function privacyVars(n: ProjectNode, countries: string[], defaultRegion?: Project['cost']['region']): Vars | undefined {
   const pv = n.privacy;
   if (!pv?.personal) return undefined;
-  const store = n.region === undefined ? 'unknown' : n.region === 'local' ? 'local' : REGION_COUNTRY[n.region];
+  const region = n.region ?? defaultRegion;
+  const store = region === undefined ? 'unknown' : region === 'local' ? 'local' : REGION_COUNTRY[region];
   return {
     personal: pv.personal,
     sensitive: pv.sensitive,
@@ -27,7 +29,7 @@ export function checkRegulation(p: Project, laws: LawRow[]): LawHit[] {
   const countries = [...new Set([...laws.flatMap((l) => [...l.trigger.matchAll(/subject_([A-Z]{2})/g)].map((m) => m[1])), ...p.nodes.flatMap((n) => n.privacy?.subjects ?? [])])];
   const hits: LawHit[] = [];
   for (const n of p.nodes) {
-    const v = privacyVars(n, countries);
+    const v = privacyVars(n, countries, p.cost.region);
     if (!v) continue;
     for (const l of laws) {
       if (test(l.trigger, v)) hits.push({ nodeId: n.id, law: l.law, article: l.article, reason: fill(l.reason, v), verified: l.verified, source: l.source, asOf: l.as_of });

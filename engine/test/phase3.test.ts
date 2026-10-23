@@ -73,6 +73,9 @@ describe('관문: 8절 한계 사용자 (활성 사용자 10만, 이벤트 900 R
   it('오토스케일링 최대 20대 → 약 111만', () => {
     expect(limit({ layer: 'backend', primary: 'api_autoscale' }, { peak_rps: 300 }, { peak_rps: 900 })).toBeCloseTo(1_111_111, -1);
   });
+  it('Kafka(브로커 클러스터 2만 RPS) → 약 222만: API 외 노드도 한계가 나옴', () => {
+    expect(limit({ layer: 'queue', primary: 'kafka' }, { peak_rps: 300 }, { peak_rps: 900 })).toBeCloseTo(2_222_222, -1);
+  });
   it('부하와 무관하게 안 되면 0, 부하 변수가 없으면 한계 없음', () => {
     expect(limitFactor(node({ layer: 'db', primary: 'sqlite' }), catalog.byId,
       { normal: { writer_nodes: 2, peak_write_rps: 1 }, event: { writer_nodes: 2, peak_write_rps: 1 } })).toBe(0);
@@ -155,5 +158,13 @@ describe('analyze: 예시 프로젝트 전체', () => {
       for (const [k, v] of Object.entries(x)) walk(v, `${path}.${k}`);
     };
     walk(a, 'analysis');
+  });
+});
+
+describe('이중화 대수가 비용에 들어감', () => {
+  it('3단계 예시의 PostgreSQL 2대 → 2대 × 720시간 × 0.2', () => {
+    const p = loadProject(here('../../examples/phase3.json'), catalog.items);
+    const a = analyze(p, { catalog: catalog.byId, rules: catalog.rules, prices }, '2026-10-23');
+    expect(a.cost!.parts.db.value).toBeCloseTo(2 * 720 * 0.2);
   });
 });

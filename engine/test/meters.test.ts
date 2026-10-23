@@ -62,9 +62,11 @@ describe('과금 방식별 계량', () => {
     expect(lines.some((l) => l.key === 'app')).toBe(false);
   });
 
-  it('월 정액 항목은 가격이 없으면 가격 없음으로 표시', () => {
-    const p = project([{ id: 'lh', name: '레이크하우스', layer: 'analytics', primary: 'databricks' }]);
-    const { lines, missing } = run(p, {});
-    expect(monthlyCost(lines, prices, '2026-10-23', missing).missing[0]).toMatch(/가격 없음: databricks-workspace/);
+  it('월 정액 항목: 그 리전 가격이 있으면 1개월분, 없으면 가격 없음', () => {
+    const lh = { id: 'lh', name: '레이크하우스', layer: 'analytics', primary: 'databricks' };
+    const seoul = run(project([lh]), {});
+    expect(monthlyCost(seoul.lines, prices, '2026-10-23', seoul.missing).total!.value).toBe(500);
+    const gcp = run(project([{ ...lh, region: 'gcp:asia-northeast3' }]), {});
+    expect(monthlyCost(gcp.lines, prices, '2026-10-23', gcp.missing).missing[0]).toMatch(/가격 없음: databricks-workspace @ gcp/);
   });
 });

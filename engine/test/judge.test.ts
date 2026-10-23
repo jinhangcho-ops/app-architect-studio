@@ -16,8 +16,8 @@ const scale = (normal: object, event: object) => ({ vars: { normal, event } });
 describe('관문: SQLite 판정 (설계서 5절)', () => {
   it('쓰는 노드 2개면 안 됨, 대안은 PostgreSQL만 통과', () => {
     const j = judge({ layer: 'db', primary: 'sqlite', ...scale(
-      { peak_write_rps: 19, writer_nodes: 2, db_connections: 60 },
-      { peak_write_rps: 58, writer_nodes: 2, db_connections: 60 },
+      { peak_rps: 200, peak_write_rps: 19, writer_nodes: 2, db_connections: 60 },
+      { peak_rps: 600, peak_write_rps: 58, writer_nodes: 2, db_connections: 60 },
     ) });
     expect(j.verdict).toBe('fail');
     expect(j.reasons[0]).toContain('쓰는 노드가 2개');
@@ -26,8 +26,8 @@ describe('관문: SQLite 판정 (설계서 5절)', () => {
 
   it('쓰는 노드 1개면 평소 19건/초는 통과, 프로모션 58건/초는 기준 50 초과로 조건부', () => {
     const j = judge({ layer: 'db', primary: 'sqlite', ...scale(
-      { peak_write_rps: 19, writer_nodes: 1, db_connections: 10 },
-      { peak_write_rps: 58, writer_nodes: 1, db_connections: 10 },
+      { peak_rps: 200, peak_write_rps: 19, writer_nodes: 1, db_connections: 10 },
+      { peak_rps: 600, peak_write_rps: 58, writer_nodes: 1, db_connections: 10 },
     ) });
     expect(j.verdict).toBe('conditional');
     expect(j.reasons[0]).toBe('이벤트 피크에서: 피크 쓰기 58건/초가 기준 50건/초를 넘습니다');

@@ -17,5 +17,11 @@
   { "id": "aws-seoul-transfer", "product": "transfer-interregion", "region": "aws:ap-northeast-2", "unit": "gb_interregion", "price": 0.08, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
   { "id": "aws-tokyo-transfer", "product": "transfer-interregion", "region": "aws:ap-northeast-1", "unit": "gb_interregion", "price": 0.09, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
   { "id": "supabase-seoul-pro", "product": "supabase-pro", "region": "supabase:ap-northeast-2", "unit": "month", "price": 25, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
-  { "id": "supabase-tokyo-pro", "product": "supabase-pro", "region": "supabase:ap-northeast-1", "unit": "month", "price": 25, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" }
+  { "id": "supabase-tokyo-pro", "product": "supabase-pro", "region": "supabase:ap-northeast-1", "unit": "month", "price": 25, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-seoul-turso-plan", "product": "turso-plan", "region": "aws:ap-northeast-2", "unit": "month", "price": 29, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-tokyo-turso-plan", "product": "turso-plan", "region": "aws:ap-northeast-1", "unit": "month", "price": 29, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-seoul-snowflake-warehouse", "product": "snowflake-warehouse", "region": "aws:ap-northeast-2", "unit": "month", "price": 400, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-tokyo-snowflake-warehouse", "product": "snowflake-warehouse", "region": "aws:ap-northeast-1", "unit": "month", "price": 420, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-seoul-databricks-workspace", "product": "databricks-workspace", "region": "aws:ap-northeast-2", "unit": "month", "price": 500, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-tokyo-databricks-workspace", "product": "databricks-workspace", "region": "aws:ap-northeast-1", "unit": "month", "price": 520, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" }
 ]

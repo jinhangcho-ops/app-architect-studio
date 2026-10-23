@@ -36,19 +36,15 @@
   {
     "id": "postgresql",
     "name": "PostgreSQL",
-    "area": "서비스", "role": "주", "kind": "도구",
+    "area": "서비스",
+    "role": "주",
+    "kind": "도구",
     "attaches_to": ["db"],
-    "goals": { "메모리": "보통", "속도": "좋음", "동시성": "좋음", "운영 난이도": "보통" },
-    "works_when": [{ "if": "writer_nodes >= 1", "why": "행 단위 락과 MVCC로 여러 노드가 동시에 써도 됩니다" }],
-    "fails_when": [
-      { "if": "peak_write_rps > th.write_rps", "why": "피크 쓰기 {peak_write_rps}건/초가 기준 {th.write_rps}건/초를 넘습니다" },
-      { "if": "db_connections > th.max_connections", "why": "동시 연결 {db_connections}개가 연결 한도 {th.max_connections}개를 넘습니다" }
-    ],
-    "alternatives": [{ "id": "connection_pooler", "better_for": ["동시성"], "note": "연결 수 문제일 때" }],
-    "thresholds": {
-      "write_rps": { "value": 2000, "unit": "건/초", "base_spec": { "vcpu": 2 }, "bound_by": "vcpu", "source": "예시값(설계서 8절) — 실측·공식 자료로 교체 필요" },
-      "max_connections": { "value": 100, "unit": "개", "source": "PostgreSQL max_connections 기본값" }
-    },
+    "goals": {"메모리": "보통", "속도": "좋음", "동시성": "좋음", "운영 난이도": "보통"},
+    "works_when": [{"if": "writer_nodes >= 1", "why": "행 단위 락과 MVCC로 여러 노드가 동시에 써도 됩니다"}],
+    "alternatives": [{"id": "connection_pooler", "better_for": ["동시성"], "note": "연결 수 문제일 때"}],
+    "fails_when": [{"if": "peak_write_rps > th.write_rps", "why": "피크 쓰기 {peak_write_rps}건/초가 기준 {th.write_rps}건/초를 넘습니다"}, {"if": "db_connections > th.max_connections", "why": "동시 연결 {db_connections}개가 연결 한도 {th.max_connections}개를 넘습니다"}, {"if": "peak_rps > th.rps", "why": "피크 {peak_rps} RPS가 주 DB 서버 1대 처리량 {th.rps} RPS를 넘습니다"}],
+    "thresholds": {"write_rps": {"value": 2000, "unit": "건/초", "base_spec": {"vcpu": 2}, "bound_by": "vcpu", "source": "예시값(설계서 8절) — 실측·공식 자료로 교체 필요"}, "max_connections": {"value": 100, "unit": "개", "source": "PostgreSQL max_connections 기본값"}, "rps": {"value": 3000, "unit": "RPS", "base_spec": {"vcpu": 2}, "bound_by": "vcpu", "source": "예시값 — 실측으로 교체 필요"}},
     "billing": {"model": "provisioned", "products": {"instance": "db-2vcpu"}},
     "sources": ["https://www.postgresql.org/docs/current/runtime-config-connection.html"]
   },
@@ -148,12 +144,14 @@
   {
     "id": "redis_cache",
     "name": "Redis 캐시 (Cache-Aside)",
-    "area": "서비스", "role": "주", "kind": "도구",
+    "area": "서비스",
+    "role": "주",
+    "kind": "도구",
     "attaches_to": ["cache"],
-    "goals": { "속도": "좋음", "지연시간": "좋음", "메모리": "나쁨" },
-    "works_when": [{ "if": "read_ratio >= th.min_read_ratio", "why": "읽기 비율 {read_ratio}로 같은 데이터를 반복 조회해 캐시 효과가 큽니다" }],
-    "fails_when": [{ "if": "read_ratio < th.min_read_ratio", "why": "읽기 비율 {read_ratio}가 낮아 캐시에 맞는 요청이 적고 데이터 불일치만 늘어납니다" }],
-    "thresholds": { "min_read_ratio": { "value": 0.5, "unit": "비율", "source": "예시값 — 실측 적중률로 교체 필요" } },
+    "goals": {"속도": "좋음", "지연시간": "좋음", "메모리": "나쁨"},
+    "works_when": [{"if": "read_ratio >= th.min_read_ratio", "why": "읽기 비율 {read_ratio}로 같은 데이터를 반복 조회해 캐시 효과가 큽니다"}],
+    "fails_when": [{"if": "read_ratio < th.min_read_ratio", "why": "읽기 비율 {read_ratio}가 낮아 캐시에 맞는 요청이 적고 데이터 불일치만 늘어납니다"}, {"if": "peak_rps > th.rps", "why": "피크 {peak_rps} RPS가 캐시 노드 1대 처리량 {th.rps} RPS를 넘습니다"}],
+    "thresholds": {"min_read_ratio": {"value": 0.5, "unit": "비율", "source": "예시값 — 실측 적중률로 교체 필요"}, "rps": {"value": 50000, "unit": "RPS", "base_spec": {"vcpu": 2}, "bound_by": "vcpu", "source": "예시값 — 실측으로 교체 필요"}},
     "billing": {"model": "provisioned", "products": {"instance": "cache-node"}},
     "sources": ["설계서 v2 규칙 3(DB 구간)"]
   },
@@ -163,7 +161,7 @@
     "area": "서비스", "role": "주", "kind": "패턴",
     "attaches_to": ["queue", "batch"],
     "goals": { "지연시간": "좋음", "비용": "나쁨" },
-    "fails_when": [{ "if": "peak_event_rps > external_rate_limit_rps", "why": "이벤트 {peak_event_rps}건/초를 1건씩 외부 API로 보내면 호출 제한 {external_rate_limit_rps}건/초를 넘습니다" }],
+    "fails_when": [{ "if": "peak_rps > external_rate_limit_rps", "why": "피크 {peak_rps}건/초를 1건씩 외부 API로 보내면 호출 제한 {external_rate_limit_rps}건/초를 넘습니다" }],
     "alternatives": [{ "id": "kafka_micro_batch", "better_for": ["비용", "안정성"] }],
     "sources": ["설계서 v2 규칙 3"]
   },
