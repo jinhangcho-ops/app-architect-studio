@@ -5,6 +5,7 @@ import { Canvas } from './Canvas';
 import { catalog, examples } from './data';
 import { addNode, run } from './edit';
 import { EdgePanel, NodePanel } from './NodePanel';
+import { OptimizePanel } from './OptimizePanel';
 import { ProjectPanel } from './ProjectPanel';
 import { ResultsPanel } from './ResultsPanel';
 import { exportProject, useStore } from './store';
@@ -15,7 +16,7 @@ export function App() {
   const { project, positions, selected, load, edit, relayout, select } = useStore();
   // 위치를 끌어도 다시 계산하지 않도록 프로젝트가 바뀔 때만 분석한다
   const result = useMemo(() => run(project, today), [project]);
-  const [tab, setTab] = useState<'selected' | 'results'>('results');
+  const [tab, setTab] = useState<'selected' | 'results' | 'optimize'>('results');
   const fileRef = useRef<HTMLInputElement>(null);
 
   const add = (layer: Layer) => {
@@ -76,8 +77,10 @@ export function App() {
         <nav className="tabs">
           <button className={tab === 'selected' ? 'on' : ''} onClick={() => setTab('selected')}>선택한 것</button>
           <button className={tab === 'results' ? 'on' : ''} onClick={() => setTab('results')}>전체 결과</button>
+          <button className={tab === 'optimize' ? 'on' : ''} onClick={() => setTab('optimize')}>최선 조합</button>
         </nav>
         {tab === 'results' && <ResultsPanel analysis={result.analysis} />}
+        {tab === 'optimize' && <OptimizePanel today={today} />}
         {tab === 'selected' && selected?.kind === 'node' && <NodePanel id={selected.id} analysis={result.analysis} />}
         {tab === 'selected' && selected?.kind === 'edge' && <EdgePanel from={selected.from} to={selected.to} />}
         {tab === 'selected' && !selected && <p className="muted">캔버스에서 노드나 연결선을 고르세요.</p>}

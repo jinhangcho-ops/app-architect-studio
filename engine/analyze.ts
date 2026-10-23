@@ -53,9 +53,9 @@ function perInstance(node: ProjectNode, catalog: Map<string, CatalogItem>) {
   return { rps, max: max?.value ?? Infinity };
 }
 
-/** today = 'YYYY-MM-DD' (가격 기준일 경고용). */
-export function analyze(p: Project, d: Data, today: string): Analysis {
-  const t = traffic(p);
+/** today = 'YYYY-MM-DD' (가격 기준일 경고용). reuse.traffic: 항목만 바꿔 여러 번 분석할 때 같은 트래픽을 재사용 */
+export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: Traffic | undefined }): Analysis {
+  const t = reuse ? reuse.traffic : traffic(p);
   const loads = t ? nodeLoads(p, t) : undefined;
   const scenarios = computedScenarios(p, t);
   const u = p.target_utilization;

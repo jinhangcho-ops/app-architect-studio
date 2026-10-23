@@ -3,6 +3,7 @@ import { analyze, type Analysis } from '../../engine/analyze';
 import { parseProject } from '../../engine/data';
 import type { NodeJudgement } from '../../engine/judge';
 import { LAYER_NAMES, type Layer, type Verdict } from '../../engine/model';
+import { optimize, type OptimizeResult } from '../../engine/optimize';
 import { EdgeSchema, NodeSchema, type Project, type ProjectEdge, type ProjectNode } from '../../engine/schema';
 import { catalog, engineData } from './data';
 
@@ -16,6 +17,18 @@ export function run(p: Project, today: string): RunResult {
     return { error: (e as Error).message };
   }
 }
+
+/** 최선 조합 찾기. 조합마다 분석하므로 버튼을 눌렀을 때만 부른다. */
+export function findPlans(p: Project, today: string): { result?: OptimizeResult; error?: string } {
+  try {
+    return { result: optimize(parseProject(p, catalog.items), engineData, today) };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+}
+
+export const applyPlan = (p: Project, assignment: Record<string, string>): Project =>
+  ({ ...p, nodes: p.nodes.map((n) => (assignment[n.id] ? { ...n, primary: assignment[n.id] } : n)) });
 
 export const updateNode = (p: Project, id: string, patch: Partial<ProjectNode>): Project =>
   ({ ...p, nodes: p.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)) });

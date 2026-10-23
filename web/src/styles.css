@@ -45,6 +45,22 @@ textarea { min-height: 48px; resize: vertical; }
 .alt button { margin-left: auto; padding: 2px 8px; }
 .path { margin-bottom: 8px; }
 .error-banner { position: absolute; left: 12px; right: 12px; bottom: 12px; margin: 0; padding: 8px 10px; background: #fff3f3; border: 1px solid var(--fail); border-radius: 6px; white-space: pre-wrap; z-index: 5; }
+button.primary { background: var(--accent); color: #fff; border-color: var(--accent); margin-top: 6px; }
+button:disabled { opacity: 0.4; cursor: default; }
+.alt .spacer { flex: 1; }
+.plans { overflow-x: auto; }
+.plans table { border-collapse: collapse; font-size: 12px; min-width: 100%; }
+.plans th, .plans td { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.plans td.changed { font-weight: 700; color: var(--accent); }
+.plans td:first-child { white-space: nowrap; }
+.plans td:not(:first-child) { min-width: 84px; }
+.plans .metric-row td { color: var(--muted); }
+.scatter { width: 100%; height: auto; }
+.scatter .axis { stroke: var(--line); }
+.scatter text { font-size: 10px; fill: var(--muted); }
+.scatter .pt { fill: var(--accent); opacity: 0.8; }
+.scatter .pt.bad { fill: var(--unknown); opacity: 0.3; }
+.scatter .pt.best { fill: var(--ok); stroke: #fff; stroke-width: 1.5; opacity: 1; }
 /* 노드 카드 */
 .card { width: 220px; background: #fff; border: 2px solid var(--line); border-radius: 10px; padding: 8px 10px; }
 .card.sel { box-shadow: 0 0 0 3px #2b5fd933; }

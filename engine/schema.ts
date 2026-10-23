@@ -168,6 +168,14 @@ export const Project = z.object({
   default_availability: z.number().min(0).max(1).default(0.999),
   /** 9절 프로젝트 단위 과금 상품 id */
   cost: z.object({ storage: z.string().optional(), egress: z.string().optional() }).default({}),
+  /** 10절 최선 조합: 꼭 지킬 조건과 목표 우선순위(앞일수록 중요, 비우면 모든 목표 같은 가중치) */
+  optimize: z.object({
+    budget_monthly: z.number().nonnegative().optional(),
+    min_limit_users: z.number().positive().optional(),
+    max_p99_ms: z.number().positive().optional(),
+    min_availability: z.number().min(0).max(1).optional(),
+    priorities: z.array(z.string()).default([]),
+  }).default({ priorities: [] }),
   /** 14절 월 성장률, 보는 기간, 교체 준비 기간 */
   growth: z.object({ monthly_rate: z.number().gt(-1), months: z.number().int().positive().default(24), lead_months: z.number().int().nonnegative().default(3) }).optional(),
 });
