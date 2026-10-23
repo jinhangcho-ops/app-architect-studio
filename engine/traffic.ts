@@ -83,7 +83,7 @@ export function rowsPerSession(p: Project, ps: Persona): Map<string, number> {
 }
 
 /** mulberry32: 작고 빠른 시드 고정 난수 */
-function rng(seed: number) {
+export function rng(seed: number) {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;

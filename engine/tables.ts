@@ -29,7 +29,7 @@ const TEXT_TYPES = new Set<Column['type']>(['text', 'json', 'bytes']);
 const DEFAULT_VAR_BYTES = 32;
 
 /** 값 하나의 바이트. 저장 형식이 크기를 정한다 (같은 시각도 정수 8바이트, ISO 문자열 24바이트) */
-function valueBytes(c: Column, assume: (s: string) => void): number {
+export function valueBytes(c: Column, assume: (s: string) => void = () => {}): number {
   const storage = c.storage ?? DEFAULT_STORAGE[c.type];
   const variable = () => {
     if (c.avg_bytes) return c.avg_bytes;
@@ -86,7 +86,8 @@ export function tableSize(
 
   // 인덱스: 기본 키(테이블과 따로 저장되는 경우) + 보조 인덱스. 열 저장은 행 인덱스가 없다
   const pkBytes = t.primary_key.reduce((s, c) => s + bytesOf.get(c)!, 0);
-  const rowidPk = sp?.integer_pk_is_rowid && t.primary_key.length === 1 && ['int', 'bigint'].includes(t.columns.find((c) => c.name === t.primary_key[0])!.type);
+  const pkCol0 = t.primary_key.length === 1 ? t.columns.find((c) => c.name === t.primary_key[0])! : undefined;
+  const rowidPk = sp?.integer_pk_is_rowid && pkCol0 && ['int', 'bigint'].includes(pkCol0.type) && (pkCol0.storage ?? 'integer') === 'integer';
   const pkSeparate = t.primary_key.length > 0 && sp?.layout !== 'columnar' && !sp?.pk_is_table && !eff('pk_is_table') && !rowidPk;
   const indexFill = eff('index_fill') ?? sp?.index_fill ?? 1;
   const entry = (cols: string[], secondary: boolean) =>

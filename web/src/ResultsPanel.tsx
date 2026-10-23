@@ -4,6 +4,9 @@ import type { Metric } from '../../engine/model';
 import { catalog } from './data';
 import { Section } from './fields';
 import { fmt, fmtMetric, howMetric } from './format';
+import { useState } from 'react';
+import { selectedFeatures, storageProfileOf } from '../../engine/schema';
+import { loadSqlJs, runSqliteLab, type LabResult } from './sqliteLab';
 import { useStore } from './store';
 
 const Line = ({ label, m }: { label: string; m?: Metric }) =>
@@ -48,7 +51,7 @@ ${howMetric(x.peakRowsPerSec)}`}>
 
       {a.tables.length > 0 && <Section title="테이블 크기">
         <div className="plans"><table>
-          <thead><tr><th>테이블</th><th>하루 새 행</th><th>행</th><th>인덱스/행</th><th>저장</th><th>파티션</th></tr></thead>
+          <thead><tr><th>테이블</th><th>하루 새 행</th><th>행</th><th>인덱스/행</th><th>저장</th><th>파티션</th><th>SQLite 실험</th></tr></thead>
           <tbody>{a.tables.map((x) => (
             <tr key={x.key}>
               <td>{x.key}</td>
@@ -57,6 +60,7 @@ ${howMetric(x.peakRowsPerSec)}`}>
               <td title={howMetric(x.indexBytesPerRow)}>{fmt(x.indexBytesPerRow.value)} B</td>
               <td title={howMetric(x.storedGb)}>{fmt(x.storedGb.value)} GB</td>
               <td title={x.partitions ? howMetric(x.partitions.gb) : ''}>{x.partitions ? `${x.partitions.count} × ${fmt(x.partitions.gb.value)} GB` : '—'}</td>
+              <td><TableLab nodeId={x.nodeId} table={x.table} /></td>
             </tr>
           ))}</tbody>
         </table></div>
@@ -169,5 +173,44 @@ function PersonaTable({ t }: { t: Traffic }) {
         </tr>
       </tbody>
     </table></div>
+  );
+}
+
+/** 테이블 하나를 브라우저 SQLite에 만들어 1만 행을 넣고 잰다. 주 항목이 SQLite 계열이면 실측값을 테이블에 넣을 수 있다 */
+function TableLab({ nodeId, table }: { nodeId: string; table: string }) {
+  const { project, edit } = useStore();
+  const [state, setState] = useState<{ running?: boolean; result?: LabResult; error?: string }>({});
+  const node = project.nodes.find((n) => n.id === nodeId)!;
+  const t = node.tables.find((x) => x.name === table)!;
+  const sp = storageProfileOf(node.primary ? catalog.byId.get(node.primary) : undefined, catalog.byId);
+  const isSqlite = !!sp && sp === storageProfileOf(catalog.byId.get('sqlite'), catalog.byId);
+  const run = async () => {
+    setState({ running: true });
+    try {
+      const SQL = await loadSqlJs();
+      const withoutRowid = !!sp && selectedFeatures(sp, node, t).some((f) => f.id === 'without_rowid');
+      setState({ result: runSqliteLab(SQL, t, { withoutRowid }) });
+    } catch (e) {
+      setState({ error: (e as Error).message });
+    }
+  };
+  const apply = (r: LabResult) => edit((p) => ({
+    ...p,
+    nodes: p.nodes.map((n) => n.id !== nodeId ? n : {
+      ...n, tables: n.tables.map((x) => x.name !== table ? x : { ...x, measured: { ...x.measured, row_bytes: r.rowBytes, index_bytes: r.indexBytes } }),
+    }),
+  }));
+  const r = state.result;
+  return (
+    <span className="lab">
+      <button onClick={run} disabled={state.running}>{state.running ? '실험 중…' : '실험'}</button>
+      {r && <span title={r.ddl.join(';\n')}>
+        {' '}행 {fmt(r.rowBytes)} B · 인덱스 {fmt(r.indexBytes)} B · {fmt(r.insertsPerSec)}행/초(참고)
+        {isSqlite
+          ? <button onClick={() => apply(r)}>실측 적용</button>
+          : <span className="muted"> — SQLite 기준이라 이 노드 계산에는 넣지 않음</span>}
+      </span>}
+      {state.error && <span className="warn"> {state.error}</span>}
+    </span>
   );
 }
