@@ -12,7 +12,7 @@ import { htmlToScreen } from './htmlImport';
 import { markDrag, overPalette, readDrag, WIRE_NAMES } from './Palette';
 import { Select } from './Select';
 import { useStore } from './store';
-import { COLORS, DEVICE_NAMES, DEVICES, deviceOf, drawOrder, fitItem, lineEnds, savePngs, SHAPES, toDevice } from './wireDraw';
+import { COLORS, DEVICE_NAMES, DEVICES, deviceOf, drawOrder, fitItem, lineEnds, savePngs, SHAPES, toDevice, type Frame } from './wireDraw';
 
 const GRID = 8;
 const snap = (v: number) => Math.round(v / GRID) * GRID;
@@ -56,52 +56,23 @@ type Live = { id: string; mode: 'move' | 'size'; sx: number; sy: number; o: Wire
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 
-export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis?: Analysis }) {
-  const { project: p, edit } = useStore();
-  const n = p.nodes.find((x) => x.id === nodeId)!;
-  const screens = n.wireframe?.screens ?? [{ name: '화면 1', items: [] }];
-  const [cur, setCur] = useState(0);
-  const si = Math.min(cur, screens.length - 1);
-  const screen = screens[si];
-  const [sel, setSel] = useState<string>();
+type Sel = { s: number; id: string };
+
+/** 화면 틀 한 장: 상자 놓기·옮기기·크기 바꾸기·글 고치기. 나란히 보기에서는 두 장이 각각 이것을 쓴다 */
+function FrameView({ nodeId, s, screen, frame, k, left, top, caption, active, sel, setSel, editing, setEditing, nameOf, onActivate }: {
+  nodeId: string; s: number; screen: Screen; frame: Frame; k: number; left: number; top: number; caption?: string; active: boolean;
+  sel?: Sel; setSel: (x?: Sel) => void; editing?: string; setEditing: (x?: string) => void; nameOf: (id?: string) => string; onActivate: () => void;
+}) {
+  const { edit } = useStore();
   const [live, setLive] = useState<Live>();
-  const [editing, setEditing] = useState<string>();
-  const device = deviceOf(screen, p.deploy.mode);
-  const frame = DEVICES[device];
-  const setDevice = (d: NonNullable<Screen['device']>) => edit((x) => mapScreens(x, nodeId, (ss) => ss.map((y, j) => (j === si ? { ...y, device: d } : y))));
-  const fileRef = useRef<HTMLInputElement>(null);
-  const picked = screen.items.find((x) => x.id === sel);
-  const targets = p.nodes.filter((x) => x.id !== nodeId && x.layer !== 'ui');
-  const nameOf = (id?: string) => p.nodes.find((x) => x.id === id)?.name ?? '—';
-  // 호출은 있는데 연결선이 없는 대상, 연결선은 있는데 호출이 없는 대상 (호출이 하나라도 있으면 그 블록으로 부하가 안 간다)
-  const routed = routedCalls(p, n);
-  const allCalls = screens.flatMap((s) => s.items.filter((i) => i.api?.to).map((i) => ({ s: s.name, i })));
-  const unrouted = allCalls.filter(({ i }) => !routed.some((c) => c.item === i.id && c.to === i.api!.to));
-  const idle = routed.length ? p.edges.filter((e) => e.from === nodeId && !routed.some((c) => c.to === e.to)).map((e) => nameOf(e.to)) : [];
-  const loads = analysis?.api.filter((c) => c.node === nodeId) ?? [];
-
-  // 화면 틀을 칸에 맞춰 줄인다
-  const wrap = useRef<HTMLDivElement>(null);
-  const [fit, setFit] = useState({ k: 1, left: 0, top: 0 });
-  const k = fit.k;
-  useEffect(() => {
-    const el = wrap.current!;
-    const update = () => {
-      const kk = Math.min(1, (el.clientWidth - 32) / frame.w, (el.clientHeight - 32) / frame.h);
-      setFit({ k: kk, left: (el.clientWidth - frame.w * kk) / 2, top: (el.clientHeight - frame.h * kk) / 2 });
-    };
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [frame.w, frame.h]);
-
-  const remove = (id: string) => { edit((x) => dropRemove(x, nodeId, { kind: 'remove', what: 'wire', screen: si, id })); setSel(undefined); };
+  const key = (id: string) => `${s}:${id}`;
+  const isSel = (id: string) => sel?.s === s && sel.id === id;
+  const remove = (id: string) => { edit((x) => dropRemove(x, nodeId, { kind: 'remove', what: 'wire', screen: s, id })); setSel(undefined); };
   const down = (e: RPointerEvent, it: WireItem, mode: Live['mode']) => {
-    if (e.button !== 0 || editing === it.id) return;
+    if (e.button !== 0 || editing === key(it.id)) return;
     e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    setSel(it.id);
+    setSel({ s, id: it.id });
     if (mode === 'move') markDrag('remove');
     setLive({ id: it.id, mode, sx: e.clientX, sy: e.clientY, o: it, now: it });
   };
@@ -119,25 +90,111 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
     setLive(undefined);
     markDrag();
     if (live.mode === 'move' && overPalette(e)) return remove(id);
-    if (now.x !== o.x || now.y !== o.y || now.w !== o.w || now.h !== o.h) edit((x) => updateWire(x, nodeId, si, id, { x: now.x, y: now.y, w: now.w, h: now.h }));
+    if (now.x !== o.x || now.y !== o.y || now.w !== o.w || now.h !== o.h) edit((x) => updateWire(x, nodeId, s, id, { x: now.x, y: now.y, w: now.w, h: now.h }));
   };
-
   /** 터치·창 전환으로 끌기가 취소되면 옮기지 않고 끝낸다 */
   const cancel = () => { setLive(undefined); markDrag(); };
 
   // 큰 상자(영역)를 먼저 그려 작은 상자(컨트롤)가 위에 오게 한다
   const items = drawOrder(screen.items.map((it) => (live?.id === it.id ? live.now : fitItem(it, frame))));
+  return <>
+    {caption && <button className={`wcap ${active ? 'on' : ''}`} style={{ left, top: top - 22, maxWidth: frame.w * k }} onClick={onActivate} title="이 화면을 기준으로 (기기·PNG·복사)">{caption}</button>}
+    <div className={`wframe ${active ? 'active' : ''}`} style={{ left, top, width: frame.w * k, height: frame.h * k, fontSize: 12 * k }}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        const d = readDrag(e);
+        if (d?.kind !== 'ui') return;
+        e.preventDefault();
+        e.stopPropagation();
+        const r = e.currentTarget.getBoundingClientRect();
+        const [w0, h0] = SIZE[d.ui];
+        const w = Math.min(w0, frame.w), h = Math.min(h0, frame.h);
+        const x = snap(Math.max(0, Math.min(frame.w - w, (e.clientX - r.left) / k - w / 2)));
+        const y = snap(Math.max(0, Math.min(frame.h - h, (e.clientY - r.top) / k - h / 2)));
+        edit((pp) => addWire(pp, nodeId, s, { kind: d.ui, label: WIRE_NAMES[d.ui], x, y, w, h }));
+      }}>
+      {!items.length && <p className="wempty muted">왼편에서 헤더·버튼 같은 상자를 끌어 여기에 놓으세요</p>}
+      {items.map((it) => (
+        <div key={it.id} className={`wi wi-${it.kind} ${isSel(it.id) ? 'sel' : ''} ${it.api ? 'has-api' : ''} ${it.color ? `c-${it.color}` : ''}`}
+          style={{ left: it.x * k, top: it.y * k, width: it.w * k, height: it.h * k, ...(it.color && !SHAPES.has(it.kind) && { background: COLORS[it.color].fill, borderColor: COLORS[it.color].stroke }) }}
+          onPointerDown={(e) => down(e, it, 'move')} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel}
+          onDoubleClick={() => setEditing(key(it.id))} title={`${WIRE_NAMES[it.kind]} · ${it.w}×${it.h}`}>
+          {editing === key(it.id)
+            ? <input autoFocus defaultValue={it.label} aria-label="상자 글" onPointerDown={(e) => e.stopPropagation()}
+              onBlur={(e) => { edit((x) => updateWire(x, nodeId, s, it.id, { label: e.target.value })); setEditing(undefined); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditing(undefined); }} />
+            : !NO_LABEL.has(it.kind) && <span className="wl" style={it.color && it.color !== 'dark' ? { color: COLORS[it.color].stroke } : undefined}>{it.kind === 'avatar' ? it.label.slice(0, 1) : it.label}</span>}
+          {SHAPES.has(it.kind) && <ShapeSvg it={it} />}
+          {it.api && <span className={`wapi ${it.api.to ? '' : 'none'}`}>{it.api.method}{it.api.to ? ` → ${nameOf(it.api.to)}` : ' (받는 블록 없음)'}</span>}
+          {isSel(it.id) && <i className="wsize" aria-label="크기 바꾸기" onPointerDown={(e) => down(e, it, 'size')} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel} />}
+        </div>
+      ))}
+    </div>
+  </>;
+}
+
+const GAP = 24, CAP = 22;
+
+export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis?: Analysis }) {
+  const { project: p, edit } = useStore();
+  const n = p.nodes.find((x) => x.id === nodeId)!;
+  const screens = n.wireframe?.screens ?? [{ name: '화면 1', items: [] }];
+  const [cur, setCur] = useState(0);
+  const si = Math.min(cur, screens.length - 1);
+  const screen = screens[si];
+  // 나란히 볼 다른 화면 (없거나 지워졌으면 한 장만)
+  const [pairWant, setPair] = useState<number>();
+  const pair = pairWant !== undefined && pairWant !== si && pairWant < screens.length ? pairWant : undefined;
+  const shown = pair === undefined ? [si] : [si, pair].sort((a, b) => a - b);
+  const [sel, setSel] = useState<Sel>();
+  const [editing, setEditing] = useState<string>();
+  const device = deviceOf(screen, p.deploy.mode);
+  const frame = DEVICES[device];
+  const frames = shown.map((i) => DEVICES[deviceOf(screens[i], p.deploy.mode)]);
+  const setDevice = (d: NonNullable<Screen['device']>) => edit((x) => mapScreens(x, nodeId, (ss) => ss.map((y, j) => (j === si ? { ...y, device: d } : y))));
+  const fileRef = useRef<HTMLInputElement>(null);
+  const ps = sel && sel.s < screens.length ? sel.s : si;
+  const picked = sel ? screens[ps]?.items.find((x) => x.id === sel.id) : undefined;
+  const targets = p.nodes.filter((x) => x.id !== nodeId && x.layer !== 'ui');
+  const nameOf = (id?: string) => p.nodes.find((x) => x.id === id)?.name ?? '—';
+  // 호출은 있는데 연결선이 없는 대상, 연결선은 있는데 호출이 없는 대상 (호출이 하나라도 있으면 그 블록으로 부하가 안 간다)
+  const routed = routedCalls(p, n);
+  const allCalls = screens.flatMap((s) => s.items.filter((i) => i.api?.to).map((i) => ({ s: s.name, i })));
+  const unrouted = allCalls.filter(({ i }) => !routed.some((c) => c.item === i.id && c.to === i.api!.to));
+  const idle = routed.length ? p.edges.filter((e) => e.from === nodeId && !routed.some((c) => c.to === e.to)).map((e) => nameOf(e.to)) : [];
+  const loads = analysis?.api.filter((c) => c.node === nodeId) ?? [];
+
+  // 틀(한 장 또는 두 장)을 칸에 맞춰 줄인다. 두 장이면 같은 배율로 나란히, 위에 화면 이름
+  const wrap = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState({ k: 1, lefts: [0], top: 0 });
+  const dims = frames.map((f) => `${f.w}x${f.h}`).join(',');
+  useEffect(() => {
+    const el = wrap.current!;
+    const update = () => {
+      const cap = frames.length > 1 ? CAP : 0;
+      const sumW = frames.reduce((a, f) => a + f.w, 0), maxH = Math.max(...frames.map((f) => f.h));
+      const k = Math.min(1, (el.clientWidth - 32 - GAP * (frames.length - 1)) / sumW, (el.clientHeight - 32 - cap) / maxH);
+      let x = (el.clientWidth - sumW * k - GAP * (frames.length - 1)) / 2;
+      const lefts = frames.map((f) => { const l = x; x += f.w * k + GAP; return l; });
+      setFit({ k, lefts, top: (el.clientHeight - maxH * k - cap) / 2 + cap });
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+    // 틀 크기(dims)가 바뀔 때만 다시 잰다
+  }, [dims]);
 
   return (
     <div className="wire">
       <div className="inside-bar">
         {screens.map((s, i) => (
-          <span key={i} className={`wscreen ${i === si ? 'on' : ''}`} onClick={() => setCur(i)}>
+          <span key={i} className={`wscreen ${i === si ? 'on' : ''} ${i === pair ? 'pair' : ''}`} onClick={() => setCur(i)}>
             {editing === `screen:${i}`
               ? <input autoFocus defaultValue={s.name} aria-label="화면 이름" onBlur={(e) => { const v = e.target.value.trim(); if (v && !screens.some((y, j) => j !== i && y.name === v)) edit((x) => mapScreens(x, nodeId, (ss) => ss.map((y, j) => (j === i ? { ...y, name: v } : y)))); setEditing(undefined); }}
                 onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditing(undefined); }} />
               : <span onDoubleClick={() => setEditing(`screen:${i}`)} title="두 번 누르면 이름을 고쳐요">{s.name} <small className="muted">{DEVICE_NAMES[deviceOf(s, p.deploy.mode)]}</small></span>}
-            {screens.length > 1 && <button aria-label={`${s.name} 지우기`} onClick={(e) => { e.stopPropagation(); edit((x) => mapScreens(x, nodeId, (ss) => ss.filter((_, j) => j !== i))); setCur(0); }}>×</button>}
+            {screens.length > 1 && <button aria-label={`${s.name} 지우기`} onClick={(e) => { e.stopPropagation(); edit((x) => mapScreens(x, nodeId, (ss) => ss.filter((_, j) => j !== i))); setCur(0); setPair(undefined); setSel(undefined); }}>×</button>}
           </span>
         ))}
         <button onClick={() => { edit((x) => addScreen(x, nodeId, device)); setCur(screens.length); }}>+ 화면</button>
@@ -149,12 +206,17 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
           const d = e.target.value as typeof device;
           if (!d) return;
           edit((x) => addScreen(x, nodeId, d, toDevice(screen, frame, DEVICES[d], d, `${screen.name} (${DEVICE_NAMES[d]})`)));
+          // 복사한 화면을 원래 화면 옆에 나란히 보여 준다
+          setPair(si);
           setCur(screens.length);
         }}>
           <option value="">다른 기기로 복사</option>
           {WIRE_DEVICES.filter((d) => d !== device).map((d) => <option key={d} value={d}>{DEVICE_NAMES[d]}용으로 복사</option>)}
         </Select>
-        <span className="muted">{screen.items.length}개</span>
+        {screens.length > 1 && <Select aria-label="나란히 보기" value={pair === undefined ? '' : String(pair)} onChange={(e) => setPair(e.target.value === '' ? undefined : Number(e.target.value))}>
+          <option value="">한 장만 보기</option>
+          {screens.map((s, i) => (i === si ? null : <option key={i} value={String(i)}>나란히: {s.name} ({DEVICE_NAMES[deviceOf(s, p.deploy.mode)]})</option>))}
+        </Select>}
         <button onClick={() => fileRef.current?.click()} title="HTML 파일의 헤더·폼·버튼 등을 새 화면으로 가져옵니다">HTML 가져오기</button>
         <input ref={fileRef} type="file" accept=".html,.htm" hidden onChange={async (e) => {
           const f = e.target.files?.[0];
@@ -170,61 +232,37 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
         {screens.length > 1 && <button onClick={() => savePngs(screens.map((s) => ({ screen: s, name: `${n.name}-${s.name}` })), p.deploy.mode)}>모든 화면 PNG</button>}
       </div>
       <div className="wwrap" ref={wrap} tabIndex={0}
-        onKeyDown={(e) => { if (sel && !editing && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); remove(sel); } }}
+        onKeyDown={(e) => { if (picked && !editing && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); edit((x) => dropRemove(x, nodeId, { kind: 'remove', what: 'wire', screen: ps, id: picked.id })); setSel(undefined); } }}
         onPointerDown={() => setSel(undefined)}>
-        <div className="wframe" style={{ left: fit.left, top: fit.top, width: frame.w * k, height: frame.h * k, fontSize: 12 * k }}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            const d = readDrag(e);
-            if (d?.kind !== 'ui') return;
-            e.preventDefault();
-            e.stopPropagation();
-            const r = e.currentTarget.getBoundingClientRect();
-            const [w0, h0] = SIZE[d.ui];
-            const w = Math.min(w0, frame.w), h = Math.min(h0, frame.h);
-            const x = snap(Math.max(0, Math.min(frame.w - w, (e.clientX - r.left) / k - w / 2)));
-            const y = snap(Math.max(0, Math.min(frame.h - h, (e.clientY - r.top) / k - h / 2)));
-            edit((pp) => addWire(pp, nodeId, si, { kind: d.ui, label: WIRE_NAMES[d.ui], x, y, w, h }));
-          }}>
-          {!items.length && <p className="wempty muted">왼편에서 헤더·버튼 같은 상자를 끌어 여기에 놓으세요</p>}
-          {items.map((it) => (
-            <div key={it.id} className={`wi wi-${it.kind} ${sel === it.id ? 'sel' : ''} ${it.api ? 'has-api' : ''} ${it.color ? `c-${it.color}` : ''}`}
-              style={{ left: it.x * k, top: it.y * k, width: it.w * k, height: it.h * k, ...(it.color && !SHAPES.has(it.kind) && { background: COLORS[it.color].fill, borderColor: COLORS[it.color].stroke }) }}
-              onPointerDown={(e) => down(e, it, 'move')} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel}
-              onDoubleClick={() => setEditing(it.id)} title={`${WIRE_NAMES[it.kind]} · ${it.w}×${it.h}`}>
-              {editing === it.id
-                ? <input autoFocus defaultValue={it.label} aria-label="상자 글" onPointerDown={(e) => e.stopPropagation()}
-                  onBlur={(e) => { edit((x) => updateWire(x, nodeId, si, it.id, { label: e.target.value })); setEditing(undefined); }}
-                  onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditing(undefined); }} />
-                : !NO_LABEL.has(it.kind) && <span className="wl" style={it.color && it.color !== 'dark' ? { color: COLORS[it.color].stroke } : undefined}>{it.kind === 'avatar' ? it.label.slice(0, 1) : it.label}</span>}
-              {SHAPES.has(it.kind) && <ShapeSvg it={it} />}
-              {it.api && <span className={`wapi ${it.api.to ? '' : 'none'}`}>{it.api.method}{it.api.to ? ` → ${nameOf(it.api.to)}` : ' (받는 블록 없음)'}</span>}
-              {sel === it.id && <i className="wsize" aria-label="크기 바꾸기" onPointerDown={(e) => down(e, it, 'size')} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel} />}
-            </div>
-          ))}
-        </div>
+        {shown.map((s, j) => (
+          <FrameView key={s} nodeId={nodeId} s={s} screen={screens[s]} frame={frames[j]} k={fit.k} left={fit.lefts[j] ?? 0} top={fit.top}
+            caption={shown.length > 1 ? `${screens[s].name} · ${frames[j].name}` : undefined} active={shown.length > 1 && s === si}
+            sel={sel} setSel={setSel} editing={editing} setEditing={setEditing} nameOf={nameOf}
+            onActivate={() => { if (s !== si) { setPair(si); setCur(s); } }} />
+        ))}
       </div>
       <div className="winspect">
         {picked ? <>
           <b>{WIRE_NAMES[picked.kind]}</b>
-          <label>표시 글 <input value={picked.label} onChange={(e) => edit((x) => updateWire(x, nodeId, si, picked.id, { label: e.target.value }))} /></label>
+          {shown.length > 1 && <span className="muted">{screens[ps].name}</span>}
+          <label>표시 글 <input value={picked.label} onChange={(e) => edit((x) => updateWire(x, nodeId, ps, picked.id, { label: e.target.value }))} /></label>
           <span className="wcolors" role="group" aria-label="색">
-            <button className={!picked.color ? 'on' : ''} title="기본 색" onClick={() => edit((x) => updateWire(x, nodeId, si, picked.id, { color: undefined }))}>기본</button>
+            <button className={!picked.color ? 'on' : ''} title="기본 색" onClick={() => edit((x) => updateWire(x, nodeId, ps, picked.id, { color: undefined }))}>기본</button>
             {WIRE_COLORS.map((c) => <button key={c} className={picked.color === c ? 'on' : ''} title={COLORS[c].name} aria-label={COLORS[c].name} style={{ background: COLORS[c].fill, borderColor: COLORS[c].stroke }}
-              onClick={() => edit((x) => updateWire(x, nodeId, si, picked.id, { color: c }))} />)}
+              onClick={() => edit((x) => updateWire(x, nodeId, ps, picked.id, { color: c }))} />)}
           </span>
           {picked.api ? <>
-            <Select aria-label="메서드" value={picked.api.method} onChange={(e) => edit((x) => bindApi(x, nodeId, si, picked.id, { ...picked.api!, method: e.target.value as typeof METHODS[number] }))}>
+            <Select aria-label="메서드" value={picked.api.method} onChange={(e) => edit((x) => bindApi(x, nodeId, ps, picked.id, { ...picked.api!, method: e.target.value as typeof METHODS[number] }))}>
               {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
             </Select>
-            <input aria-label="경로" placeholder="/api/orders" value={picked.api.path} onChange={(e) => edit((x) => bindApi(x, nodeId, si, picked.id, { ...picked.api!, path: e.target.value }))} />
-            <Select aria-label="받는 블록" value={picked.api.to ?? ''} onChange={(e) => edit((x) => bindApi(x, nodeId, si, picked.id, { ...picked.api!, to: e.target.value || undefined }))}>
+            <input aria-label="경로" placeholder="/api/orders" value={picked.api.path} onChange={(e) => edit((x) => bindApi(x, nodeId, ps, picked.id, { ...picked.api!, path: e.target.value }))} />
+            <Select aria-label="받는 블록" value={picked.api.to ?? ''} onChange={(e) => edit((x) => bindApi(x, nodeId, ps, picked.id, { ...picked.api!, to: e.target.value || undefined }))}>
               <option value="">받는 블록 고르기</option>
               {targets.map((t) => <option key={t.id} value={t.id}>{t.name} ({LAYER_NAMES[t.layer]})</option>)}
             </Select>
-            <label title="접속 1회에 이 호출을 부르는 평균 횟수. 화면의 요청을 호출끼리 이 비율로 나눕니다">접속당 <input type="number" min={0} step={0.1} value={picked.api.per_session} onChange={(e) => edit((x) => bindApi(x, nodeId, si, picked.id, { ...picked.api!, per_session: Math.max(0, Number(e.target.value) || 0) }))} />회</label>
-            <button onClick={() => edit((x) => bindApi(x, nodeId, si, picked.id, undefined))}>API 빼기</button>
-          </> : <button onClick={() => edit((x) => bindApi(x, nodeId, si, picked.id, { method: picked.kind === 'form' || picked.kind === 'button' ? 'POST' : 'GET', path: '', per_session: 1 }))}>+ API 호출 붙이기</button>}
+            <label title="접속 1회에 이 호출을 부르는 평균 횟수. 화면의 요청을 호출끼리 이 비율로 나눕니다">접속당 <input type="number" min={0} step={0.1} value={picked.api.per_session} onChange={(e) => edit((x) => bindApi(x, nodeId, ps, picked.id, { ...picked.api!, per_session: Math.max(0, Number(e.target.value) || 0) }))} />회</label>
+            <button onClick={() => edit((x) => bindApi(x, nodeId, ps, picked.id, undefined))}>API 빼기</button>
+          </> : <button onClick={() => edit((x) => bindApi(x, nodeId, ps, picked.id, { method: picked.kind === 'form' || picked.kind === 'button' ? 'POST' : 'GET', path: '', per_session: 1 }))}>+ API 호출 붙이기</button>}
         </> : <>
           <b>API 호출</b>
           {loads.length ? loads.map((c) => (
@@ -234,7 +272,7 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
         {unrouted.length > 0 && <span className="warn">연결선이 지워져 계산에서 빠진 호출: {unrouted.map(({ s, i }) => `${s}·${i.label}`).join(', ')}</span>}
         {idle.length > 0 && <span className="warn">호출이 없어 이 화면에서 부하를 받지 않는 연결: {idle.join(', ')}</span>}
       </div>
-      <p className="inside-hint muted">끌어서 옮기고 오른쪽 아래 모서리로 크기를 바꿔요 · 두 번 누르면 글 고치기 · Delete나 왼편으로 끌어 내면 지워요 · 화면 이름은 두 번 눌러 고쳐요</p>
+      <p className="inside-hint muted">끌어서 옮기고 오른쪽 아래 모서리로 크기를 바꿔요 · 두 번 누르면 글 고치기 · Delete나 왼편으로 끌어 내면 지워요 · 나란히 볼 때 화면 이름을 누르면 그 화면이 기준이 돼요</p>
     </div>
   );
 }

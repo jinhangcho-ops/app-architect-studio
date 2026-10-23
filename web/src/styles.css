@@ -367,3 +367,12 @@ body[data-drag='remove'] .palette::before { content: '여기에 놓으면 빠져
 .wcolors button:first-child { width: auto; border-radius: 10px; padding: 0 8px; font-size: 11px; }
 .wcolors button.on { box-shadow: 0 0 0 2px var(--accent); }
 .wscreen small { font-size: 10px; }
+/* 나란히 보기: 화면 이름 단추와 기준 화면 */
+.wcap { position: absolute; height: 20px; padding: 0 8px; font-size: 11px; border-radius: 6px; background: var(--panel-2); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wcap.on { color: var(--ink); border-color: var(--accent); }
+.wframe.active { box-shadow: 0 0 0 2px var(--accent), 0 8px 30px #0008; }
+.wscreen.pair { border-style: dashed; color: var(--ink); }
+/* 와이어프레임 도구줄: 좁으면 줄을 바꾸고 글은 줄이지 않는다 */
+.wire > .inside-bar { flex-wrap: wrap; row-gap: 6px; }
+.wire > .inside-bar > * { flex-shrink: 0; white-space: nowrap; }
+.wire > .inside-bar .select { max-width: none; }
