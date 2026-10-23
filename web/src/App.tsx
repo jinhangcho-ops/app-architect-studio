@@ -5,7 +5,8 @@ import { Canvas } from './Canvas';
 import { catalog, examples } from './data';
 import { mergeCodeAnalysis } from './codeImport';
 import { addNode, findPlans, pasteNode, run } from './edit';
-import { clearAutosave, readAutosave, scheduleAutosave } from './autosave';
+import { readAutosaves, scheduleAutosave, snapshotLabel, startNewSnapshot, writeManualSave, type Snapshot } from './autosave';
+import { SaveHistory } from './SaveHistory';
 import { searchProject, type Hit } from './search';
 import type { OptimizeResult } from '../../engine/optimize';
 import { Report } from './Report';
@@ -31,7 +32,21 @@ export function App() {
   const [report, setReport] = useState<{ plans?: OptimizeResult }>();
   const [find, setFind] = useState<{ q: string; at: number }>();
   // 앱을 열 때 남아 있던 임시 저장. 복구할지 정하기 전에는 임시 저장을 덮어쓰지 않는다
-  const [recovery, setRecovery] = useState(() => readAutosave());
+  const [recovery, setRecovery] = useState<Snapshot | undefined>(() => readAutosaves()[0]);
+  const [history, setHistory] = useState(false);
+  const [notice, setNotice] = useState<string>();
+  const restore = (snap: Snapshot) => {
+    load(snap.project, snap.positions);
+    startNewSnapshot();
+    setRecovery(undefined);
+    setHistory(false);
+  };
+  // 직접 저장(Ctrl+S): 브라우저 저장소에 시점을 남긴다 (최대 20개)
+  const save = () => {
+    const ok = writeManualSave(project, positions);
+    setNotice(ok ? `저장했습니다 · ${new Date().toLocaleTimeString('ko-KR')}` : '브라우저 저장소를 쓸 수 없어 저장하지 못했습니다. "파일로 내보내기"(Ctrl+Shift+S)를 쓰세요');
+    setTimeout(() => setNotice(undefined), ok ? 2500 : 8000);
+  };
   useEffect(() => { if (!recovery) scheduleAutosave(project, positions); }, [project, positions, recovery]);
 
   const hits = find ? searchProject(project, catalog.byId, find.q) : [];
@@ -61,7 +76,8 @@ export function App() {
     setTab('selected');
   };
 
-  const save = () => {
+  /** JSON 파일로 내보내기 (Ctrl+Shift+S) */
+  const exportFile = () => {
     const blob = new Blob([JSON.stringify(exportProject(project, positions), null, 2)], { type: 'application/json' });
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `${project.name || 'project'}.json` });
     a.click();
@@ -81,7 +97,7 @@ export function App() {
       }
       if (!(e.ctrlKey || e.metaKey)) return;
       const k = e.code.startsWith('Key') ? e.code.slice(3).toLowerCase() : e.key.toLowerCase();
-      if (k === 's') { e.preventDefault(); save(); return; }
+      if (k === 's') { e.preventDefault(); if (e.shiftKey) exportFile(); else save(); return; }
       if (k === 'f') { e.preventDefault(); setFind({ q: find?.q ?? '', at: 0 }); return; }
       if (k === 'o') { e.preventDefault(); fileRef.current?.click(); return; }
       if (typing) return;
@@ -143,7 +159,9 @@ export function App() {
           }
           e.target.value = '';
         }} />
-        <button onClick={save}>저장</button>
+        <button onClick={save} title="저장 기록에 시점을 남깁니다 (Ctrl+S)">저장</button>
+        <button onClick={exportFile} title="JSON 파일로 내려받기 (Ctrl+Shift+S)">파일로 내보내기</button>
+        <button onClick={() => setHistory(!history)} title="직접 저장·자동 저장 시점 보기와 복구">저장 기록</button>
         {/* 최선 조합(7번째 절)은 설계서를 열 때 한 번 찾는다 */}
         <button className="primary" onClick={() => setReport({ plans: findPlans(project, today).result })}>설계서 PDF</button>
       </header>
@@ -157,11 +175,14 @@ export function App() {
         {result.error && <pre className="error-banner">{result.error}</pre>}
         {recovery && (
           <div className="recovery">
-            저장하지 않고 닫힌 작업이 있습니다: <b>{recovery.project.name}</b> ({new Date(recovery.savedAt).toLocaleString('ko-KR')})
-            <button className="primary" onClick={() => { load(recovery.project, recovery.positions); setRecovery(undefined); }}>복구</button>
-            <button onClick={() => { clearAutosave(); setRecovery(undefined); }}>버리기</button>
+            지난번 작업이 남아 있습니다: <b>{snapshotLabel(recovery)}</b>
+            <button className="primary" onClick={() => restore(recovery)}>복구</button>
+            <button onClick={() => setHistory(true)}>다른 시점…</button>
+            <button onClick={() => { startNewSnapshot(); setRecovery(undefined); }}>닫기</button>
           </div>
         )}
+        {history && <SaveHistory onRestore={restore} onClose={() => setHistory(false)} />}
+        {notice && <div className="notice" role="status">{notice}</div>}
         {find && (
           <div className="find" role="search">
             <input autoFocus value={find.q} placeholder="노드·항목·테이블·컬럼 찾기 (Enter 다음, Esc 닫기)" aria-label="찾기"

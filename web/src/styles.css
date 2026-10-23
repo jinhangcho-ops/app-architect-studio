@@ -166,3 +166,10 @@ textarea.spec { width: 100%; min-height: 90px; font-family: ui-monospace, monosp
 .find-results { max-height: 320px; overflow: auto; margin-top: 4px; }
 .find-results button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 4px 6px; border-radius: 4px; cursor: pointer; }
 .find-results button:hover, .find-results button.on { background: #eef3ff; }
+
+/* 저장 기록 · 저장 알림 */
+.history { position: absolute; top: 10px; left: 10px; z-index: 22; width: min(480px, 94%); max-height: 80%; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 2px 10px #0003; padding: 8px 10px; }
+.history-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.history h4 { margin: 10px 0 4px; font-size: 13px; }
+.history-row { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 3px 0; border-bottom: 1px dotted var(--line); }
+.notice { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 23; background: var(--ink); color: #fff; padding: 6px 12px; border-radius: 6px; }
