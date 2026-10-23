@@ -4,7 +4,7 @@ import { parseProject } from '../../engine/data';
 import type { NodeJudgement } from '../../engine/judge';
 import { LAYER_NAMES, type Layer, type Verdict } from '../../engine/model';
 import { optimize, type OptimizeResult } from '../../engine/optimize';
-import { EdgeSchema, NodeSchema, Table as TableSchema, type Project, type ProjectEdge, type ProjectNode } from '../../engine/schema';
+import { EdgeSchema, NodeSchema, Table as TableSchema, withPrimary, type Project, type ProjectEdge, type ProjectNode } from '../../engine/schema';
 import { catalog, engineData } from './data';
 
 export type RunResult = { analysis?: Analysis; error?: string };
@@ -28,13 +28,18 @@ export function findPlans(p: Project, today: string): { result?: OptimizeResult;
 }
 
 export const applyPlan = (p: Project, assignment: Record<string, string>): Project =>
-  ({ ...p, nodes: p.nodes.map((n) => (assignment[n.id] ? { ...n, primary: assignment[n.id] } : n)) });
+  ({ ...p, nodes: p.nodes.map((n) => (assignment[n.id] ? withPrimary(n, assignment[n.id]) : n)) });
 
+/** 주 항목이 바뀌면 이전 시스템의 저장 기능 선택을 지운다 (withPrimary) */
 export const updateNode = (p: Project, id: string, patch: Partial<ProjectNode>): Project =>
-  ({ ...p, nodes: p.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)) });
+  ({ ...p, nodes: p.nodes.map((n) => (n.id !== id ? n : { ...('primary' in patch ? withPrimary(n, patch.primary) : n), ...patch })) });
 
-export const removeNode = (p: Project, id: string): Project =>
-  ({ ...p, nodes: p.nodes.filter((n) => n.id !== id), edges: p.edges.filter((e) => e.from !== id && e.to !== id) });
+/** 노드를 지우면 연결선과, 그 노드의 테이블에 쓰는 행동 줄도 지운다 (쓸 곳이 없어진 행동과 그 빈도도) */
+export const removeNode = (p: Project, id: string): Project => {
+  const n = p.nodes.find((x) => x.id === id);
+  const cleared = (n?.tables ?? []).reduce((acc, t) => removeTable(acc, id, t.name), p);
+  return { ...cleared, nodes: cleared.nodes.filter((x) => x.id !== id), edges: cleared.edges.filter((e) => e.from !== id && e.to !== id) };
+};
 
 export function addNode(p: Project, layer: Layer): { project: Project; id: string } {
   let k = 1;

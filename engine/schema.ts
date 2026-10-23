@@ -494,3 +494,7 @@ export function selectedFeatures(sp: StorageProfile, node: { storage_features?: 
   const ids = table?.storage_features ?? node.storage_features;
   return ids ? sp.features.filter((f) => ids.includes(f.id)) : sp.features.filter((f) => f.recommended);
 }
+
+/** 주 항목 바꾸기. 저장 기능 선택은 이전 시스템 것이라 지워서 새 시스템의 권장 기능으로 돌아가게 한다 */
+export const withPrimary = (n: ProjectNode, primary: string | undefined): ProjectNode =>
+  n.primary === primary ? n : { ...n, primary, storage_features: undefined, tables: n.tables.map((t) => ({ ...t, storage_features: undefined })) };

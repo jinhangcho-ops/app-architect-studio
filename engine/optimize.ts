@@ -2,7 +2,7 @@
 // 노드 10개 × 후보 10개면 전수 조사가 100억 가지라, 노드별 상위 후보만 남기고 빔 탐색으로 상위 K개 조합만 이어 간다.
 import { analyze, type Analysis, type Data } from './analyze';
 import { judgeItem } from './judge';
-import type { CatalogItem, Project } from './schema';
+import { withPrimary, type CatalogItem, type Project } from './schema';
 import { traffic } from './traffic';
 
 const GRADE: Record<string, number> = { 좋음: 2, 보통: 1, 나쁨: 0 };
@@ -64,7 +64,7 @@ function violationsOf(p: Project, m: PlanMetrics, a: Analysis): string[] {
 }
 
 const withAssignment = (p: Project, as: Record<string, string>): Project =>
-  ({ ...p, nodes: p.nodes.map((n) => (as[n.id] ? { ...n, primary: as[n.id] } : n)) });
+  ({ ...p, nodes: p.nodes.map((n) => (as[n.id] ? withPrimary(n, as[n.id]) : n)) });
 
 export function optimize(p: Project, d: Data, today: string, opts: { beam?: number; perNode?: number } = {}): OptimizeResult {
   const beam = opts.beam ?? 30;

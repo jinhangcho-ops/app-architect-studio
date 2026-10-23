@@ -106,3 +106,23 @@ describe('테이블·행동 편집', () => {
     valid(removeAction(p1, '행동 1'));
   });
 });
+
+describe('노드 삭제·주 항목 변경이 다른 입력을 깨뜨리지 않음', () => {
+  const ax = examples.find((e) => e.name === 'actions.json')!;
+  const p0 = parseProject(ax.data, catalog.items, ax.name);
+
+  it('테이블이 있는 노드를 지우면 그 노드에 쓰는 행동과 빈도도 지워져 분석이 계속됨', () => {
+    const p = removeNode(p0, 'db');
+    expect(p.actions).toEqual([]);
+    expect(p.personas.every((ps) => Object.keys(ps.action_rates).length === 0)).toBe(true);
+    expect(run(p, today).error).toBeUndefined();
+  });
+
+  it('주 항목을 바꾸면 이전 시스템의 저장 기능 선택이 지워짐 (같은 항목이면 유지)', () => {
+    const picked = updateNode(p0, 'db', { storage_features: ['toast_pglz', 'fill_90'] });
+    expect(updateNode(picked, 'db', { primary: 'postgresql' }).nodes.find((n) => n.id === 'db')!.storage_features).toEqual(['toast_pglz', 'fill_90']);
+    const moved = updateNode(picked, 'db', { primary: 'mysql' });
+    expect(moved.nodes.find((n) => n.id === 'db')!.storage_features).toBeUndefined();
+    expect(run(moved, today).error).toBeUndefined();
+  });
+});
