@@ -128,6 +128,18 @@ describe('table 범위 규칙·저장 비용·성장', () => {
     expect(c.parts['저장'].value).toBeCloseTo(tableSizes(p, undefined, catalog.byId).find((x) => x.nodeId === 'db')!.storedGb.value * 0.1);
   });
 
+  it('프로필이 없어도 행·인덱스 크기를 둘 다 실측했으면 저장 비용에 넣음', () => {
+    const measured = { ...orders, measured: { rows_per_day: 1000, row_bytes: 120, index_bytes: 40 } };
+    const p = Project.parse({
+      name: 'p', scale: { users: 1000 }, personas: [{ name: '일반', pattern: 'regular', share: 1 }],
+      cost: { region: 'aws:ap-northeast-2', storage: 'storage' },
+      nodes: [{ id: 'ui', name: '화면', layer: 'ui' }, { id: 'cr', name: '분산 DB', layer: 'db', primary: 'cockroachdb', tables: [measured] }],
+    });
+    const c = analyze(p, data, '2026-10-24').cost!;
+    expect(c.missing).toEqual([]);
+    expect(c.parts['저장'].value).toBeCloseTo(((1000 * 365 * 160) / 1e9) * 0.1);
+  });
+
   it('성장: 크기는 사용자 수에 비례 → 메모리에 닿는 달 (8GB, 지금 4GB, 월 10% → 8개월째)', () => {
     const t = { ...orders, measured: { rows_per_day: 4e9 / 365 / (78 + (2 * 28) / 0.9) } };
     const p = Project.parse({

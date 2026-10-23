@@ -31,8 +31,8 @@ const TYPE_RULES: [RegExp, Column['type']][] = [
   [/^(timestamp|timestamptz|datetime|datetime2)\b/, 'timestamp'],
   [/^date\b/, 'date'],
   [/^(json|jsonb)\b/, 'json'],
-  [/^(blob|bytea|binary|varbinary|bytes)\b/, 'bytes'],
-  [/^(varchar|char|text|string|nvarchar|nchar|character varying|character)\b/, 'text'],
+  [/^(blob|bytea|binary|varbinary|bytes|raw|long raw)\b/, 'bytes'],
+  [/^(varchar|varchar2|nvarchar2|char|text|string|nvarchar|nchar|clob|nclob|character varying|character)\b/, 'text'],
 ];
 function parseType(raw: string): { type: Column['type']; length?: number } | undefined {
   const s = norm(raw);

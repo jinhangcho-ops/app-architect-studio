@@ -123,7 +123,9 @@ export function tableSize(
   const peak = (sim?.peakRowsPerSec.value ?? 0) * factor;
   return {
     key, nodeId, table: t.name, newRowsPerDay: m(newRows, '행/일', '하루 쓰기 행 × (1 − 갱신 비율)', { 쓰기행: written, 갱신비율: t.update_ratio }),
-    rowBytes, indexBytesPerRow, storedGb, partitions, peakRowsPerSec: peak, assumptions: [...new Set(assumptions)], profiled: !!sp,
+    rowBytes, indexBytesPerRow, storedGb, partitions, peakRowsPerSec: peak, assumptions: [...new Set(assumptions)],
+    // 행·인덱스 크기를 둘 다 실측했으면 프로필이 없어도 크기를 안다
+    profiled: !!sp || (t.measured.row_bytes !== undefined && t.measured.index_bytes !== undefined),
     vars: {
       system: node.primary ?? '',
       layout: sp?.layout ?? 'unknown',

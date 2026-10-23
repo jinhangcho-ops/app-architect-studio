@@ -33,6 +33,13 @@ describe('과금 방식별 계량', () => {
     expect(c.total!.value).toBeCloseTo(150 * 0.2 + 7.5e6 * 0.0000167);
   });
 
+  it('트래픽이 없으면 요청 과금은 0원이 아니라 "사용량 모름"', () => {
+    const p = project([{ id: 'kv', name: 'KV', layer: 'db', primary: 'dynamodb' }]);
+    const { lines, missing } = costLines(p, undefined, undefined, catalog.byId, () => [1], 1);
+    expect(lines).toEqual([]);
+    expect(missing).toEqual(['KV: 트래픽(규모·페르소나)이 없어 사용량을 모름']);
+  });
+
   it('서버리스에 메모리 사양이 없으면 빠진 값으로 알림', () => {
     const p = project([{ id: 'fn', name: '함수', layer: 'backend', primary: 'serverless_functions', perf: { service_ms: 100, workers: 1 } }]);
     expect(run(p, { fn: 100 }).missing).toEqual(['함수: 메모리(GB) 사양 없음']);

@@ -48,9 +48,11 @@ export function costLines(
     if (billing.model === 'plan' && pr.month) lines.push({ key: n.id, product: pr.month, region, quantities: { month: 1 }, how: { month: '월 정액 1개' } });
     if (billing.model !== 'usage') continue;
 
+    // 트래픽(규모·페르소나)이 없으면 요청 수를 몰라 0원으로 보이므로 '모름'으로 둔다. 월 스캔량은 입력값이라 따로 계산한다
+    if (!t && (pr.million_requests || pr.vcpu_second || pr.gb_second)) missing.push(`${n.name}: 트래픽(규모·페르소나)이 없어 사용량을 모름`);
     const req = requestsPerMonth(n);
-    if (pr.million_requests) lines.push({ key: n.id, product: pr.million_requests, region, quantities: { million_requests: req / 1e6 }, how: { million_requests: '월 요청 ÷ 100만' } });
-    if (pr.vcpu_second || pr.gb_second) {
+    if (pr.million_requests && t) lines.push({ key: n.id, product: pr.million_requests, region, quantities: { million_requests: req / 1e6 }, how: { million_requests: '월 요청 ÷ 100만' } });
+    if (t && (pr.vcpu_second || pr.gb_second)) {
       if (!n.perf) missing.push(`${n.name}: 처리 시간(평균 처리 ms) 없음`);
       else {
         const seconds = (req * n.perf.service_ms) / 1000;

@@ -55,6 +55,12 @@ describe('데이터 명세서 → 테이블', () => {
     ]);
   });
 
+  it('Oracle 타입: VARCHAR2(100)·CLOB·NUMBER(10,2)·RAW(16)', () => {
+    const r = parseSpec('테이블\t컬럼\t타입\nt\ta\tVARCHAR2(100)\nt\tb\tCLOB\nt\tc\tNUMBER(10,2)\nt\td\tRAW(16)');
+    expect(r.errors).toEqual([]);
+    expect(r.tables[0].columns.map((x) => [x.type, x.max_length])).toEqual([['text', 100], ['text', undefined], ['numeric', undefined], ['bytes', 16]]);
+  });
+
   it('머리글이 없거나 키가 없는 컬럼을 가리키면 오류', () => {
     expect(parseSpec('a\tb\n1\t2').errors[0]).toMatch(/머리글이 필요함: 테이블, 컬럼, 타입/);
     const j = parseSpec(JSON.stringify([{ name: 't', columns: [{ name: 'a', type: 'int' }], primary_key: ['zz'] }]));
