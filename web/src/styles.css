@@ -145,3 +145,16 @@ textarea.spec { width: 100%; min-height: 90px; font-family: ui-monospace, monosp
 .tblock-key { width: 18px; text-align: center; }
 .tblock .num { text-align: right; }
 .ablock { background: #f3f7ff; border: 1px solid var(--accent); border-radius: 18px; padding: 6px 14px; font-size: 12px; min-width: 120px; }
+
+/* 블록 안 다이어그램 (백엔드·게이트웨이·워커 부품) */
+.pblock { background: #fff; border: 2px solid var(--line); border-radius: 8px; padding: 6px 10px; width: 280px; font-size: 12px; }
+.pblock.main { border-width: 3px; }
+.pblock.v-ok { border-color: var(--ok); } .pblock.v-conditional { border-color: var(--cond); } .pblock.v-fail { border-color: var(--fail); } .pblock.v-unknown { border-color: var(--unknown); }
+.pblock-head { display: flex; gap: 6px; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+.pblock-head .tag { margin-left: 0; }
+.pblock-sum { margin: 2px 0; font-size: 11px; }
+.pblock-why { font-size: 11px; color: var(--ink); border-top: 1px dotted var(--line); padding-top: 2px; }
+.altblock { background: #fafbfc; border: 1px dashed var(--line); border-radius: 8px; padding: 5px 8px; width: 240px; font-size: 11px; }
+.altblock.v-ok { border-color: var(--ok); } .altblock.v-conditional { border-color: var(--cond); } .altblock.v-unknown { border-color: var(--unknown); }
+.altblock button { margin-top: 3px; }
+.peerblock { background: #f1f3f6; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; font-size: 11px; min-width: 130px; }

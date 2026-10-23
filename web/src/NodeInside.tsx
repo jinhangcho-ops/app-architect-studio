@@ -12,6 +12,7 @@ import { fmt, fmtMetric, howMetric } from './format';
 import { TableLab } from './ResultsPanel';
 import { useStore } from './store';
 import { TableEditor } from './TablesPanel';
+import { InsideBar, PART_LAYERS, PartsInside, READABLE } from './PartsInside';
 
 type Table = ProjectNode['tables'][number];
 type TableData = { t: Table; size?: TableAnalysis };
@@ -57,8 +58,8 @@ function ActionBlock({ data }: NodeProps<Node<ActionData>>) {
 
 const nodeTypes = { table: TableBlock, action: ActionBlock };
 
-/** 안쪽 다이어그램이 있는 블록 (지금은 테이블을 두는 DB·캐시·분석 노드) */
-export const canEnter = (layer?: string) => !!layer && (TABLE_LAYERS as readonly string[]).includes(layer);
+/** 안쪽 다이어그램이 있는 블록: 테이블을 두는 DB·캐시·분석, 부품을 두는 백엔드·게이트웨이·워커 */
+export const canEnter = (layer?: string) => !!layer && ([...TABLE_LAYERS, ...PART_LAYERS] as readonly string[]).includes(layer);
 
 export function NodeInside({ nodeId, analysis, onSelect }: { nodeId: string; analysis?: Analysis; onSelect: () => void }) {
   const { project: p, edit, select, selected, setFocus } = useStore();
@@ -66,6 +67,7 @@ export function NodeInside({ nodeId, analysis, onSelect }: { nodeId: string; ana
   const [moved, setMoved] = useState<Record<string, { x: number; y: number }>>({});
   const n = p.nodes.find((x) => x.id === nodeId);
   if (!n) return <p className="muted inside-empty">블록이 없습니다. <button onClick={() => setFocus(undefined)}>← 전체</button></p>;
+  if ((PART_LAYERS as readonly string[]).includes(n.layer)) return <PartsInside nodeId={nodeId} analysis={analysis} canEnter={canEnter} />;
 
   const actions = p.actions.filter((a) => a.writes.some((w) => w.node === nodeId));
   const others = p.actions.filter((a) => !actions.includes(a));
@@ -89,19 +91,17 @@ export function NodeInside({ nodeId, analysis, onSelect }: { nodeId: string; ana
 
   return (
     <div className="inside">
-      <div className="inside-bar">
-        <button onClick={() => setFocus(undefined)}>← 전체</button>
-        <span className="muted">전체 › {LAYER_NAMES[n.layer]} ›</span> <b>{n.name}</b>
-        <span className="spacer" />
+      <InsideBar title={n.name} layer={LAYER_NAMES[n.layer]}>
         <button onClick={() => edit((x) => addTable(x, nodeId))}>테이블 추가</button>
         <button onClick={() => edit(addAction)} disabled={!n.tables.length && !p.nodes.some((x) => x.tables.length)}>행동 추가</button>
-      </div>
+      </InsideBar>
       {!n.tables.length && <p className="muted inside-empty">테이블이 없습니다. "테이블 추가"를 누르거나, 오른쪽 노드 패널에서 명세서를 붙여 넣으세요.</p>}
       <ReactFlow
         nodes={[...actionNodes, ...tableNodes]}
         edges={edges}
         nodeTypes={nodeTypes}
         fitView
+        fitViewOptions={READABLE}
         onNodesChange={(changes) => {
           for (const c of changes) if (c.type === 'position' && c.position) setMoved((m) => ({ ...m, [c.id]: c.position! }));
         }}
