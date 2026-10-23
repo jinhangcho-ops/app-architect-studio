@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseProject } from '../../engine/data';
 import { LAYERS, LAYER_NAMES, type Layer } from '../../engine/model';
 import { Canvas } from './Canvas';
@@ -19,7 +19,7 @@ import { exportProject, useStore } from './store';
 const today = new Date().toLocaleDateString('sv-SE');
 
 export function App() {
-  const { project, positions, selected, load, edit, relayout, select, focus } = useStore();
+  const { project, positions, selected, load, edit, relayout, select, focus, setFocus, undo, redo, past, future } = useStore();
   // 위치를 끌어도 다시 계산하지 않도록 프로젝트가 바뀔 때만 분석한다
   const result = useMemo(() => run(project, today), [project]);
   const [tab, setTab] = useState<'selected' | 'results' | 'optimize'>('results');
@@ -46,6 +46,27 @@ export function App() {
     URL.revokeObjectURL(a.href);
   };
 
+  // 윈도우 단축키. 글자 칸에서 치는 중이면 Ctrl+Z·Y는 브라우저의 글자 되돌리기에 맡긴다.
+  // e.code(자판 위치)를 써서 한글 입력 상태에서도 같은 키로 동작한다
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLElement && !!e.target.closest('input, textarea, select, [contenteditable="true"]');
+      if (e.key === 'Escape') {
+        if (report) setReport(undefined);
+        else if (!typing) (focus ? setFocus(undefined) : select(null));
+        return;
+      }
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.code === 'KeyS') { e.preventDefault(); save(); return; }
+      if (e.code === 'KeyO') { e.preventDefault(); fileRef.current?.click(); return; }
+      if (typing) return;
+      if (e.code === 'KeyZ' && !e.shiftKey) { e.preventDefault(); undo(); }
+      else if (e.code === 'KeyY' || (e.code === 'KeyZ' && e.shiftKey)) { e.preventDefault(); redo(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   const open = async (file: File) => {
     try {
       const data = JSON.parse(await file.text());
@@ -65,6 +86,8 @@ export function App() {
           <option value="">+ 노드 추가</option>
           {LAYERS.map((l) => <option key={l} value={l}>{LAYER_NAMES[l]}</option>)}
         </select>
+        <button onClick={undo} disabled={!past.length} title="되돌리기 (Ctrl+Z)" aria-label="되돌리기">↶</button>
+        <button onClick={redo} disabled={!future.length} title="다시 하기 (Ctrl+Y, Ctrl+Shift+Z)" aria-label="다시 하기">↷</button>
         <button onClick={relayout} disabled={view === '3d'}>자동 배치</button>
         <button onClick={() => setView(view === '2d' ? '3d' : '2d')}>{view === '2d' ? '3D 보기' : '2D 보기'}</button>
         <span className="spacer" />
