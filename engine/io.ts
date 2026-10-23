@@ -2,7 +2,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { CatalogItem, Project, Rule, checkCatalog, checkProject } from './schema';
+import { CatalogItem, PriceRow, Project, Rule, checkCatalog, checkProject } from './schema';
 
 const readJson = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8'));
 
@@ -27,6 +27,15 @@ export function loadCatalog(dir: string) {
   const errors = checkCatalog(items);
   if (errors.length) throw new Error(`카탈로그 오류\n${errors.map((e) => `  - ${e}`).join('\n')}`);
   return { items, rules, byId: new Map(items.map((i) => [i.id, i])) };
+}
+
+/** data/prices의 *.json은 모두 가격 행 배열이다. id가 겹치면 어느 값을 쓸지 모호하므로 거부한다. */
+export function loadPrices(dir: string): PriceRow[] {
+  const rows = readdirSync(dir).filter((x) => x.endsWith('.json')).sort()
+    .flatMap((f) => parseOrThrow(z.array(PriceRow), readJson(join(dir, f)), f));
+  const dup = rows.map((r) => r.id).filter((id, i, all) => all.indexOf(id) !== i);
+  if (dup.length) throw new Error(`가격표에 중복된 id: ${[...new Set(dup)].join(', ')}`);
+  return rows;
 }
 
 export function loadProject(path: string, items: CatalogItem[]): Project {

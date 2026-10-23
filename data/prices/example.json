@@ -1,0 +1,7 @@
+[
+  { "id": "aws-seoul-api-2vcpu", "region": "aws:ap-northeast-2", "unit": "hour", "price": 0.1, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-seoul-db-2vcpu", "region": "aws:ap-northeast-2", "unit": "hour", "price": 0.2, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-seoul-storage", "region": "aws:ap-northeast-2", "unit": "gb_month", "price": 0.1, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-seoul-egress", "region": "aws:ap-northeast-2", "unit": "gb", "price": 0.1, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "supabase-tokyo-pro", "region": "supabase:ap-northeast-1", "unit": "month", "price": 25, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" }
+]

@@ -1,0 +1,58 @@
+{
+  "name": "3단계 예시 — 2단계 규모 + 오토스케일링·PostgreSQL 이중화·처리 시간·가격(예시)·월 10% 성장",
+  "deploy": { "mode": "web" },
+  "scale": {
+    "users": 100000,
+    "seed": 1,
+    "report_country": "KR",
+    "window_share": 0.8,
+    "retention_days": 365,
+    "event_multiplier": 3,
+    "overhead_k": 2,
+    "burst": { "share": 0.1, "window_s": 300, "requests": 10 }
+  },
+  "personas": [
+    { "name": "핵심 열성", "pattern": "power", "share": 0.05 },
+    { "name": "열성", "pattern": "enthusiast", "share": 0.1 },
+    { "name": "적극", "pattern": "active", "share": 0.2 },
+    { "name": "일반", "pattern": "regular", "share": 0.3 },
+    { "name": "가끔", "pattern": "occasional", "share": 0.2 },
+    { "name": "드물게", "pattern": "rare", "share": 0.1 },
+    { "name": "휴면 직전", "pattern": "dormant", "share": 0.05 }
+  ],
+  "target_utilization": 0.7,
+  "default_availability": 0.999,
+  "cost": { "storage": "aws-seoul-storage", "egress": "aws-seoul-egress" },
+  "growth": { "monthly_rate": 0.1, "months": 24, "lead_months": 3 },
+  "nodes": [
+    { "id": "web", "name": "웹 화면", "layer": "ui" },
+    {
+      "id": "lb", "name": "게이트웨이", "layer": "gateway", "primary": "least_connections", "extras": ["token_bucket"],
+      "replicas": 2,
+      "vars": { "normal": { "service_time_cv": 1.8 }, "event": { "service_time_cv": 1.8 } }
+    },
+    {
+      "id": "api", "name": "주문 API", "layer": "backend", "primary": "api_autoscale",
+      "perf": { "service_ms": 20, "workers": 8 },
+      "price": "aws-seoul-api-2vcpu"
+    },
+    {
+      "id": "db", "name": "주문 DB", "layer": "db", "primary": "postgresql", "replicas": 2,
+      "price": "aws-seoul-db-2vcpu",
+      "vars": { "normal": { "db_connections": 60 }, "event": { "db_connections": 60 } }
+    },
+    {
+      "id": "worker", "name": "정산 워커", "layer": "batch", "primary": "on_demand_worker", "min_instances": 0,
+      "vars": {
+        "normal": { "cold_start_s": 20, "max_start_delay_s": 300 },
+        "event": { "cold_start_s": 20, "max_start_delay_s": 300 }
+      }
+    }
+  ],
+  "edges": [
+    { "from": "web", "to": "lb" },
+    { "from": "lb", "to": "api", "rtt_ms": 1 },
+    { "from": "api", "to": "db", "rtt_ms": 1 },
+    { "from": "worker", "to": "db", "carries": "write", "sync": false }
+  ]
+}

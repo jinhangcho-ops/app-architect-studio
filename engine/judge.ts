@@ -68,11 +68,13 @@ export function judgeItem(item: CatalogItem, node: ProjectNode, s: Scenario): Om
 const RANK: Record<Verdict, number> = { ok: 0, conditional: 1, unknown: 2, fail: 3 };
 
 /** computed = 엔진이 계산한 변수. 노드에 직접 넣은 vars가 있으면 그 값이 우선한다(실측·수동 보정). */
+export const mergeScenario = (node: ProjectNode, computed?: Scenario): Scenario => ({
+  normal: { ...computed?.normal, ...node.vars.normal },
+  event: { ...computed?.event, ...node.vars.event },
+});
+
 export function judgeNode(node: ProjectNode, catalog: Map<string, CatalogItem>, computed?: Scenario): NodeJudgement {
-  const s: Scenario = {
-    normal: { ...computed?.normal, ...node.vars.normal },
-    event: { ...computed?.event, ...node.vars.event },
-  };
+  const s = mergeScenario(node, computed);
   const ids = [node.primary, ...node.extras].filter((x): x is string => !!x);
   const items = ids.map((id) => {
     const item = catalog.get(id);

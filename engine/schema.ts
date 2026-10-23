@@ -44,6 +44,8 @@ export const CatalogItem = z.object({
   role: z.enum(['주', '보조']),
   kind: z.enum(['알고리즘', '도구', '패턴']),
   attaches_to: z.array(Layer).min(1),
+  /** 노드 카드 '동작 방식'에 쓰는 한 줄 설명 */
+  summary: z.string().optional(),
   provides: z.array(z.string()).optional(),
   goals: z.record(z.string(), Grade),
   works_when: z.array(Cond).default([]),
@@ -129,6 +131,8 @@ export const Project = z.object({
     id: z.string(),
     name: z.string(),
     layer: Layer,
+    /** 노드 카드 '설명'에 쓰는 사람이 쓴 설명 */
+    description: z.string().optional(),
     primary: z.string().optional(),
     extras: z.array(z.string()).default([]),
     spec: Spec.optional(),
@@ -136,8 +140,17 @@ export const Project = z.object({
     entry_share: z.number().min(0).max(1).optional(),
     /** 기준값 이름 → 실측값. 있으면 업계 기준값·사양 보정보다 우선한다 */
     measured: z.record(z.string(), z.number()).default({}),
-    // shortcut: 1단계에서는 판정 변수를 사람이 직접 넣는다. 3단계 analyze가 계산값으로 대체한다
+    /** 엔진이 계산하지 않는 판정 변수(처리 시간 편차 등)나 계산값을 덮어쓸 실측값 */
     vars: z.object({ normal: Vars, event: Vars }).default({ normal: {}, event: {} }),
+    /** 12절 지연시간: 요청 1건 평균 처리 시간, 대당 동시 처리 수, (있으면) 실측 처리 p99 */
+    perf: z.object({ service_ms: z.number().positive(), workers: z.number().int().positive(), service_p99_ms: z.number().positive().optional() }).optional(),
+    /** 13절 이중화 대수(하나만 살아 있어도 동작). 1이면 단일 장애점 */
+    replicas: z.number().int().positive().default(1),
+    /** 13절 1대의 가용성. 없으면 project.default_availability */
+    availability: z.number().min(0).max(1).optional(),
+    /** 9절 가격표의 인스턴스 상품 id (시간당 과금 또는 월 정액) */
+    price: z.string().optional(),
+    min_instances: z.number().int().nonnegative().default(1),
   })),
   edges: z.array(z.object({
     from: z.string(),
@@ -146,7 +159,36 @@ export const Project = z.object({
     callRatio: z.number().nonnegative().default(1),
     /** 이 연결로 흐르는 요청 종류. read면 쓰기는 넘어가지 않는다 */
     carries: z.enum(['all', 'read', 'write']).default('all'),
+    /** 12절 이 구간의 왕복 지연(ms) */
+    rtt_ms: z.number().nonnegative().default(0),
   })).default([]),
+  /** 9절 목표 사용률: 필요 대수 = ceil(부하 / (대당 처리량 × 이 값)) */
+  target_utilization: z.number().gt(0).max(1).default(0.7),
+  // 예시값: 실제 가용성은 각 클라우드의 SLA 문서로 노드마다 넣는다
+  default_availability: z.number().min(0).max(1).default(0.999),
+  /** 9절 프로젝트 단위 과금 상품 id */
+  cost: z.object({ storage: z.string().optional(), egress: z.string().optional() }).default({}),
+  /** 14절 월 성장률, 보는 기간, 교체 준비 기간 */
+  growth: z.object({ monthly_rate: z.number().gt(-1), months: z.number().int().positive().default(24), lead_months: z.number().int().nonnegative().default(3) }).optional(),
+});
+
+// 9절 가격표: 한국·일본 리전만 받는다
+export const REGIONS = [
+  'aws:ap-northeast-1', 'aws:ap-northeast-2', 'aws:ap-northeast-3',
+  'gcp:asia-northeast1', 'gcp:asia-northeast2', 'gcp:asia-northeast3',
+  'azure:koreacentral', 'azure:koreasouth', 'azure:japaneast', 'azure:japanwest',
+  'supabase:ap-northeast-1', 'supabase:ap-northeast-2',
+] as const;
+
+export const PriceRow = z.object({
+  id: z.string(),
+  region: z.enum(REGIONS),
+  /** hour = 대당 시간, month = 대당 월 정액, gb_month = 저장 GB·월, gb = 송신 GB */
+  unit: z.enum(['hour', 'month', 'gb_month', 'gb']),
+  price: z.number().nonnegative(),
+  currency: z.string().length(3),
+  as_of: z.iso.date(),
+  source: z.string().min(1),
 });
 
 export type Spec = z.infer<typeof Spec>;
@@ -156,6 +198,7 @@ export type Rule = z.infer<typeof Rule>;
 export type Project = z.infer<typeof Project>;
 export type ProjectNode = Project['nodes'][number];
 export type Deploy = z.infer<typeof Deploy>;
+export type PriceRow = z.infer<typeof PriceRow>;
 export type Persona = z.infer<typeof Persona>;
 
 /** 카탈로그 전체를 검증하고, 대안·프로젝트가 가리키는 id가 실제로 있는지까지 확인한다. */
