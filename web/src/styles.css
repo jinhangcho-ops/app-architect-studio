@@ -355,3 +355,15 @@ body[data-drag='remove'] .palette::before { content: '여기에 놓으면 빠져
 .r-fig { margin: 6px 0 10px; break-inside: avoid; }
 .r-wire { width: 100%; height: auto; border: 1px solid #cfd5dc; }
 .r-fig figcaption { font-size: 9pt; color: #6b7380; }
+
+/* 도형: SVG로 그리고 상자 테두리는 고를 때만 */
+.wshape { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.wi .wl { position: relative; z-index: 1; }
+.wi-ellipse, .wi-line, .wi-arrow, .wi-icon, .wi-avatar, .wi-checkbox, .wi-radio, .wi-toggle { border-color: transparent; background: none; }
+.wi-checkbox, .wi-radio { justify-content: flex-start; padding-left: 2em; }
+.wi-toggle { justify-content: flex-start; padding-left: 3.4em; }
+.wcolors { display: inline-flex; gap: 4px; align-items: center; }
+.wcolors button { width: 20px; height: 20px; padding: 0; border-radius: 50%; border: 2px solid var(--line-2); }
+.wcolors button:first-child { width: auto; border-radius: 10px; padding: 0 8px; font-size: 11px; }
+.wcolors button.on { box-shadow: 0 0 0 2px var(--accent); }
+.wscreen small { font-size: 10px; }

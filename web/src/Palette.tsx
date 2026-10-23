@@ -31,10 +31,12 @@ export const overPalette = (e: { clientX: number; clientY: number } | TouchEvent
 export const WIRE_NAMES: Record<WireItem['kind'], string> = {
   header: '상단 헤더', nav: '네비게이션', sidebar: '사이드바', main: '본문 영역', form: '입력 폼', table: '표', list: '목록', card: '카드',
   modal: '모달', footer: '하단 푸터', text: '글', image: '이미지', button: '버튼', input: '입력칸', select: '선택창', tabs: '탭',
+  rect: '사각형', ellipse: '원', line: '선', arrow: '화살표', icon: '아이콘', avatar: '프로필 사진', checkbox: '체크박스', radio: '라디오', toggle: '토글',
 };
 const WIRE_GROUPS: [string, WireItem['kind'][]][] = [
   ['영역', ['header', 'nav', 'sidebar', 'main', 'form', 'table', 'list', 'card', 'modal', 'footer']],
-  ['컨트롤', ['text', 'image', 'button', 'input', 'select', 'tabs']],
+  ['컨트롤', ['text', 'image', 'button', 'input', 'select', 'tabs', 'checkbox', 'radio', 'toggle']],
+  ['도형', ['rect', 'ellipse', 'line', 'arrow', 'icon', 'avatar']],
 ];
 
 function Chip({ drag, children, verdict, note, on }: { drag?: Drag; children: ReactNode; verdict?: Verdict; note?: string; on?: string }) {

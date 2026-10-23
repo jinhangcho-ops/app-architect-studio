@@ -239,11 +239,20 @@ const screensOf = (n: ProjectNode): Screen[] => n.wireframe?.screens ?? [{ name:
 export const mapScreens = (p: Project, nodeId: string, fn: (ss: Screen[]) => Screen[]): Project =>
   updateNode(p, nodeId, { wireframe: { screens: fn(screensOf(p.nodes.find((x) => x.id === nodeId)!)) } });
 
-export function addScreen(p: Project, nodeId: string): Project {
+/** 이름이 겹치면 뒤에 번호를 붙인다 (호출 목록·설계서 표가 화면 이름으로 줄을 가른다) */
+export const uniqueName = (names: string[], base: string) => {
+  let name = base;
+  for (let k = 2; names.includes(name); k++) name = `${base} ${k}`;
+  return name;
+};
+
+/** 화면 한 장 더하기 (screen이 없으면 빈 화면, device는 그 화면의 기기) */
+export function addScreen(p: Project, nodeId: string, device?: Screen['device'], screen?: Screen): Project {
   return mapScreens(p, nodeId, (ss) => {
     let k = ss.length + 1;
     while (ss.some((s) => s.name === `화면 ${k}`)) k++;
-    return [...ss, { name: `화면 ${k}`, items: [] }];
+    const add = screen ?? { name: `화면 ${k}`, items: [] };
+    return [...ss, { ...add, name: uniqueName(ss.map((s) => s.name), add.name), ...(device && { device }) }];
   });
 }
 

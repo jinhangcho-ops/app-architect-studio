@@ -5,9 +5,9 @@ import { describe, expect, it } from 'vitest';
 import { parseProject } from '../../engine/data';
 import { checkProject } from '../../engine/schema';
 import { catalog, examples } from './data';
-import { addEdge, addWire, bindApi, removeEdge, removeNode, run } from './edit';
+import { addEdge, addScreen, addWire, bindApi, removeEdge, removeNode, run } from './edit';
 import { htmlToScreen } from './htmlImport';
-import { drawOrder, drawScreen, frameOf, type Ctx } from './wireDraw';
+import { DEVICES, drawOrder, drawScreen, toDevice, type Ctx } from './wireDraw';
 
 const today = '2026-10-24';
 const ex = examples.find((e) => e.name === 'global-commerce.json')!;
@@ -65,7 +65,7 @@ describe('와이어프레임 API 호출 → 연결선·부하', () => {
 
 describe('HTML → 와이어프레임', () => {
   const html = readFileSync(join(process.cwd(), 'examples/html/order_checkout.html'), 'utf8');
-  const frame = frameOf('web');
+  const frame = DEVICES.desktop;
   const s = htmlToScreen(html, frame);
 
   it('영역과 컨트롤이 틀 안에, 컨트롤은 자기 영역 안에', () => {
@@ -101,14 +101,57 @@ describe('PNG 그리기', () => {
   it('큰 상자부터 그리고 상자마다 글을 씀', () => {
     const texts: string[] = [];
     const noop = () => {};
-    const ctx = { fillRect: noop, strokeRect: noop, beginPath: noop, moveTo: noop, lineTo: noop, stroke: noop, setLineDash: noop, save: noop, restore: noop, rect: noop, clip: noop, scale: noop,
+    const ctx = { fillRect: noop, strokeRect: noop, beginPath: noop, moveTo: noop, lineTo: noop, stroke: noop, fill: noop, closePath: noop, arc: noop, ellipse: noop, setLineDash: noop, save: noop, restore: noop, rect: noop, clip: noop, scale: noop,
       fillText: (t: string) => texts.push(t), fillStyle: '', strokeStyle: '', lineWidth: 1, font: '', textBaseline: 'top', textAlign: 'left' } as unknown as Ctx;
     const items = [
       { id: 'w1', kind: 'button' as const, label: '주문', x: 0, y: 0, w: 120, h: 40, api: { method: 'POST' as const, path: '/api/orders', per_session: 1 } },
       { id: 'w2', kind: 'main' as const, label: '본문', x: 0, y: 0, w: 800, h: 500 },
     ];
-    drawScreen(ctx, { name: 's', items }, frameOf('web'));
+    drawScreen(ctx, { name: 's', items }, DEVICES.desktop);
     expect(drawOrder(items).map((i) => i.id)).toEqual(['w2', 'w1']);
     expect(texts).toEqual(['본문', '주문', 'POST /api/orders']);
+  });
+});
+
+describe('기기별 화면과 도형', () => {
+  it('다른 기기로 복사: 자리·크기는 틀 비율대로, 컨트롤은 최소 크기를 두고 모두 틀 안에', () => {
+    const sc = { name: '홈', items: [
+      { id: 'w1', kind: 'header' as const, label: '헤더', x: 0, y: 0, w: 1280, h: 64 },
+      { id: 'w2', kind: 'button' as const, label: '주문', x: 1100, y: 100, w: 120, h: 40 },
+    ] };
+    const m = toDevice(sc, DEVICES.desktop, DEVICES.mobile, 'mobile', '홈 (모바일)');
+    expect(m.device).toBe('mobile');
+    expect(m.items[0]).toMatchObject({ x: 0, w: 390 });
+    expect(m.items[1]).toMatchObject({ w: 72, h: 42 });
+    expect(m.items[1].x + m.items[1].w).toBeLessThanOrEqual(390);
+    // 세로가 짧은 기기로 옮겨도 아래쪽 상자들이 한곳에 쌓이지 않는다 (태블릿 세로 → 모바일)
+    const rows = { name: 't', items: [0, 1, 2].map((i) => ({ id: `r${i}`, kind: 'checkbox' as const, label: 'c', x: 100, y: 1000 + i * 50, w: 160, h: 28 })) };
+    const ys = toDevice(rows, DEVICES.tablet, DEVICES.mobile, 'mobile', 'm').items.map((i) => i.y);
+    expect(new Set(ys).size).toBe(3);
+    expect(Math.max(...ys) + 28).toBeLessThanOrEqual(844);
+    const c = toDevice({ name: 'c', items: [{ id: 'c', kind: 'ellipse', label: '', x: 0, y: 0, w: 120, h: 120 }] }, DEVICES.tablet, DEVICES.mobile, 'mobile', 'm').items[0];
+    expect(c.w).toBe(c.h);
+  });
+
+  it('화면 더하기: 기기를 붙이고 이름이 겹치면 번호', () => {
+    let p = addScreen(p0, ui, 'tablet', { name: '화면 1', items: [] });
+    p = addScreen(p, ui, 'mobile');
+    const ss = p.nodes.find((n) => n.id === ui)!.wireframe!.screens;
+    expect(ss.map((s) => [s.name, s.device])).toEqual([['화면 1', undefined], ['화면 1 2', 'tablet'], ['화면 3', 'mobile']]);
+    expect(parseProject(p, catalog.items, 'x').nodes.find((n) => n.id === ui)!.wireframe!.screens[1].device).toBe('tablet');
+  });
+
+  it('도형·색이 저장 형식을 통과하고, 선·화살표·아이콘은 글을 그리지 않음', () => {
+    const texts: string[] = [];
+    const noop = () => {};
+    const ctx = { fillRect: noop, strokeRect: noop, beginPath: noop, moveTo: noop, lineTo: noop, stroke: noop, fill: noop, closePath: noop, arc: noop, ellipse: noop, setLineDash: noop, save: noop, restore: noop, rect: noop, clip: noop, scale: noop,
+      fillText: (t: string) => texts.push(t), fillStyle: '', strokeStyle: '', lineWidth: 1, font: '', textBaseline: 'top', textAlign: 'left' } as unknown as Ctx;
+    const kinds = ['rect', 'ellipse', 'line', 'arrow', 'icon', 'avatar', 'checkbox', 'radio', 'toggle'] as const;
+    const items = kinds.map((kind, i) => ({ id: `w${i}`, kind, label: kind, x: i * 10, y: 0, w: 100 - i, h: 40, color: 'blue' as const }));
+    let p = p0;
+    for (const it of items) p = addWire(p, ui, 0, it);
+    expect(() => parseProject(p, catalog.items, 'x')).not.toThrow();
+    drawScreen(ctx, { name: 's', items }, DEVICES.mobile);
+    expect(texts.sort()).toEqual(['a', 'checkbox', 'ellipse', 'radio', 'rect', 'toggle']);
   });
 });

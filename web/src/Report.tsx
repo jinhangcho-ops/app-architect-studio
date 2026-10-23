@@ -11,7 +11,7 @@ import { worstVerdict } from './edit';
 import { fmt, fmtMetric, fmtShare } from './format';
 import type { XY } from './layout';
 import { nodeCard, openIssues, sourcesOf } from './reportData';
-import { drawScreen, frameOf } from './wireDraw';
+import { drawScreen, screenFrame } from './wireDraw';
 
 const MODES = { web: '웹 (브라우저 + 서버)', mobile: '모바일 앱', local_exe: '로컬 데스크톱(exe)', hybrid: '하이브리드 (로컬 + 동기화)', server: '서버 전용' } as const;
 const SCOPES = { single: '혼자', team: '팀·사내', public: '공개 서비스' } as const;
@@ -227,7 +227,7 @@ function PlanTable({ p, plans }: { p: Project; plans: OptimizeResult }) {
   const item = (id?: string) => (id ? catalog.byId.get(id)?.name ?? id : '—');
   return (
     <table className="r-grid">
-      <thead><tr><th /> {cols.map(([l]) => <th key={l}>{l}</th>)}</tr></thead>
+      <thead><tr><th />{cols.map(([l]) => <th key={l}>{l}</th>)}</tr></thead>
       <tbody>
         {nodes.map((n) => <tr key={n.id}><td>{n.name}</td>{cols.map(([l, x]) => <td key={l}>{item(x?.assignment[n.id])}</td>)}</tr>)}
         <tr><td>월 비용</td>{cols.map(([l, x]) => <td key={l}>{x?.metrics.cost === undefined ? '모름' : fmt(x.metrics.cost)}</td>)}</tr>
@@ -246,11 +246,12 @@ function WireImage({ screen, frame }: { screen: Screen; frame: { w: number; h: n
     const c = ref.current?.getContext('2d');
     if (c) drawScreen(c, screen, frame, 2);
   }, [screen, frame]);
-  return <canvas ref={ref} className="r-wire" width={frame.w * 2} height={frame.h * 2} />;
+  // 기기 너비 비율로 줄여 세로로 긴 모바일 화면이 한 쪽을 다 차지하지 않게 한다
+  return <canvas ref={ref} className="r-wire" width={frame.w * 2} height={frame.h * 2} style={{ width: `${Math.min(100, frame.w / 12.8)}%` }} />;
 }
 
 function Screens({ project: p, analysis: a }: { project: Project; analysis: Analysis }) {
-  const frame = frameOf(p.deploy.mode);
+  const frameOfS = (s: Screen) => screenFrame(s, p.deploy.mode);
   const name = (id: string) => p.nodes.find((n) => n.id === id)?.name ?? id;
   const uis = p.nodes.filter((n) => n.layer === 'ui' && n.wireframe?.screens.some((s) => s.items.length));
   if (!uis.length) return <p className="muted">와이어프레임이 없습니다. 화면 블록의 세부 구성 › 와이어프레임에서 그릴 수 있습니다.</p>;
@@ -260,7 +261,7 @@ function Screens({ project: p, analysis: a }: { project: Project; analysis: Anal
       <div key={n.id}>
         <h3 className="r-sub">{n.name}</h3>
         {n.wireframe!.screens.filter((s) => s.items.length).map((s) => (
-          <figure key={s.name} className="r-fig"><WireImage screen={s} frame={frame} /><figcaption>{n.name} · {s.name} ({frame.name})</figcaption></figure>
+          <figure key={s.name} className="r-fig"><WireImage screen={s} frame={frameOfS(s)} /><figcaption>{n.name} · {s.name} ({frameOfS(s).name})</figcaption></figure>
         ))}
         {calls.length > 0 && <table className="r-grid"><thead><tr><th>화면 · 컨트롤</th><th>호출</th><th>받는 블록</th><th>접속당</th><th>피크 RPS</th><th>이벤트 피크 RPS</th></tr></thead><tbody>
           {calls.map((c) => <tr key={c.screen + c.item}><td>{c.screen} · {c.label}</td><td>{c.method} {c.path || '/'}</td><td>{name(c.to)}</td><td>{fmt(c.perSession)}회</td><td>{fmtMetric(c.rps)}</td><td>{fmtMetric(c.rpsEvent)}</td></tr>)}

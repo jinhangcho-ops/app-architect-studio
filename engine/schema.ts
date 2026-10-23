@@ -172,12 +172,18 @@ export const Deploy = z.object({
 });
 
 // 와이어프레임: 화면마다 영역·컨트롤 상자 (좌표는 화면 틀 안의 px)
-export const WIRE_KINDS = ['header', 'nav', 'sidebar', 'main', 'form', 'table', 'list', 'card', 'modal', 'footer', 'text', 'image', 'button', 'input', 'select', 'tabs'] as const;
+export const WIRE_KINDS = ['header', 'nav', 'sidebar', 'main', 'form', 'table', 'list', 'card', 'modal', 'footer', 'text', 'image', 'button', 'input', 'select', 'tabs',
+  'rect', 'ellipse', 'line', 'arrow', 'icon', 'avatar', 'checkbox', 'radio', 'toggle'] as const;
+/** 화면 틀 기기 */
+export const WIRE_DEVICES = ['desktop', 'tablet', 'tablet_land', 'mobile'] as const;
+/** 상자 색 (채우기·선) */
+export const WIRE_COLORS = ['gray', 'blue', 'green', 'amber', 'red', 'dark'] as const;
 export const WireItem = z.object({
   id: z.string(),
   kind: z.enum(WIRE_KINDS),
   label: z.string().default(''),
   x: z.number(), y: z.number(), w: z.number().positive(), h: z.number().positive(),
+  color: z.enum(WIRE_COLORS).optional(),
   /** 이 컨트롤이 부르는 API. to = 받는 노드 id (연결선이 있어야 부하가 간다), per_session = 접속 1회당 횟수 (호출끼리 나누는 비율) */
   api: z.object({
     method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).default('GET'),
@@ -186,7 +192,8 @@ export const WireItem = z.object({
     per_session: z.number().nonnegative().default(1),
   }).optional(),
 });
-export const Screen = z.object({ name: z.string().min(1), items: z.array(WireItem).default([]) });
+/** device가 없으면 구동 방식으로 정한다 (모바일 → 모바일, 나머지 → 데스크톱) */
+export const Screen = z.object({ name: z.string().min(1), device: z.enum(WIRE_DEVICES).optional(), items: z.array(WireItem).default([]) });
 
 // 데이터 명세: 테이블·컬럼·인덱스. 크기 계산과 SQLite 실험이 이 정의를 그대로 쓴다
 export const COLUMN_TYPES = ['int', 'bigint', 'float', 'numeric', 'bool', 'uuid', 'timestamp', 'date', 'text', 'json', 'bytes'] as const;

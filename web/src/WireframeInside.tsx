@@ -5,14 +5,14 @@ import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 
 import type { Analysis } from '../../engine/analyze';
 import { routedCalls } from '../../engine/api';
 import { LAYER_NAMES } from '../../engine/model';
-import type { WireItem } from '../../engine/schema';
+import { WIRE_COLORS, WIRE_DEVICES, type Screen, type WireItem } from '../../engine/schema';
 import { addScreen, addWire, bindApi, dropRemove, mapScreens, updateWire } from './edit';
 import { fmt } from './format';
 import { htmlToScreen } from './htmlImport';
 import { markDrag, overPalette, readDrag, WIRE_NAMES } from './Palette';
 import { Select } from './Select';
 import { useStore } from './store';
-import { drawOrder, fitItem, frameOf, savePngs } from './wireDraw';
+import { COLORS, DEVICE_NAMES, DEVICES, deviceOf, drawOrder, fitItem, lineEnds, savePngs, SHAPES, toDevice } from './wireDraw';
 
 const GRID = 8;
 const snap = (v: number) => Math.round(v / GRID) * GRID;
@@ -21,7 +21,36 @@ const snap = (v: number) => Math.round(v / GRID) * GRID;
 const SIZE: Record<WireItem['kind'], [number, number]> = {
   header: [1280, 64], nav: [1280, 44], sidebar: [240, 600], main: [800, 520], form: [400, 320], table: [640, 280], list: [360, 320], card: [280, 180],
   modal: [480, 320], footer: [1280, 56], text: [240, 28], image: [240, 160], button: [120, 40], input: [280, 40], select: [200, 40], tabs: [400, 40],
+  rect: [200, 120], ellipse: [120, 120], line: [200, 16], arrow: [200, 16], icon: [32, 32], avatar: [48, 48], checkbox: [160, 28], radio: [160, 28], toggle: [160, 28],
 };
+/** 글을 그리지 않는 도형 (캔버스 그림과 같게) */
+const NO_LABEL = new Set<WireItem['kind']>(['line', 'arrow', 'icon']);
+
+/** 도형은 SVG로 그린다 (좌표는 상자 안 px, 틀 배율은 바깥 상자가 맞춘다) */
+function ShapeSvg({ it }: { it: WireItem }) {
+  const { w, h, kind } = it;
+  const col = it.color ? COLORS[it.color] : undefined;
+  const stroke = col?.stroke ?? '#6b7584', fill = col?.fill ?? '#ffffff';
+  const s = Math.min(16, h - 4);
+  let body;
+  if (kind === 'ellipse') body = <ellipse cx={w / 2} cy={h / 2} rx={w / 2 - 1} ry={h / 2 - 1} fill={fill} stroke={stroke} strokeWidth={1.5} />;
+  else if (kind === 'line' || kind === 'arrow') {
+    const { x1, y1, x2, y2 } = lineEnds({ x: 0, y: 0, w, h });
+    const a = Math.atan2(y2 - y1, x2 - x1), r = 10;
+    body = <>
+      <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={stroke} strokeWidth={2} />
+      {kind === 'arrow' && <polygon fill={stroke} points={`${x2},${y2} ${x2 - r * Math.cos(a - 0.45)},${y2 - r * Math.sin(a - 0.45)} ${x2 - r * Math.cos(a + 0.45)},${y2 - r * Math.sin(a + 0.45)}`} />}
+    </>;
+  } else if (kind === 'icon') {
+    const cx = w / 2, cy = h / 2, rr = Math.min(w, h) / 2 - 2;
+    const pts = Array.from({ length: 10 }, (_, i) => { const q = i % 2 ? rr * 0.45 : rr, ang = -Math.PI / 2 + (i * Math.PI) / 5; return `${cx + q * Math.cos(ang)},${cy + q * Math.sin(ang)}`; }).join(' ');
+    body = <polygon points={pts} fill={col?.fill ?? '#e3e7ee'} stroke={stroke} strokeWidth={1.5} />;
+  } else if (kind === 'avatar') body = <circle cx={w / 2} cy={h / 2} r={Math.min(w, h) / 2 - 1} fill={col?.fill ?? '#e3e7ee'} stroke={stroke} strokeWidth={1.5} />;
+  else if (kind === 'checkbox') body = <rect x={2} y={h / 2 - s / 2} width={s} height={s} fill="#fff" stroke={stroke} strokeWidth={1.5} />;
+  else if (kind === 'radio') body = <circle cx={2 + s / 2} cy={h / 2} r={s / 2} fill="#fff" stroke={stroke} strokeWidth={1.5} />;
+  else body = <><rect x={2} y={h / 2 - s / 2} width={s * 2} height={s} rx={s / 2} fill={col?.stroke ?? '#2b5fd9'} /><circle cx={2 + s * 1.5} cy={h / 2} r={s / 2 - 2} fill="#fff" /></>;
+  return <svg className="wshape" viewBox={`0 0 ${w} ${h}`} aria-hidden>{body}</svg>;
+}
 
 type Live = { id: string; mode: 'move' | 'size'; sx: number; sy: number; o: WireItem; now: WireItem };
 
@@ -37,7 +66,9 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
   const [sel, setSel] = useState<string>();
   const [live, setLive] = useState<Live>();
   const [editing, setEditing] = useState<string>();
-  const frame = frameOf(p.deploy.mode);
+  const device = deviceOf(screen, p.deploy.mode);
+  const frame = DEVICES[device];
+  const setDevice = (d: NonNullable<Screen['device']>) => edit((x) => mapScreens(x, nodeId, (ss) => ss.map((y, j) => (j === si ? { ...y, device: d } : y))));
   const fileRef = useRef<HTMLInputElement>(null);
   const picked = screen.items.find((x) => x.id === sel);
   const targets = p.nodes.filter((x) => x.id !== nodeId && x.layer !== 'ui');
@@ -105,26 +136,38 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
             {editing === `screen:${i}`
               ? <input autoFocus defaultValue={s.name} aria-label="화면 이름" onBlur={(e) => { const v = e.target.value.trim(); if (v && !screens.some((y, j) => j !== i && y.name === v)) edit((x) => mapScreens(x, nodeId, (ss) => ss.map((y, j) => (j === i ? { ...y, name: v } : y)))); setEditing(undefined); }}
                 onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditing(undefined); }} />
-              : <span onDoubleClick={() => setEditing(`screen:${i}`)} title="두 번 누르면 이름을 고쳐요">{s.name}</span>}
+              : <span onDoubleClick={() => setEditing(`screen:${i}`)} title="두 번 누르면 이름을 고쳐요">{s.name} <small className="muted">{DEVICE_NAMES[deviceOf(s, p.deploy.mode)]}</small></span>}
             {screens.length > 1 && <button aria-label={`${s.name} 지우기`} onClick={(e) => { e.stopPropagation(); edit((x) => mapScreens(x, nodeId, (ss) => ss.filter((_, j) => j !== i))); setCur(0); }}>×</button>}
           </span>
         ))}
-        <button onClick={() => { edit((x) => addScreen(x, nodeId)); setCur(screens.length); }}>+ 화면</button>
+        <button onClick={() => { edit((x) => addScreen(x, nodeId, device)); setCur(screens.length); }}>+ 화면</button>
         <span className="spacer" />
-        <span className="muted">{frame.name} · {screen.items.length}개</span>
+        <Select aria-label="기기" value={device} onChange={(e) => setDevice(e.target.value as typeof device)}>
+          {WIRE_DEVICES.map((d) => <option key={d} value={d}>{DEVICES[d].name}</option>)}
+        </Select>
+        <Select aria-label="다른 기기로 복사" value="" onChange={(e) => {
+          const d = e.target.value as typeof device;
+          if (!d) return;
+          edit((x) => addScreen(x, nodeId, d, toDevice(screen, frame, DEVICES[d], d, `${screen.name} (${DEVICE_NAMES[d]})`)));
+          setCur(screens.length);
+        }}>
+          <option value="">다른 기기로 복사</option>
+          {WIRE_DEVICES.filter((d) => d !== device).map((d) => <option key={d} value={d}>{DEVICE_NAMES[d]}용으로 복사</option>)}
+        </Select>
+        <span className="muted">{screen.items.length}개</span>
         <button onClick={() => fileRef.current?.click()} title="HTML 파일의 헤더·폼·버튼 등을 새 화면으로 가져옵니다">HTML 가져오기</button>
         <input ref={fileRef} type="file" accept=".html,.htm" hidden onChange={async (e) => {
           const f = e.target.files?.[0];
           e.target.value = '';
           if (!f) return;
           const sc = htmlToScreen(await f.text(), frame, f.name.replace(/\.html?$/i, ''));
-          // 화면 이름은 겹치지 않게 (호출 목록·설계서 표가 이름으로 줄을 가른다)
-          for (let k = 2, base = sc.name; screens.some((y) => y.name === sc.name); k++) sc.name = `${base} ${k}`;
-          edit((x) => mapScreens(x, nodeId, (ss) => [...ss.filter((y) => y.items.length || ss.length > 1), sc]));
-          setCur(screen.items.length || screens.length > 1 ? screens.length : 0);
+          // 빈 화면 한 장뿐이면 그 자리를 바꾸고, 아니면 지금 기기로 한 장 더한다 (이름은 겹치지 않게)
+          const replace = screens.length === 1 && !screen.items.length;
+          edit((x) => addScreen(replace ? mapScreens(x, nodeId, () => []) : x, nodeId, device, sc));
+          setCur(replace ? 0 : screens.length);
         }} />
-        <button onClick={() => savePngs([{ screen, name: `${n.name}-${screen.name}` }], frame)}>PNG 저장</button>
-        {screens.length > 1 && <button onClick={() => savePngs(screens.map((s) => ({ screen: s, name: `${n.name}-${s.name}` })), frame)}>모든 화면 PNG</button>}
+        <button onClick={() => savePngs([{ screen, name: `${n.name}-${screen.name}` }], p.deploy.mode)}>PNG 저장</button>
+        {screens.length > 1 && <button onClick={() => savePngs(screens.map((s) => ({ screen: s, name: `${n.name}-${s.name}` })), p.deploy.mode)}>모든 화면 PNG</button>}
       </div>
       <div className="wwrap" ref={wrap} tabIndex={0}
         onKeyDown={(e) => { if (sel && !editing && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); remove(sel); } }}
@@ -145,14 +188,16 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
           }}>
           {!items.length && <p className="wempty muted">왼편에서 헤더·버튼 같은 상자를 끌어 여기에 놓으세요</p>}
           {items.map((it) => (
-            <div key={it.id} className={`wi wi-${it.kind} ${sel === it.id ? 'sel' : ''} ${it.api ? 'has-api' : ''}`} style={{ left: it.x * k, top: it.y * k, width: it.w * k, height: it.h * k }}
+            <div key={it.id} className={`wi wi-${it.kind} ${sel === it.id ? 'sel' : ''} ${it.api ? 'has-api' : ''} ${it.color ? `c-${it.color}` : ''}`}
+              style={{ left: it.x * k, top: it.y * k, width: it.w * k, height: it.h * k, ...(it.color && !SHAPES.has(it.kind) && { background: COLORS[it.color].fill, borderColor: COLORS[it.color].stroke }) }}
               onPointerDown={(e) => down(e, it, 'move')} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel}
               onDoubleClick={() => setEditing(it.id)} title={`${WIRE_NAMES[it.kind]} · ${it.w}×${it.h}`}>
               {editing === it.id
                 ? <input autoFocus defaultValue={it.label} aria-label="상자 글" onPointerDown={(e) => e.stopPropagation()}
                   onBlur={(e) => { edit((x) => updateWire(x, nodeId, si, it.id, { label: e.target.value })); setEditing(undefined); }}
                   onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditing(undefined); }} />
-                : <span className="wl">{it.label}</span>}
+                : !NO_LABEL.has(it.kind) && <span className="wl" style={it.color && it.color !== 'dark' ? { color: COLORS[it.color].stroke } : undefined}>{it.kind === 'avatar' ? it.label.slice(0, 1) : it.label}</span>}
+              {SHAPES.has(it.kind) && <ShapeSvg it={it} />}
               {it.api && <span className={`wapi ${it.api.to ? '' : 'none'}`}>{it.api.method}{it.api.to ? ` → ${nameOf(it.api.to)}` : ' (받는 블록 없음)'}</span>}
               {sel === it.id && <i className="wsize" aria-label="크기 바꾸기" onPointerDown={(e) => down(e, it, 'size')} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel} />}
             </div>
@@ -163,6 +208,11 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
         {picked ? <>
           <b>{WIRE_NAMES[picked.kind]}</b>
           <label>표시 글 <input value={picked.label} onChange={(e) => edit((x) => updateWire(x, nodeId, si, picked.id, { label: e.target.value }))} /></label>
+          <span className="wcolors" role="group" aria-label="색">
+            <button className={!picked.color ? 'on' : ''} title="기본 색" onClick={() => edit((x) => updateWire(x, nodeId, si, picked.id, { color: undefined }))}>기본</button>
+            {WIRE_COLORS.map((c) => <button key={c} className={picked.color === c ? 'on' : ''} title={COLORS[c].name} aria-label={COLORS[c].name} style={{ background: COLORS[c].fill, borderColor: COLORS[c].stroke }}
+              onClick={() => edit((x) => updateWire(x, nodeId, si, picked.id, { color: c }))} />)}
+          </span>
           {picked.api ? <>
             <Select aria-label="메서드" value={picked.api.method} onChange={(e) => edit((x) => bindApi(x, nodeId, si, picked.id, { ...picked.api!, method: e.target.value as typeof METHODS[number] }))}>
               {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
