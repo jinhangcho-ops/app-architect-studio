@@ -46,6 +46,34 @@ ${howMetric(x.peakRowsPerSec)}`}>
         </tbody></table>}
       </Section>}
 
+      {a.tables.length > 0 && <Section title="테이블 크기">
+        <div className="plans"><table>
+          <thead><tr><th>테이블</th><th>하루 새 행</th><th>행</th><th>인덱스/행</th><th>저장</th><th>파티션</th></tr></thead>
+          <tbody>{a.tables.map((x) => (
+            <tr key={x.key}>
+              <td>{x.key}</td>
+              <td title={howMetric(x.newRowsPerDay)}>{fmt(x.newRowsPerDay.value)}</td>
+              <td title={howMetric(x.rowBytes)}>{fmt(x.rowBytes.value)} B</td>
+              <td title={howMetric(x.indexBytesPerRow)}>{fmt(x.indexBytesPerRow.value)} B</td>
+              <td title={howMetric(x.storedGb)}>{fmt(x.storedGb.value)} GB</td>
+              <td title={x.partitions ? howMetric(x.partitions.gb) : ''}>{x.partitions ? `${x.partitions.count} × ${fmt(x.partitions.gb.value)} GB` : '—'}</td>
+            </tr>
+          ))}</tbody>
+        </table></div>
+        {a.storage?.tablesGb && <p title={`${howMetric(a.storage.tablesGb)}
+
+${howMetric(a.storage.personaGb)}`}>
+          저장량: 테이블 합계 {fmtMetric(a.storage.tablesGb)} · 페르소나 추정(쓰기 × 건당 KB) {fmtMetric(a.storage.personaGb)}
+          {' '}({a.storage.personaGb.value > 0 ? `${fmt((a.storage.tablesGb.value / a.storage.personaGb.value) * 100)}%` : '—'}). 비용은 테이블 합계로 계산합니다.
+        </p>}
+        {a.tables.some((x) => x.assumptions.length) && <ul className="muted">
+          {a.tables.flatMap((x) => x.assumptions.map((s) => <li key={x.key + s}>{x.key} — {s}</li>))}
+        </ul>}
+        {a.growth && a.growth.tables.length > 0 && <ul>{a.growth.tables.map((ms) => (
+          <li key={ms.nodeId}>{ms.nodeId}: {ms.month === undefined ? '성장해도 서버 메모리에 닿지 않음' : `${ms.month}개월째 서버 메모리를 넘음, ${ms.startMonth}개월째 파티션 착수`}</li>
+        ))}</ul>}
+      </Section>}
+
       <Section title="확장 한계">
         {a.bottleneck
           ? <p title={howMetric(a.bottleneck.limitUsers)}>첫 병목: <b>{name(a.bottleneck.nodeId)}</b> — 활성 사용자 약 {fmt(a.bottleneck.limitUsers.value)}명에서 안 됨</p>

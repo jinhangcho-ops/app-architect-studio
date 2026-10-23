@@ -91,15 +91,22 @@ export function judgeNode(node: ProjectNode, catalog: Map<string, CatalogItem>, 
 }
 
 /** 항목과 무관한 구조 규칙(v2의 화면→DB 직결, 역방향 호출 등)을 연결선·프로젝트 단위로 검사한다. */
-export function checkRules(p: Project, rules: Rule[]): RuleHit[] {
+/** tables: 테이블 크기 계산이 만든 table 범위 변수 (target = '노드.테이블') */
+export function checkRules(p: Project, rules: Rule[], tables: { target: string; vars: Vars }[] = []): RuleHit[] {
   const layerOf = new Map(p.nodes.map((n) => [n.id, n.layer]));
   const nameOf = new Map(p.nodes.map((n) => [n.id, n.name]));
   const hits: RuleHit[] = [];
   const run = (scope: Rule['scope'], target: string, vars: Vars) => {
     for (const r of rules.filter((x) => x.scope === scope)) {
-      if (test(compiled(r.if), vars)) hits.push({ ruleId: r.id, target, why: fill(r.why, vars), instead: r.instead });
+      try {
+        if (test(compiled(r.if), vars)) hits.push({ ruleId: r.id, target, why: fill(r.why, vars), instead: r.instead });
+      } catch (e) {
+        // table 규칙은 서버 메모리처럼 노드마다 없을 수 있는 값을 쓴다. 값이 없으면 그 규칙만 건너뛴다
+        if (!(e instanceof MissingVar && scope === 'table')) throw e;
+      }
     }
   };
+  for (const t of tables) run('table', t.target, t.vars);
   for (const e of p.edges) {
     const from = layerOf.get(e.from)!, to = layerOf.get(e.to)!;
     run('edge', `${nameOf.get(e.from)} → ${nameOf.get(e.to)}`, {

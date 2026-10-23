@@ -17,6 +17,7 @@
       "row_overhead_bytes": 8,
       "per_column_overhead_bytes": 1,
       "index_entry_overhead_bytes": 8,
+      "integer_pk_is_rowid": true,
       "groups": {
         "keys": {
           "label": "키 구조",
@@ -28,6 +29,9 @@
           "id": "without_rowid",
           "group": "keys",
           "label": "WITHOUT ROWID 테이블",
+          "effect": {
+            "pk_is_table": true
+          },
           "note": "정수가 아니거나 여러 컬럼인 기본 키에서 키를 한 번만 저장. 행이 페이지의 1/20(4KB 페이지면 약 200바이트)보다 작을 때 권장",
           "source": "https://www.sqlite.org/withoutrowid.html"
         }

@@ -5,6 +5,7 @@
 // 저장(GB·월), 인터넷 송신(GB), 리전이 다른 노드 사이 전송(GB)은 프로젝트 단위로 더한다.
 import type { LineItem } from './cost';
 import type { NodeLoad } from './load';
+import type { TableAnalysis } from './tables';
 import type { CatalogItem, Project, ProjectNode } from './schema';
 import type { Traffic } from './traffic';
 
@@ -13,7 +14,7 @@ const sum = (xs: number[]) => xs.reduce((s, x) => s + x, 0);
 /** factor = 사용자 배수(성장 타임라인에서 미래 달의 비용을 구할 때 1보다 큼) */
 export function costLines(
   p: Project, t: Traffic | undefined, loads: Map<string, NodeLoad> | undefined, catalog: Map<string, CatalogItem>,
-  hourlyOf: (n: ProjectNode, factor: number) => number[], factor: number,
+  hourlyOf: (n: ProjectNode, factor: number) => number[], factor: number, tables: TableAnalysis[] = [],
 ): { lines: LineItem[]; missing: string[] } {
   const lines: LineItem[] = [];
   const missing: string[] = [];
@@ -69,7 +70,14 @@ export function costLines(
     }
   }
 
-  if (t && p.cost.storage) lines.push({ key: '저장', product: p.cost.storage, region: p.cost.region, quantities: { gb_month: t.storageGbWithOverhead.value * factor }, how: { gb_month: '보관 기간 저장량(여유분 포함)' } });
+  // 테이블이 하나라도 있으면 저장량은 테이블 합계(노드 리전별). 없으면 페르소나 추정(쓰기 × 건당 KB)
+  if (p.cost.storage && tables.length) {
+    for (const n of p.nodes) {
+      const gb = tables.filter((x) => x.nodeId === n.id).reduce((s, x) => s + x.storedGb.value, 0);
+      if (!gb || n.region === 'local') continue;
+      lines.push({ key: '저장', product: p.cost.storage, region: regionOf(n), quantities: { gb_month: gb }, how: { gb_month: `${n.id} 테이블 저장량 합계` } });
+    }
+  } else if (t && p.cost.storage) lines.push({ key: '저장', product: p.cost.storage, region: p.cost.region, quantities: { gb_month: t.storageGbWithOverhead.value * factor }, how: { gb_month: '보관 기간 저장량(여유분 포함)' } });
   if (t && p.cost.egress) lines.push({ key: '송신', product: p.cost.egress, region: p.cost.region, quantities: { gb: t.egressGbPerDay.value * 30 * factor }, how: { gb: '하루 송신 × 30' } });
   if (t && p.cost.transfer) {
     const byId = new Map(p.nodes.map((n) => [n.id, n]));

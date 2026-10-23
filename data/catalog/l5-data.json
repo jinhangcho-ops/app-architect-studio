@@ -19,6 +19,7 @@
       "per_column_overhead_bytes": 1,
       "index_entry_overhead_bytes": 5,
       "secondary_index_includes_pk": true,
+      "pk_is_table": true,
       "groups": {
         "compression": {
           "label": "페이지 압축",
@@ -156,6 +157,7 @@
       "layout": "kv",
       "row_overhead_bytes": 100,
       "stores_field_names": true,
+      "pk_is_table": true,
       "groups": {
         "replication": {
           "label": "복제",

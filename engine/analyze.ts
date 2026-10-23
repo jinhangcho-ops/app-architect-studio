@@ -14,6 +14,7 @@ import { computedScenarios, nodeLoads, type NodeLoad } from './load';
 import type { Metric } from './model';
 import { checkRegulation, type LawHit } from './regulation';
 import type { CatalogItem, LawRow, PriceRow, Project, ProjectNode, Rule } from './schema';
+import { tableSizes, type TableAnalysis } from './tables';
 import { traffic, type Traffic } from './traffic';
 
 export type NodeAnalysis = {
@@ -37,7 +38,11 @@ export type Analysis = {
   spof: string[];
   cost?: CostResult;
   bottleneck?: { nodeId: string; limitUsers: Metric };
-  growth?: { milestones: Milestone[]; monthlyCost: (Metric | undefined)[] };
+  growth?: { milestones: Milestone[]; monthlyCost: (Metric | undefined)[]; /** 파티션 없는 테이블이 서버 메모리를 넘는 달 (nodeId = '노드.테이블') */ tables: Milestone[] };
+  /** 테이블별 크기·파티션 */
+  tables: TableAnalysis[];
+  /** 저장량 비교: 페르소나 추정(쓰기 × 건당 KB)과 테이블 합계 */
+  storage?: { personaGb: Metric; tablesGb?: Metric };
   judgements: NodeJudgement[];
   rules: RuleHit[];
   /** 15절 "법령명 제N조 확인 필요" 목록 */
@@ -122,8 +127,10 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
       : Array<number>(24).fill(n.min_instances);
     return hourly.map((x) => Math.max(x, floor));
   };
+  const tablesAt = (factor: number) => tableSizes(p, t, d.catalog, factor);
+  const tables = tablesAt(1);
   const costAt = (factor: number) => {
-    const { lines, missing } = costLines(p, t, loads, d.catalog, hourlyOf, factor);
+    const { lines, missing } = costLines(p, t, loads, d.catalog, hourlyOf, factor, factor === 1 ? tables : tablesAt(factor));
     return { result: monthlyCost(lines, d.prices, today, missing), any: lines.length + missing.length > 0 };
   };
   const first = enabled(p.deploy, 'cost') ? costAt(1) : undefined;
@@ -161,9 +168,14 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
   if (p.growth && p.scale) {
     const { monthly_rate: g, months, lead_months } = p.growth;
     const limits = Object.entries(nodes).flatMap(([nodeId, x]) => (x.limitUsers ? [{ nodeId, limitUsers: x.limitUsers.value }] : []));
+    // 테이블 크기는 사용자 수에 비례하므로, 서버 메모리에 닿는 사용자 수 = 지금 사용자 × 메모리 / 지금 크기
+    const tableLimits = tables
+      .filter((x) => !x.vars.partitioned && typeof x.vars.server_mem_gb === 'number' && x.storedGb.value > 0)
+      .map((x) => ({ nodeId: x.key, limitUsers: (p.scale!.users * (x.vars.server_mem_gb as number)) / x.storedGb.value }));
     growth = {
       milestones: timeline(limits, p.scale.users, g, lead_months),
       monthlyCost: cost ? Array.from({ length: months + 1 }, (_, mo) => costAt(usersAt(1, g, mo)).result.total) : [],
+      tables: timeline(tableLimits, p.scale.users, g, lead_months),
     };
   }
 
@@ -176,7 +188,16 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     bottleneck,
     growth,
     judgements: p.nodes.map((n) => judgeNode(n, d.catalog, judged.get(n.id))),
-    rules: checkRules(p, d.rules),
+    rules: checkRules(p, d.rules, tables.map((x) => ({ target: `${p.nodes.find((n) => n.id === x.nodeId)!.name}.${x.table}`, vars: x.vars }))),
+    tables,
+    ...(t && {
+      storage: {
+        personaGb: t.storageGbWithOverhead,
+        ...(tables.length && {
+          tablesGb: { value: tables.reduce((s, x) => s + x.storedGb.value, 0), unit: 'GB', formula: 'Σ 테이블 저장량', inputs: Object.fromEntries(tables.map((x) => [x.key, x.storedGb.value])) },
+        }),
+      },
+    }),
     regulation: checkRegulation(p, d.laws ?? []),
     scenarios: Object.fromEntries(judged),
   };

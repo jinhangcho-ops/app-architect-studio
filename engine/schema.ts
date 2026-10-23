@@ -58,6 +58,8 @@ const StorageEffect = z.object({
   extra_retention_days: z.number().nonnegative().optional(),
   /** 행마다 더 붙는 바이트 (DynamoDB 글로벌 테이블 48바이트 등) */
   row_overhead_delta: z.number().optional(),
+  /** 기본 키가 테이블 자체라 키 인덱스가 따로 없음 (SQLite WITHOUT ROWID) */
+  pk_is_table: z.boolean().optional(),
 });
 export const StorageFeature = z.object({
   id: z.string().regex(/^[a-z0-9_]+$/),
@@ -81,6 +83,10 @@ export const StorageProfile = z.object({
   stores_field_names: z.boolean().default(false),
   /** 보조 인덱스가 기본 키 값을 함께 저장 (InnoDB) */
   secondary_index_includes_pk: z.boolean().default(false),
+  /** 행이 기본 키 순서로 저장돼 키 인덱스가 따로 없음 (InnoDB 클러스터드 인덱스, DynamoDB) */
+  pk_is_table: z.boolean().default(false),
+  /** 정수 한 컬럼짜리 기본 키는 행 번호(rowid)로 쓰여 인덱스가 따로 없음 (SQLite) */
+  integer_pk_is_rowid: z.boolean().default(false),
   table_fill: z.number().gt(0).max(1).default(1),
   index_fill: z.number().gt(0).max(1).default(1),
   /** 기능 묶음. one이면 그 묶음에서 하나만 고른다 */
@@ -122,7 +128,7 @@ export const CatalogItem = z.object({
 
 export const Rule = z.object({
   id: z.string(),
-  scope: z.enum(['edge', 'project']),
+  scope: z.enum(['edge', 'project', 'table']),
   if: Expr,
   why: z.string().min(1),
   instead: z.string().min(1),
