@@ -1,3 +1,5 @@
+import { Select } from './Select';
+import { useState } from 'react';
 import { Persona, REGIONS, Scale, PATTERN_IDS, type PriceRow, type Project } from '../../engine/schema';
 import { prices } from './data';
 import { PATTERNS } from '../../engine/traffic';
@@ -12,6 +14,7 @@ const MODES: [Project['deploy']['mode'], string][] = [
 
 export function ProjectPanel() {
   const { project: p, edit } = useStore();
+  const [editPersonas, setEditPersonas] = useState(false);
   const set = (patch: Partial<Project>) => edit((x) => ({ ...x, ...patch }));
   const setScale = (patch: Partial<NonNullable<Project['scale']>>) => p.scale && set({ scale: { ...p.scale, ...patch } });
   const setPersona = (i: number, patch: Partial<Project['personas'][number]>) =>
@@ -26,15 +29,15 @@ export function ProjectPanel() {
 
       <Section title="구동 방식">
         <Row label="방식">
-          <select value={p.deploy.mode} onChange={(e) => set({ deploy: { ...p.deploy, mode: e.target.value as Project['deploy']['mode'] } })}>
+          <Select value={p.deploy.mode} onChange={(e) => set({ deploy: { ...p.deploy, mode: e.target.value as Project['deploy']['mode'] } })}>
             {MODES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
+          </Select>
         </Row>
         <Row label="오프라인 필요"><input type="checkbox" checked={p.deploy.offline_required} onChange={(e) => set({ deploy: { ...p.deploy, offline_required: e.target.checked } })} /></Row>
         <Row label="사용 범위">
-          <select value={p.deploy.scope} onChange={(e) => set({ deploy: { ...p.deploy, scope: e.target.value as Project['deploy']['scope'] } })}>
+          <Select value={p.deploy.scope} onChange={(e) => set({ deploy: { ...p.deploy, scope: e.target.value as Project['deploy']['scope'] } })}>
             <option value="single">혼자</option><option value="team">팀·사내</option><option value="public">공개 서비스</option>
-          </select>
+          </Select>
         </Row>
         {['local_exe', 'mobile', 'hybrid'].includes(p.deploy.mode) && <LocalMemory />}
       </Section>
@@ -46,9 +49,9 @@ export function ProjectPanel() {
           <NumField label="이벤트 배수" value={p.scale.event_multiplier} onChange={(v) => setScale({ event_multiplier: v ?? 1 })} />
           <NumField label="창 안 비율" value={p.scale.window_share} step={0.05} hint="깨어 있는 시간대에 들어오는 접속 비율" onChange={(v) => setScale({ window_share: v ?? 0.8 })} />
           <Row label="기준 나라">
-            <select value={p.scale.report_country} onChange={(e) => setScale({ report_country: e.target.value })}>
+            <Select value={p.scale.report_country} onChange={(e) => setScale({ report_country: e.target.value })}>
               {Object.keys(STANDARD_OFFSET).map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
+            </Select>
           </Row>
           <NumField label="시드" value={p.scale.seed} step={1} onChange={(v) => setScale({ seed: v ?? 1 })} />
           <NumField label="목표 사용률" value={p.target_utilization} step={0.05} onChange={(v) => v && set({ target_utilization: v })} />
@@ -56,20 +59,34 @@ export function ProjectPanel() {
       </Section>
 
       <Section title={`페르소나 (비율 합 ${(shareSum * 100).toFixed(0)}%)`}>
-        {p.personas.map((ps, i) => (
+        {/* 평소에는 비율 막대로 보고, "편집"을 누르면 입력 칸으로 바뀐다 */}
+        {!editPersonas && p.personas.map((ps, i) => {
+          const top = Math.max(...p.personas.map((x) => x.share), 1e-9);
+          return (
+            <div key={i} className="persona-bar" data-tip={`${PATTERNS[ps.pattern].label} · ${ps.country}`}>
+              <span>{ps.name}</span>
+              <div className="track"><i style={{ width: `${(ps.share / top) * 100}%` }} /></div>
+              <em>{Math.round(ps.share * 100)}%</em>
+            </div>
+          );
+        })}
+        {editPersonas && p.personas.map((ps, i) => (
           <div key={i} className="persona">
             <input value={ps.name} onChange={(e) => setPersona(i, { name: e.target.value })} aria-label="이름" />
-            <select value={ps.pattern} onChange={(e) => setPersona(i, { pattern: e.target.value as typeof ps.pattern })} aria-label="패턴">
+            <Select value={ps.pattern} onChange={(e) => setPersona(i, { pattern: e.target.value as typeof ps.pattern })} aria-label="패턴">
               {PATTERN_IDS.map((id) => <option key={id} value={id}>{PATTERNS[id].label}</option>)}
-            </select>
+            </Select>
             <input type="number" step={0.05} value={ps.share} onChange={(e) => setPersona(i, { share: Number(e.target.value) })} aria-label="비율" />
-            <select value={ps.country} onChange={(e) => setPersona(i, { country: e.target.value })} aria-label="나라">
+            <Select value={ps.country} onChange={(e) => setPersona(i, { country: e.target.value })} aria-label="나라">
               {Object.keys(STANDARD_OFFSET).map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
+            </Select>
             <button onClick={() => set({ personas: p.personas.filter((_, k) => k !== i) })} aria-label="삭제">×</button>
           </div>
         ))}
-        <button onClick={() => set({ personas: [...p.personas, Persona.parse({ name: '새 페르소나', pattern: 'regular', share: 0 })] })}>페르소나 추가</button>
+        <div className="inline">
+          <button onClick={() => setEditPersonas(!editPersonas)}>{editPersonas ? '편집 끝' : '편집'}</button>
+          {editPersonas && <button onClick={() => set({ personas: [...p.personas, Persona.parse({ name: '새 페르소나', pattern: 'regular', share: 0 })] })}>페르소나 추가</button>}
+        </div>
         {p.personas.length > 0 && Math.abs(shareSum - 1) > 1e-6 && <p className="warn">비율 합이 100%여야 계산합니다.</p>}
       </Section>
 
@@ -77,17 +94,17 @@ export function ProjectPanel() {
 
       <Section title="비용 기준">
         <Row label="기본 리전">
-          <select value={p.cost.region ?? ''} onChange={(e) => set({ cost: { ...p.cost, region: (e.target.value || undefined) as typeof p.cost.region } })}>
+          <Select value={p.cost.region ?? ''} onChange={(e) => set({ cost: { ...p.cost, region: (e.target.value || undefined) as typeof p.cost.region } })}>
             <option value="">(없음)</option>
             {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
+          </Select>
         </Row>
         {([['저장 (GB·월)', 'storage', 'gb_month'], ['인터넷 송신 (GB)', 'egress', 'gb'], ['리전 간 전송 (GB)', 'transfer', 'gb_interregion']] as const).map(([label, key, unit]) => (
           <Row key={key} label={label}>
-            <select value={p.cost[key] ?? ''} onChange={(e) => set({ cost: { ...p.cost, [key]: e.target.value || undefined } })}>
+            <Select value={p.cost[key] ?? ''} onChange={(e) => set({ cost: { ...p.cost, [key]: e.target.value || undefined } })}>
               <option value="">(계산 안 함)</option>
               {productsOf(unit).map((x) => <option key={x} value={x}>{x}</option>)}
-            </select>
+            </Select>
           </Row>
         ))}
         <p className="muted">노드 비용은 주 항목의 과금 방식(대수×시간·사용량·월 정액)과 노드 리전으로 가격표에서 찾습니다.</p>
@@ -130,12 +147,12 @@ function ActionsSection() {
             {a.writes.map((w, i) => (
               <div key={i} className="inline write">
                 <span className="muted">→</span>
-                <select aria-label="쓰는 테이블" value={`${w.node}.${w.table}`} onChange={(e) => {
+                <Select aria-label="쓰는 테이블" value={`${w.node}.${w.table}`} onChange={(e) => {
                   const t = targets.find((x) => x.key === e.target.value)!;
                   setWrite(i, { node: t.node, table: t.table });
                 }}>
                   {targets.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
-                </select>
+                </Select>
                 <input aria-label="행 수" type="number" value={w.rows} onChange={(e) => setWrite(i, { rows: Number(e.target.value) || 1 })} />행
                 {a.writes.length > 1 && <button aria-label="쓰기 삭제" onClick={() => upd({ writes: a.writes.filter((_, k) => k !== i) })}>×</button>}
               </div>

@@ -1,3 +1,4 @@
+import { Select } from './Select';
 import { useState } from 'react';
 import type { Analysis } from '../../engine/analyze';
 import { judgeItem } from '../../engine/judge';
@@ -11,6 +12,7 @@ import { fmtMetric, howMetric } from './format';
 import { useStore } from './store';
 import { StorageSection, TablesSection } from './TablesPanel';
 import { canEnter } from './NodeInside';
+import { NodeSummary } from './NodeSummary';
 
 const itemName = (id: string) => catalog.byId.get(id)?.name ?? id;
 
@@ -43,22 +45,23 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
 
   return (
     <div className="panel">
+      <NodeSummary project={project} analysis={analysis} id={id} />
       <Section title="기본">
         <TextField label="이름" value={n.name} onChange={(v) => upd({ name: v })} />
         <Row label="레이어">
-          <select value={n.layer} onChange={(e) => changeLayer(e.target.value as Layer)}>
+          <Select value={n.layer} onChange={(e) => changeLayer(e.target.value as Layer)}>
             {LAYERS.map((l) => <option key={l} value={l}>{LAYER_NAMES[l]}</option>)}
-          </select>
+          </Select>
         </Row>
         <Row label="설명"><textarea value={n.description ?? ''} onChange={(e) => upd({ description: e.target.value || undefined })} /></Row>
       </Section>
 
       <Section title="선택 항목">
         <Row label="주 항목">
-          <select value={n.primary ?? ''} onChange={(e) => upd({ primary: e.target.value || undefined })}>
+          <Select value={n.primary ?? ''} onChange={(e) => upd({ primary: e.target.value || undefined })}>
             <option value="">(없음)</option>
             {fits.filter((i) => i.role === '주').map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-          </select>
+          </Select>
         </Row>
         <div className="checks">
           {fits.filter((i) => i.role === '보조').map((i) => (
@@ -111,10 +114,10 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
       </>}
 
       <Section title="목표로 찾기">
-        <select value={goal} onChange={(e) => setGoal(e.target.value)}>
+        <Select value={goal} onChange={(e) => setGoal(e.target.value)}>
           <option value="">목표 고르기</option>
           {goals.map((g) => <option key={g} value={g}>{g}</option>)}
-        </select>
+        </Select>
         {goal && fits.filter((i) => i.goals[goal] === '좋음').map((i) => {
           const v = scenario && judgeItem(i, n, scenario).verdict;
           const has = n.primary === i.id || n.extras.includes(i.id);
@@ -144,10 +147,10 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
           </>;
         })()}
         <Row label="상품 직접 지정">
-          <select value={n.price ?? ''} onChange={(e) => upd({ price: e.target.value || undefined })}>
+          <Select value={n.price ?? ''} onChange={(e) => upd({ price: e.target.value || undefined })}>
             <option value="">(항목의 과금 방식 사용)</option>
             {prices.filter((r) => r.unit === 'hour' || r.unit === 'month').map((r) => <option key={r.id} value={r.id}>{r.id}</option>)}
-          </select>
+          </Select>
         </Row>
       </Section>
 
@@ -171,10 +174,10 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
             {apiCalls.map((c) => (
               <div key={c.method + c.path} className="alt">
                 <code>{c.method} {c.path}</code>
-                <select value="" onChange={(e) => e.target.value && edit((p) => addEdge(p, id, e.target.value))}>
+                <Select value="" onChange={(e) => e.target.value && edit((p) => addEdge(p, id, e.target.value))}>
                   <option value="">연결할 노드</option>
                   {project.nodes.filter((x) => x.layer === 'gateway' || x.layer === 'backend').map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-                </select>
+                </Select>
               </div>
             ))}
           </>}
@@ -183,11 +186,11 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
 
       <Section title="데이터 위치·개인정보">
         <Row label="저장 위치">
-          <select value={n.region ?? ''} onChange={(e) => upd({ region: (e.target.value || undefined) as typeof n.region })}>
+          <Select value={n.region ?? ''} onChange={(e) => upd({ region: (e.target.value || undefined) as typeof n.region })}>
             <option value="">(미정)</option>
             <option value="local">사용자 기기</option>
             {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
+          </Select>
         </Row>
         {(() => {
           const pv = n.privacy ?? { personal: false, sensitive: false, unique_id: false, subjects: [], sends_external: false };
@@ -245,9 +248,9 @@ export function EdgePanel({ from, to }: { from: string; to: string }) {
         <Row label="동기 호출"><input type="checkbox" checked={e.sync} onChange={(x) => upd({ sync: x.target.checked })} /></Row>
         <NumField label="호출 비율" value={e.callRatio} hint="요청 1건당 이 연결로 몇 번 부르는지" onChange={(v) => upd({ callRatio: v ?? 1 })} />
         <Row label="흐르는 요청">
-          <select value={e.carries} onChange={(x) => upd({ carries: x.target.value as typeof e.carries })}>
+          <Select value={e.carries} onChange={(x) => upd({ carries: x.target.value as typeof e.carries })}>
             <option value="all">전체</option><option value="read">읽기만</option><option value="write">쓰기만</option>
-          </select>
+          </Select>
         </Row>
         <NumField label="왕복 지연(ms)" value={e.rtt_ms} onChange={(v) => upd({ rtt_ms: v ?? 0 })} />
       </Section>

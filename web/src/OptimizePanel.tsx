@@ -1,3 +1,4 @@
+import { Select } from './Select';
 import { useState } from 'react';
 import type { OptimizeResult, Plan } from '../../engine/optimize';
 import type { Project } from '../../engine/schema';
@@ -35,10 +36,10 @@ export function OptimizePanel({ today }: { today: string }) {
             <button onClick={() => setOpt({ priorities: o.priorities.filter((x) => x !== g) })} aria-label="빼기">×</button>
           </div>
         ))}
-        <select value="" onChange={(e) => e.target.value && setOpt({ priorities: [...o.priorities, e.target.value] })}>
+        <Select value="" onChange={(e) => e.target.value && setOpt({ priorities: [...o.priorities, e.target.value] })}>
           <option value="">+ 목표 추가</option>
           {GOALS.filter((g) => !o.priorities.includes(g)).map((g) => <option key={g} value={g}>{g}</option>)}
-        </select>
+        </Select>
       </Section>
 
       <Section title="꼭 지킬 조건 (비우면 없음)">

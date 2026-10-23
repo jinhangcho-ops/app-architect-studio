@@ -102,6 +102,7 @@ export function NodeInside({ nodeId, analysis, onSelect }: { nodeId: string; ana
         nodeTypes={nodeTypes}
         fitView
         fitViewOptions={READABLE}
+        colorMode="dark"
         onNodesChange={(changes) => {
           for (const c of changes) if (c.type === 'position' && c.position) setMoved((m) => ({ ...m, [c.id]: c.position! }));
         }}

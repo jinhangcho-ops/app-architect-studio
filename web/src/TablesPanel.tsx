@@ -1,4 +1,5 @@
 // 노드 패널의 데이터 부분: 명세서 붙여넣기, 테이블 편집, 저장 기능 선택.
+import { Select } from './Select';
 import { useState } from 'react';
 import { COLUMN_TYPES, STORAGE_FORMATS, selectedFeatures, storageProfileOf, type ProjectNode } from '../../engine/schema';
 import { parseSpec } from '../../engine/spec';
@@ -67,13 +68,13 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
       </Row>
       <Row label="파티션">
         <span className="inline">
-          <select value={t.partition?.column ?? ''} onChange={(e) => upd({ partition: e.target.value ? { column: e.target.value, interval: t.partition?.interval ?? 'month' } : undefined })}>
+          <Select value={t.partition?.column ?? ''} onChange={(e) => upd({ partition: e.target.value ? { column: e.target.value, interval: t.partition?.interval ?? 'month' } : undefined })}>
             <option value="">(없음)</option>
             {t.columns.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
-          </select>
-          {t.partition && <select value={t.partition.interval} onChange={(e) => upd({ partition: { ...t.partition!, interval: e.target.value as 'day' } })}>
+          </Select>
+          {t.partition && <Select value={t.partition.interval} onChange={(e) => upd({ partition: { ...t.partition!, interval: e.target.value as 'day' } })}>
             <option value="day">일</option><option value="week">주</option><option value="month">월</option>
-          </select>}
+          </Select>}
         </span>
       </Row>
 
@@ -83,13 +84,13 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
           // 이름 칸이 입력 중 값을 들고 있어서(defaultValue) 지운 줄 뒤의 칸이 옛 값을 보이지 않게 이름까지 키에 넣는다
           <tr key={`${i}-${c.name}`}>
             <td><input defaultValue={c.name} onBlur={(e) => e.target.value && e.target.value !== c.name && setCol(i, { name: e.target.value })} /></td>
-            <td><select value={c.type} onChange={(e) => setCol(i, { type: e.target.value as Column['type'] })}>
+            <td><Select value={c.type} onChange={(e) => setCol(i, { type: e.target.value as Column['type'] })}>
               {COLUMN_TYPES.map((x) => <option key={x}>{x}</option>)}
-            </select></td>
-            <td><select value={c.storage ?? ''} onChange={(e) => setCol(i, { storage: (e.target.value || undefined) as Column['storage'] })}>
+            </Select></td>
+            <td><Select value={c.storage ?? ''} onChange={(e) => setCol(i, { storage: (e.target.value || undefined) as Column['storage'] })}>
               <option value="">(기본)</option>
               {STORAGE_FORMATS.map((x) => <option key={x} value={x}>{STORAGE_NAMES[x]}</option>)}
-            </select></td>
+            </Select></td>
             <td><input type="number" value={c.max_length ?? ''} onChange={(e) => setCol(i, { max_length: e.target.value ? Number(e.target.value) : undefined })} /></td>
             <td><input type="number" value={c.avg_bytes ?? ''} onChange={(e) => setCol(i, { avg_bytes: e.target.value ? Number(e.target.value) : undefined })} /></td>
             <td><input type="checkbox" checked={c.nullable} onChange={(e) => setCol(i, { nullable: e.target.checked })} /></td>

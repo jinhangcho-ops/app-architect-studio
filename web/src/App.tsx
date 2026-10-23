@@ -1,3 +1,4 @@
+import { Select } from './Select';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseProject } from '../../engine/data';
 import { LAYERS, LAYER_NAMES, type Layer } from '../../engine/model';
@@ -12,6 +13,8 @@ import { SaveHistory } from './SaveHistory';
 import { searchProject, type Hit } from './search';
 import type { OptimizeResult } from '../../engine/optimize';
 import { Report } from './Report';
+import { Tooltip } from './Tooltip';
+import { KpiStrip, LimitChart } from './Overview';
 import { NodeInside, TableSidePanel } from './NodeInside';
 import { EdgePanel, NodePanel } from './NodePanel';
 import { OptimizePanel } from './OptimizePanel';
@@ -146,7 +149,7 @@ export function App() {
       const pos = Object.fromEntries((data.nodes ?? []).filter((n: { pos?: unknown }) => n.pos).map((n: { id: string; pos: XY }) => [n.id, n.pos]));
       load(parseProject(data, catalog.items, baseName(r.path)), pos);
       setFilePath(r.path);
-    }).catch((err: Error) => alert(err.message));
+    }).catch((err: Error) => say(err.message, 8000));
   };
 
   const open = async (file: File) => {
@@ -155,7 +158,7 @@ export function App() {
       const pos = Object.fromEntries((data.nodes ?? []).filter((n: { pos?: unknown }) => n.pos).map((n: { id: string; pos: { x: number; y: number } }) => [n.id, n.pos]));
       load(parseProject(data, catalog.items, file.name), pos);
     } catch (e) {
-      alert((e as Error).message);
+      say((e as Error).message, 8000);
     }
   };
 
@@ -164,22 +167,22 @@ export function App() {
     <div className="app">
       <header className="toolbar">
         <strong className="brand">App Architect Studio</strong>
-        <select aria-label="노드 추가" value="" onChange={(e) => e.target.value && add(e.target.value as Layer)}>
+        <Select aria-label="노드 추가" value="" onChange={(e) => e.target.value && add(e.target.value as Layer)}>
           <option value="">+ 노드 추가</option>
           {LAYERS.map((l) => <option key={l} value={l}>{LAYER_NAMES[l]}</option>)}
-        </select>
+        </Select>
         <button onClick={undo} disabled={!past.length} title="되돌리기 (Ctrl+Z)" aria-label="되돌리기">↶</button>
         <button onClick={redo} disabled={!future.length} title="다시 하기 (Ctrl+Y, Ctrl+Shift+Z)" aria-label="다시 하기">↷</button>
         <button onClick={relayout} disabled={view === '3d'}>자동 배치</button>
         <button onClick={() => setView(view === '2d' ? '3d' : '2d')}>{view === '2d' ? '3D 보기' : '2D 보기'}</button>
         <span className="spacer" />
-        <select aria-label="예시 불러오기" value="" onChange={(e) => {
+        <Select aria-label="예시 불러오기" value="" onChange={(e) => {
           const ex = examples.find((x) => x.name === e.target.value);
           if (ex) { load(parseProject(ex.data, catalog.items, ex.name)); setFilePath(undefined); }
         }}>
           <option value="">예시 불러오기</option>
           {examples.map((e) => <option key={e.name} value={e.name}>{e.name}</option>)}
-        </select>
+        </Select>
         <button onClick={openProject} title="Ctrl+O">열기</button>
         <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => e.target.files?.[0] && open(e.target.files[0])} />
         <button onClick={() => codeRef.current?.click()} title="tools/analyze_py.py가 만든 JSON">코드 분석 불러오기</button>
@@ -190,7 +193,7 @@ export function App() {
             const data = JSON.parse(await f.text());
             edit((p) => mergeCodeAnalysis(p, data));
           } catch (err) {
-            alert((err as Error).message);
+            say((err as Error).message, 8000);
           }
           e.target.value = '';
         }} />
@@ -200,13 +203,17 @@ export function App() {
         {/* 최선 조합(7번째 절)은 설계서를 열 때 한 번 찾는다 */}
         <button className="primary" onClick={() => setReport({ plans: findPlans(project, today).result })}>설계서 PDF</button>
       </header>
+      <KpiStrip analysis={result.analysis} />
       <aside className="left"><ProjectPanel /></aside>
       <main className="center">
-        {focus
-          ? <NodeInside nodeId={focus} analysis={result.analysis} onSelect={() => setTab('selected')} />
-          : view === '2d'
-          ? <Canvas analysis={result.analysis} onSelect={() => setTab('selected')} />
-          : <View3D analysis={result.analysis} onSelect={() => setTab('selected')} />}
+        <div className="stage">
+          {focus
+            ? <NodeInside nodeId={focus} analysis={result.analysis} onSelect={() => setTab('selected')} />
+            : view === '2d'
+            ? <Canvas analysis={result.analysis} onSelect={() => setTab('selected')} />
+            : <View3D analysis={result.analysis} onSelect={() => setTab('selected')} />}
+        </div>
+        {!focus && <LimitChart project={project} analysis={result.analysis} />}
         {result.error && <pre className="error-banner">{result.error}</pre>}
         {recovery && (
           <div className="recovery">
@@ -251,6 +258,7 @@ export function App() {
         {tab === 'selected' && !selected && <p className="muted">캔버스에서 노드나 연결선을 고르세요.</p>}
       </aside>
     </div>
+    <Tooltip />
     {/* 인쇄할 때 .app은 숨기고 설계서만 남기므로 .app 밖에 둔다 */}
     {report && <Report project={project} analysis={result.analysis} positions={positions} plans={report.plans} today={today} onClose={() => setReport(undefined)} />}
     </>

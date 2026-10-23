@@ -1,5 +1,6 @@
 // 블록 안으로 들어가 보기 (백엔드·게이트웨이·워커): 주 항목·보조 항목을 부품 블록으로, 부품마다 판정과
 // 지금 부하에서 통과하는 대안을 옆에 둔다. 대안의 "교체"로 바꾸고, 보조 항목은 더하거나 뺀다. 왼쪽은 들어오는 블록, 오른쪽은 나가는 블록.
+import { Select } from './Select';
 import { Background, Controls, Handle, MarkerType, Position, ReactFlow, type Edge, type Node, type NodeProps } from '@xyflow/react';
 import type { Analysis } from '../../engine/analyze';
 import { judgeItem } from '../../engine/judge';
@@ -147,17 +148,17 @@ export function PartsInside({ nodeId, analysis, canEnter }: { nodeId: string; an
   return (
     <div className="inside">
       <InsideBar title={n.name} layer={LAYER_NAMES[n.layer]}>
-        <select aria-label="주 항목" value={n.primary ?? ''} onChange={(e) => edit((x) => updateNode(x, nodeId, { primary: e.target.value || undefined }))}>
+        <Select aria-label="주 항목" value={n.primary ?? ''} onChange={(e) => edit((x) => updateNode(x, nodeId, { primary: e.target.value || undefined }))}>
           <option value="">주 항목 고르기</option>
           {primaries.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-        </select>
-        <select aria-label="보조 항목 더하기" value="" onChange={(e) => e.target.value && edit((x) => updateNode(x, nodeId, { extras: [...n.extras, e.target.value] }))}>
+        </Select>
+        <Select aria-label="보조 항목 더하기" value="" onChange={(e) => e.target.value && edit((x) => updateNode(x, nodeId, { extras: [...n.extras, e.target.value] }))}>
           <option value="">+ 보조 항목</option>
           {extrasToAdd.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-        </select>
+        </Select>
       </InsideBar>
       {!parts.length && <p className="muted inside-empty">항목이 없습니다. 위에서 주 항목을 고르세요.</p>}
-      <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView fitViewOptions={READABLE} onPaneClick={() => select(null)} nodesConnectable={false}>
+      <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} colorMode="dark" fitView fitViewOptions={READABLE} onPaneClick={() => select(null)} nodesConnectable={false}>
         <Background />
         <Controls />
       </ReactFlow>
