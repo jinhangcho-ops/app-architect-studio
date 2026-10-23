@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>App Architect Studio — UI</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #121821; --panel-2: #161d27; --line: #232c38; --line-2: #2c3644;
+    --ink: #e7ebf1; --muted: #8b95a5; --dim: #5f6a7a;
+    --ok: #2ec4a6; --warn: #f5b301; --bad: #ff5a5a; --accent: #2ec4a6;
+    font-family: 'Pretendard', 'Malgun Gothic', system-ui, sans-serif; color: var(--ink);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  /* 스크롤바도 테마 색: 막대 = 패널 테두리 색, 바탕 = 투명 */
+  * { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
+  *:hover { scrollbar-color: #3a4656 transparent; }
+  body { margin: 0; background: var(--bg); font-size: 13px; }
+  .app { display: grid; grid-template-rows: 52px 84px 1fr; grid-template-columns: 260px 1fr 340px; height: 100vh; min-height: 760px; }
+  .bar { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .brand { display: flex; gap: 8px; align-items: center; font-weight: 700; font-size: 15px; margin-right: 12px; }
+  .brand i { width: 9px; height: 9px; border-radius: 2px; background: var(--ok); display: inline-block; }
+  .btn { background: var(--panel-2); color: var(--ink); border: 1px solid var(--line-2); border-radius: 7px; padding: 6px 11px; font: inherit; cursor: pointer; }
+  .btn.primary { background: #f3f5f8; color: #0d1117; border-color: #f3f5f8; font-weight: 700; }
+  .spacer { flex: 1; }
+  .kpis { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(6, 1fr); border-bottom: 1px solid var(--line); }
+  .kpi { padding: 14px 20px; border-right: 1px solid var(--line); }
+  .kpi span { color: var(--muted); font-size: 12px; }
+  .kpi b { display: block; font-size: 26px; margin-top: 4px; letter-spacing: -0.5px; }
+  .kpi small { color: var(--muted); font-size: 12px; font-weight: 400; margin-left: 3px; }
+  aside, main { overflow: auto; }
+  aside.left { border-right: 1px solid var(--line); padding: 14px 18px; }
+  aside.right { border-left: 1px solid var(--line); }
+  h4 { margin: 14px 0 8px; font-size: 13px; color: var(--ink); }
+  .row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .row span { color: var(--muted); } .row b { font-weight: 600; }
+  .persona { display: grid; grid-template-columns: 70px 1fr 34px; gap: 8px; align-items: center; margin: 7px 0; }
+  .persona .track { height: 5px; background: var(--line-2); border-radius: 3px; overflow: hidden; }
+  .persona .track i { display: block; height: 100%; background: #7c8aa3; }
+  .persona em { color: var(--muted); font-style: normal; text-align: right; }
+  main { display: grid; grid-template-rows: minmax(360px, 1fr) 340px; }
+  /* 노드 배치는 고정 크기 무대(1180×520)에 그리고, 캔버스 크기에 맞춰 통째로 줄인다 (카드가 겹치거나 잘리지 않게) */
+  .stage { position: relative; width: 1180px; height: 520px; transform-origin: 0 0; }
+  .canvas { position: relative; overflow: hidden; background-color: var(--bg); background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size: 28px 28px; border-bottom: 1px solid var(--line); }
+  .legend { position: sticky; top: 0; left: 0; z-index: 2; padding: 14px 18px 0; display: flex; gap: 14px; color: var(--muted); font-size: 12px; }
+  .legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 5px; }
+  .node { position: absolute; width: 196px; background: var(--panel-2); border: 1px solid var(--line-2); border-left: 4px solid var(--dim); border-radius: 8px; padding: 10px 12px; }
+  .node.ok { border-left-color: var(--ok); } .node.warn { border-left-color: var(--warn); }
+  .node.bad { border: 2px solid var(--bad); background: #2a1719; box-shadow: 0 0 0 4px #ff5a5a22; }
+  .node small { color: var(--muted); font-size: 11px; } .node b { display: block; font-size: 15px; margin: 2px 0; }
+  .node .sub { color: var(--muted); font-size: 12px; }
+  .meter { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; }
+  .meter .track { flex: 1; height: 4px; background: var(--line-2); border-radius: 2px; overflow: hidden; }
+  .meter .track i { display: block; height: 100%; background: var(--ok); }
+  .bad .meter .track i { background: var(--bad); } .warn .meter .track i { background: var(--warn); }
+  .stage svg.wires { position: absolute; left: 0; top: 0; width: 1180px; height: 520px; pointer-events: none; }
+  .wire-label { fill: var(--muted); font-size: 11px; }
+  .chart { padding: 14px 20px; }
+  .chart h3 { margin: 0; font-size: 14px; } .chart h3 small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .chart svg text { fill: var(--muted); font-size: 11px; }
+  .tabs { display: flex; border-bottom: 1px solid var(--line); }
+  .tabs button { flex: 1; background: none; border: 0; color: var(--muted); padding: 13px 0; font: inherit; cursor: pointer; border-bottom: 2px solid transparent; }
+  .tabs button.on { color: var(--ink); font-weight: 700; border-bottom-color: var(--ok); }
+  .summary { display: flex; gap: 16px; align-items: center; padding: 18px; border-bottom: 1px solid var(--line); }
+  .summary small { color: var(--muted); } .summary b { display: block; font-size: 19px; margin: 2px 0; }
+  .summary .alert { color: var(--bad); font-size: 12px; }
+  .block { padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+  .grid2 span { color: var(--muted); font-size: 12px; } .grid2 b { display: block; font-size: 17px; margin-top: 2px; }
+  .grid2 b.bad { color: var(--bad); }
+  .milestone span { color: var(--muted); font-size: 12px; display: block; margin-top: 8px; } .milestone b { font-size: 15px; }
+  .hint { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel-2); color: #c7cedb; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <div class="brand"><i></i>App Architect Studio</div>
+    <button class="btn">+ 노드 추가 ▾</button>
+    <button class="btn" title="되돌리기 (Ctrl+Z)">↶</button>
+    <button class="btn" title="다시 하기 (Ctrl+Y)">↷</button>
+    <button class="btn">자동 배치</button>
+    <button class="btn">3D 보기</button>
+    <span class="spacer"></span>
+    <button class="btn">예시 불러오기 ▾</button>
+    <button class="btn">열기</button>
+    <button class="btn">코드 분석 불러오기</button>
+    <button class="btn">저장</button>
+    <button class="btn">파일로 내보내기</button>
+    <button class="btn">저장 기록</button>
+    <button class="btn primary">설계서 PDF</button>
+  </header>
+
+  <section class="kpis">
+    <div class="kpi"><span>DAU</span><b>64,921<small>명</small></b></div>
+    <div class="kpi"><span>창 안 접속</span><b>80.2<small>%</small></b></div>
+    <div class="kpi"><span>피크 RPS</span><b>181<small>RPS</small></b></div>
+    <div class="kpi"><span>이벤트 피크 RPS</span><b>544<small>RPS</small></b></div>
+    <div class="kpi"><span>저장(여유분 포함)</span><b>382<small>GB</small></b></div>
+    <div class="kpi"><span>하루 송신</span><b>113<small>GB/일</small></b></div>
+  </section>
+
+  <aside class="left">
+    <h4>프로젝트</h4>
+    <div class="row"><span>이름</span><b>3단계 예시 — 2단계 …</b></div>
+    <h4>구동 방식</h4>
+    <div class="row"><span>방식</span><b>웹 (브라우저 + 서버)</b></div>
+    <div class="row"><span>사용 범위</span><b>공개 서비스</b></div>
+    <h4>규모</h4>
+    <div class="row"><span>활성 사용자</span><b>100,000</b></div>
+    <div class="row"><span>이벤트 배수</span><b>3</b></div>
+    <div class="row"><span>창 안 비율</span><b>0.8</b></div>
+    <div class="row"><span>기준 나라</span><b>KR</b></div>
+    <div class="row"><span>시드</span><b>1</b></div>
+    <div class="row"><span>목표 사용률</span><b>0.7</b></div>
+    <h4>페르소나 (비율 합 100%)</h4>
+    <div class="persona"><span>핵심 열성</span><div class="track"><i style="width:17%"></i></div><em>5%</em></div>
+    <div class="persona"><span>열성</span><div class="track"><i style="width:33%"></i></div><em>10%</em></div>
+    <div class="persona"><span>적극</span><div class="track"><i style="width:67%"></i></div><em>20%</em></div>
+    <div class="persona"><span>일반</span><div class="track"><i style="width:100%"></i></div><em>30%</em></div>
+    <div class="persona"><span>가끔</span><div class="track"><i style="width:67%"></i></div><em>20%</em></div>
+    <div class="persona"><span>드물게</span><div class="track"><i style="width:33%"></i></div><em>10%</em></div>
+    <div class="persona"><span>휴면 직전</span><div class="track"><i style="width:17%"></i></div><em>5%</em></div>
+    <h4>행동</h4>
+    <p style="color:var(--muted)">DB·캐시·분석 노드에 테이블을 넣으면 …</p>
+  </aside>
+
+  <main>
+    <div class="canvas">
+      <div class="legend">
+        <span><i style="background:var(--ok)"></i>여유 충분</span>
+        <span><i style="background:var(--warn)"></i>28개월째 착수</span>
+        <span><i style="background:var(--bad)"></i>15개월째 착수</span>
+        <span>선 굵기 = 요청량</span>
+      </div>
+      <div class="stage">
+      <svg class="wires" viewBox="0 0 1180 520">
+        <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0L10,5L0,10z" fill="#4c5870"/></marker>
+          <marker id="arr-r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M0,0L10,5L0,10z" fill="#ff5a5a"/></marker>
+          <marker id="arr-t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#2ec4a6"/></marker>
+          <marker id="arr-y" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#f5b301"/></marker></defs>
+        <line x1="222" y1="214" x2="300" y2="214" stroke="#4c5870" stroke-width="5" marker-end="url(#arr)"/>
+        <text class="wire-label" x="236" y="202">181 RPS</text>
+        <line x1="498" y1="218" x2="576" y2="218" stroke="#4c5870" stroke-width="5" marker-end="url(#arr)"/>
+        <text class="wire-label" x="512" y="206">181 RPS</text>
+        <path d="M774 220 C 822 220, 830 246, 874 246" stroke="#ff5a5a" stroke-width="8" fill="none" marker-end="url(#arr-r)"/>
+        <path d="M774 208 C 830 198, 826 62, 874 62" stroke="#2ec4a6" stroke-width="2" fill="none" marker-end="url(#arr-t)"/>
+        <text class="wire-label" x="814" y="120">읽기</text>
+        <line x1="676" y1="268" x2="676" y2="390" stroke="#f5b301" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arr-y)"/>
+        <text x="688" y="336" fill="#f5b301" font-size="12">비동기 write</text>
+        <line x1="774" y1="442" x2="874" y2="442" stroke="#4c5870" stroke-width="2" marker-end="url(#arr)"/>
+        <line x1="976" y1="392" x2="976" y2="296" stroke="#4c5870" stroke-width="2" marker-end="url(#arr)"/>
+      </svg>
+      <div class="node" style="left:26px;top:170px"><small>클라이언트</small><b>웹 브라우저</b><div class="sub">사용자 64,921명</div></div>
+      <div class="node ok" style="left:302px;top:170px"><small>게이트웨이</small><b>게이트웨이</b><div class="sub">Least-Connections +1</div><div class="meter"><div class="track"><i style="width:8%"></i></div>8%</div></div>
+      <div class="node warn" style="left:578px;top:170px"><small>백엔드 서비스</small><b>주문 API</b><div class="sub">2대 · p99 101ms</div><div class="meter"><div class="track"><i style="width:12%"></i></div>12%</div></div>
+      <div class="node bad" style="left:878px;top:196px"><small>데이터베이스</small><b>주문 DB</b><div class="sub">한계 551,614명</div><div class="meter"><div class="track"><i style="width:18%"></i></div>18%</div></div>
+      <div class="node ok" style="left:878px;top:14px"><small>캐시</small><b>Redis 캐시</b><div class="sub">적중률 92%</div><div class="meter"><div class="track"><i style="width:15%"></i></div>15%</div></div>
+      <div class="node ok" style="left:578px;top:394px"><small>메시지 큐</small><b>이벤트 큐</b><div class="sub">비동기 write</div><div class="meter"><div class="track"><i style="width:6%"></i></div>6%</div></div>
+      <div class="node ok" style="left:878px;top:394px"><small>워커</small><b>정산 워커</b><div class="sub">큐 소비 · 2대</div><div class="meter"><div class="track"><i style="width:10%"></i></div>10%</div></div>
+      </div>
+    </div>
+
+    <div class="chart">
+      <h3>활성 사용자가 늘면 어디가 먼저 막힐까요?<small>가로: 활성 사용자 · 세로: 한계까지 쓴 비율</small></h3>
+      <svg viewBox="0 0 1100 300" width="100%" height="280">
+        <g stroke="#232c38"><line x1="80" y1="40" x2="1080" y2="40"/><line x1="80" y1="150" x2="1080" y2="150"/><line x1="80" y1="260" x2="1080" y2="260"/></g>
+        <text x="70" y="44" text-anchor="end">100%</text><text x="70" y="154" text-anchor="end">50%</text><text x="70" y="264" text-anchor="end">0%</text>
+        <g text-anchor="middle"><text x="80" y="284">0k</text><text x="247" y="284">150k</text><text x="413" y="284">300k</text><text x="580" y="284">450k</text><text x="747" y="284">600k</text><text x="913" y="284">750k</text><text x="1080" y="284">900k</text></g>
+        <line x1="80" y1="40" x2="1080" y2="40" stroke="#ff5a5a" stroke-dasharray="6 5"/><text x="98" y="32" fill="#ff5a5a" style="fill:#ff5a5a">한계 100%</text>
+        <line x1="80" y1="106" x2="1080" y2="106" stroke="#2ec4a6" stroke-dasharray="2 5"/><text x="98" y="98" style="fill:#2ec4a6">목표 사용률 0.7</text>
+        <line x1="191" y1="20" x2="191" y2="260" stroke="#5f6a7a" stroke-dasharray="3 4"/><text x="198" y="16" style="fill:#e7ebf1">지금 100,000명</text>
+        <line x1="80" y1="260" x2="860" y2="-6" stroke="#ff5a5a" stroke-width="2.5"/><circle cx="693" cy="40" r="6" fill="#ff5a5a"/><text x="560" y="64" style="fill:#ff5a5a">주문 DB · 551,614명</text>
+        <line x1="80" y1="260" x2="1080" y2="26" stroke="#f5b301" stroke-width="2.5"/><circle cx="1020" cy="40" r="6" fill="#f5b301"/><text x="905" y="30" style="fill:#f5b301">주문 API · 820k</text>
+        <line x1="80" y1="260" x2="1080" y2="206" stroke="#2ec4a6" stroke-width="2"/>
+        <line x1="80" y1="260" x2="1080" y2="222" stroke="#6a7486" stroke-width="2"/>
+      </svg>
+    </div>
+  </main>
+
+  <aside class="right">
+    <nav class="tabs"><button class="on">선택한 것</button><button>전체 결과</button><button>최선 조합</button></nav>
+    <div class="summary">
+      <svg width="92" height="92" viewBox="0 0 100 100" role="img" aria-label="한계까지 18%">
+        <circle cx="50" cy="50" r="42" stroke="#232c38" stroke-width="9" fill="none"/>
+        <circle cx="50" cy="50" r="42" stroke="#ff5a5a" stroke-width="9" fill="none" stroke-linecap="round" stroke-dasharray="47.5 263.9" transform="rotate(-90 50 50)"/>
+        <text x="50" y="57" text-anchor="middle" font-size="20" font-weight="700" fill="#e7ebf1">18%</text>
+      </svg>
+      <div><small>데이터베이스</small><b>주문 DB</b><span class="alert">첫 병목 · 15개월째 착수</span></div>
+    </div>
+    <div class="block">
+      <h4 style="margin-top:0">이 노드가 받는 부하</h4>
+      <div class="grid2">
+        <div><span>쓰기</span><b>50.63 건/초</b></div>
+        <div><span>저장</span><b>382 GB</b></div>
+        <div><span>이벤트 동시 접속</span><b>15,454 명</b></div>
+        <div><span>한계 사용자</span><b class="bad">약 551,614명</b></div>
+      </div>
+    </div>
+    <div class="block">
+      <h4 style="margin-top:0">월 비용 (USD)</h4>
+      <div class="grid2">
+        <div><span>0개월째</span><b>736</b></div><div><span>6개월째</span><b>1,026</b></div>
+        <div><span>12개월째</span><b>1,555</b></div><div><span>24개월째</span><b>4,145</b></div>
+      </div>
+    </div>
+    <div class="block milestone">
+      <h4 style="margin-top:0">한계 시점</h4>
+      <span>주문 DB</span><b>18개월째 한계 · 15개월째 착수</b>
+      <span>주문 API</span><b>31개월째 한계 · 28개월째 착수</b>
+      <div class="hint">최선 조합 탭에서 이 노드를 바꿨을 때의 한계 시점을 비교할 수 있어요.</div>
+    </div>
+  </aside>
+</div>
+<script>
+  // 무대를 캔버스에 맞춰 줄인다 (키우지는 않음)
+  const canvas = document.querySelector('.canvas'), stage = document.querySelector('.stage'), legend = document.querySelector('.legend');
+  const fit = () => {
+    const s = Math.min(1, (canvas.clientWidth - 16) / 1180, (canvas.clientHeight - legend.offsetHeight - 8) / 520);
+    stage.style.transform = `translate(${Math.max(0, (canvas.clientWidth - 1180 * s) / 2)}px, 4px) scale(${s})`;
+  };
+  new ResizeObserver(fit).observe(canvas);
+  fit();
+</script>
+</body>
+</html>
