@@ -1,4 +1,5 @@
 // 노드별 부하: 화면 노드에서 시작해 연결선을 위상 정렬 순서로 따라가며 λ × callRatio를 더해 내려간다.
+import { callSplit } from './api';
 import { deployVars } from './deploy';
 import type { Scenario } from './judge';
 import type { Project } from './schema';
@@ -23,8 +24,19 @@ export function nodeLoads(p: Project, t: Traffic): Map<string, NodeLoad> {
 
   for (const id of topoOrder(p)) {
     const from = loads.get(id)!;
+    // 화면 와이어프레임에 API 호출이 있으면 화면에서 나가는 부하는 호출 비율대로 나눈다
+    const split = callSplit(p, p.nodes.find((n) => n.id === id)!);
     for (const e of p.edges.filter((x) => x.from === id)) {
       const to = loads.get(e.to)!;
+      if (split) {
+        const f = split.get(e.to) ?? { read: 0, write: 0 };
+        for (const s of ['normal', 'event'] as const) {
+          const w = from.writeRps[s];
+          to.rps[s] += (from.rps[s] - w) * f.read + w * f.write;
+          to.writeRps[s] += w * f.write;
+        }
+        continue;
+      }
       for (const s of ['normal', 'event'] as const) {
         const w = from.writeRps[s];
         const r = e.carries === 'all' ? from.rps[s] : e.carries === 'write' ? w : from.rps[s] - w;

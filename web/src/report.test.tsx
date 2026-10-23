@@ -44,15 +44,15 @@ describe('설계서 노드 카드 (설계서 7절 형식)', () => {
 });
 
 describe('설계서 전체', () => {
-  it('설계서 목차 12개 절이 순서대로 나오고, 노드마다 카드가 한 장', () => {
+  it('설계서 목차 13개 절이 순서대로 나오고, 노드마다 카드가 한 장', () => {
     const p = load('global-commerce.json');
     const html = renderToStaticMarkup(
       <Report project={p} analysis={run(p, today).analysis} positions={autoLayout(p)} plans={findPlans(p, today).result} today={today} onClose={() => {}} />,
     );
     const titles = [...html.matchAll(/<h2 class="r-h">(\d+)\. (.*?)<\/h2>/g)].map((m) => `${m[1]}. ${m[2].replace(/<!-- -->/g, '')}`);
     expect(titles).toEqual([
-      '1. 요약', '2. 구동 방식', '3. 규모 가정', '4. 구조도', '5. 노드별 선택과 판정 근거', '6. 확장 한계 · 지연시간 · 월 비용',
-      '7. 최선 조합과 선택 조건', '8. 가용성 · 성장 타임라인', '9. 확인 필요 조문', '10. 미해결 ❌·⚠️ 목록', '11. 적용한 설정', '12. 카탈로그 출처',
+      '1. 요약', '2. 구동 방식', '3. 규모 가정', '4. 구조도', '5. 화면 설계 · API 호출', '6. 노드별 선택과 판정 근거', '7. 확장 한계 · 지연시간 · 월 비용',
+      '8. 최선 조합과 선택 조건', '9. 가용성 · 성장 타임라인', '10. 확인 필요 조문', '11. 미해결 ❌·⚠️ 목록', '12. 적용한 설정', '13. 카탈로그 출처',
     ]);
     expect(html.match(/class="r-card /g)).toHaveLength(p.nodes.length);
   });

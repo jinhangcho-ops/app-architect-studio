@@ -34,11 +34,14 @@ export const applyPlan = (p: Project, assignment: Record<string, string>): Proje
 export const updateNode = (p: Project, id: string, patch: Partial<ProjectNode>): Project =>
   ({ ...p, nodes: p.nodes.map((n) => (n.id !== id ? n : { ...('primary' in patch ? withPrimary(n, patch.primary) : n), ...patch })) });
 
-/** 노드를 지우면 연결선과, 그 노드의 테이블에 쓰는 행동 줄도 지운다 (쓸 곳이 없어진 행동과 그 빈도도) */
+/** 노드를 지우면 연결선과, 그 노드의 테이블에 쓰는 행동 줄도 지운다 (쓸 곳이 없어진 행동과 그 빈도도). 와이어프레임 호출의 대상도 비운다 */
 export const removeNode = (p: Project, id: string): Project => {
   const n = p.nodes.find((x) => x.id === id);
   const cleared = (n?.tables ?? []).reduce((acc, t) => removeTable(acc, id, t.name), p);
-  return { ...cleared, nodes: cleared.nodes.filter((x) => x.id !== id), edges: cleared.edges.filter((e) => e.from !== id && e.to !== id) };
+  const unbind = (x: ProjectNode): ProjectNode => (!x.wireframe ? x : {
+    ...x, wireframe: { screens: x.wireframe.screens.map((s) => ({ ...s, items: s.items.map((i) => (i.api?.to === id ? { ...i, api: { ...i.api, to: undefined } } : i)) })) },
+  });
+  return { ...cleared, nodes: cleared.nodes.filter((x) => x.id !== id).map(unbind), edges: cleared.edges.filter((e) => e.from !== id && e.to !== id) };
 };
 
 export function addNode(p: Project, layer: Layer): { project: Project; id: string } {
@@ -255,3 +258,9 @@ export function addWire(p: Project, nodeId: string, screen: number, item: Omit<W
 
 export const updateWire = (p: Project, nodeId: string, screen: number, id: string, patch: Partial<WireItem>): Project =>
   mapScreens(p, nodeId, (ss) => ss.map((s, i) => (i !== screen ? s : { ...s, items: s.items.map((x) => (x.id === id ? { ...x, ...patch } : x)) })));
+
+/** 컨트롤에 API 호출을 붙이거나 고친다. 대상이 정해지면 화면 → 대상 연결선이 없을 때 만든다 */
+export function bindApi(p: Project, nodeId: string, screen: number, id: string, api: WireItem['api']): Project {
+  const next = updateWire(p, nodeId, screen, id, { api });
+  return api?.to ? addEdge(next, nodeId, api.to) : next;
+}

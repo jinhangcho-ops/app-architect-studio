@@ -8,7 +8,7 @@ import { LAYER_NAMES, VERDICT_NAMES, type Verdict } from '../../engine/model';
 import type { CatalogItem, Project } from '../../engine/schema';
 import { catalog } from './data';
 import { applyAlternative, dropRemove, updateNode } from './edit';
-import { overPalette } from './Palette';
+import { markDrag, overPalette } from './Palette';
 import { useState } from 'react';
 import { useStore } from './store';
 
@@ -160,7 +160,9 @@ export function PartsInside({ nodeId, analysis, canEnter }: { nodeId: string; an
         onPaneClick={() => select(null)} nodesConnectable={false}
         onNodesChange={(changes) => { for (const c of changes) if (c.type === 'position' && c.position) setMoved((m) => ({ ...m, [c.id]: c.position! })); }}
         // 보조 항목 블록을 왼편 목록으로 끌어 놓으면 뺀다
+        onNodeDragStart={(_, node) => node.id.startsWith('p:') && n.extras.includes(node.id.slice(2)) && markDrag('remove')}
         onNodeDragStop={(e, node) => {
+          markDrag();
           setMoved((m) => { const { [node.id]: _, ...rest } = m; return rest; });
           const id = node.id.slice(2);
           if (node.id.startsWith('p:') && n.extras.includes(id) && overPalette(e)) edit((x) => dropRemove(x, nodeId, { kind: 'remove', what: 'extra', id }));

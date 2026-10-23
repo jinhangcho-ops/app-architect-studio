@@ -1,16 +1,17 @@
 // 설계서 화면(7·17절): A4 인쇄용으로 그리고, 브라우저 인쇄 창의 "PDF로 저장"으로만 내보낸다.
-// 목차: 요약 → 구동 방식 → 규모 가정 → 구조도 → 노드별 판정 근거 → 확장 한계·지연·비용 → 최선 조합 → 가용성·성장 → 조문 → 미해결 → 적용한 설정 → 출처
-import type { ReactNode } from 'react';
+// 목차: 요약 → 구동 방식 → 규모 가정 → 구조도 → 화면 설계·API → 노드별 판정 근거 → 확장 한계·지연·비용 → 최선 조합 → 가용성·성장 → 조문 → 미해결 → 적용한 설정 → 출처
+import { useEffect, useRef, type ReactNode } from 'react';
 import type { Analysis } from '../../engine/analyze';
 import { LAYER_NAMES, VERDICT_NAMES } from '../../engine/model';
 import type { OptimizeResult, Plan } from '../../engine/optimize';
-import { selectedFeatures, storageProfileOf, type Project } from '../../engine/schema';
+import { selectedFeatures, storageProfileOf, type Project, type Screen } from '../../engine/schema';
 import { PATTERNS } from '../../engine/traffic';
 import { catalog, laws, prices } from './data';
 import { worstVerdict } from './edit';
 import { fmt, fmtMetric, fmtShare } from './format';
 import type { XY } from './layout';
 import { nodeCard, openIssues, sourcesOf } from './reportData';
+import { drawScreen, frameOf } from './wireDraw';
 
 const MODES = { web: '웹 (브라우저 + 서버)', mobile: '모바일 앱', local_exe: '로컬 데스크톱(exe)', hybrid: '하이브리드 (로컬 + 동기화)', server: '서버 전용' } as const;
 const SCOPES = { single: '혼자', team: '팀·사내', public: '공개 서비스' } as const;
@@ -99,7 +100,12 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={5}>노드별 선택과 판정 근거</H>
+            <H n={5}>화면 설계 · API 호출</H>
+            <Screens project={p} analysis={a} />
+          </section>
+
+          <section>
+            <H n={6}>노드별 선택과 판정 근거</H>
             {p.nodes.map((n) => {
               const c = nodeCard(p, a, catalog.byId, n.id);
               return (
@@ -114,7 +120,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={6}>확장 한계 · 지연시간 · 월 비용</H>
+            <H n={7}>확장 한계 · 지연시간 · 월 비용</H>
             <ul>{p.nodes.filter((n) => a.nodes[n.id].limitUsers).map((n) => <li key={n.id}>{n.name}: 한계 사용자 약 {fmt(a.nodes[n.id].limitUsers!.value)}명</li>)}</ul>
             <ul>{a.paths.map((pa) => <li key={pa.nodes.join()}>{pa.nodes.map(name).join(' → ')}: p99 {fmtMetric(pa.p99)}</li>)}</ul>
             {a.cost && <>
@@ -128,7 +134,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={7}>최선 조합과 선택 조건</H>
+            <H n={8}>최선 조합과 선택 조건</H>
             <KV rows={[
               ['우선순위', p.optimize.priorities.join(' > ') || '없음 (모든 목표 같은 무게)'],
               ['꼭 지킬 조건', [p.optimize.budget_monthly !== undefined && `월 예산 ${fmt(p.optimize.budget_monthly)}`, p.optimize.min_limit_users !== undefined && `한계 사용자 ${fmt(p.optimize.min_limit_users)}명 이상`, p.optimize.max_p99_ms !== undefined && `p99 ${p.optimize.max_p99_ms}ms 이하`, p.optimize.min_availability !== undefined && `가용성 ${fmtShare(p.optimize.min_availability)} 이상`].filter(Boolean).join(' · ') || '없음'],
@@ -138,7 +144,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={8}>가용성 · 성장 타임라인</H>
+            <H n={9}>가용성 · 성장 타임라인</H>
             <ul>{a.paths.map((pa) => <li key={pa.nodes.join()}>{pa.nodes.map(name).join(' → ')}: 가용성 {fmtMetric(pa.availability)}, 월 중단 {fmtMetric(pa.downtime)}</li>)}</ul>
             {a.spof.length > 0 && <p>단일 장애점: {a.spof.map(name).join(', ')}</p>}
             {a.growth && <ul>
@@ -149,7 +155,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={9}>확인 필요 조문</H>
+            <H n={10}>확인 필요 조문</H>
             {!a.regulation.length ? <p className="muted">개인정보 노드가 없거나 걸린 조문이 없습니다.</p> : <ul>
               {a.regulation.map((h) => <li key={h.nodeId + h.law + h.article}>{name(h.nodeId)} · {h.law} {h.article} 확인 필요 — {h.reason}{h.verified ? '' : ' (조문 번호 미확인)'}</li>)}
             </ul>}
@@ -157,12 +163,12 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={10}>미해결 ❌·⚠️ 목록</H>
+            <H n={11}>미해결 ❌·⚠️ 목록</H>
             {(() => { const xs = openIssues(p, a, catalog.byId); return xs.length ? <ul>{xs.map((x) => <li key={x}>{x}</li>)}</ul> : <p className="muted">없습니다.</p>; })()}
           </section>
 
           <section>
-            <H n={11}>적용한 설정</H>
+            <H n={12}>적용한 설정</H>
             <ul>{p.nodes.flatMap((n) => {
               const sp = storageProfileOf(n.primary ? catalog.byId.get(n.primary) : undefined, catalog.byId);
               const feats = sp ? selectedFeatures(sp, n).map((f) => f.label) : [];
@@ -172,7 +178,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={12}>카탈로그 출처</H>
+            <H n={13}>카탈로그 출처</H>
             <ul className="r-src">
               {sourcesOf(p, catalog.byId).map((s) => <li key={s.item}>{s.item}: {s.urls.join(' · ')}</li>)}
               {usedPrices.map((r) => <li key={r.id}>가격 {r.id} ({r.as_of}): {r.source}</li>)}
@@ -231,4 +237,35 @@ function PlanTable({ p, plans }: { p: Project; plans: OptimizeResult }) {
       </tbody>
     </table>
   );
+}
+
+/** 와이어프레임 그림. 캔버스는 화면에 붙은 뒤에 그린다 (인쇄에도 그대로 나온다) */
+function WireImage({ screen, frame }: { screen: Screen; frame: { w: number; h: number } }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const c = ref.current?.getContext('2d');
+    if (c) drawScreen(c, screen, frame, 2);
+  }, [screen, frame]);
+  return <canvas ref={ref} className="r-wire" width={frame.w * 2} height={frame.h * 2} />;
+}
+
+function Screens({ project: p, analysis: a }: { project: Project; analysis: Analysis }) {
+  const frame = frameOf(p.deploy.mode);
+  const name = (id: string) => p.nodes.find((n) => n.id === id)?.name ?? id;
+  const uis = p.nodes.filter((n) => n.layer === 'ui' && n.wireframe?.screens.some((s) => s.items.length));
+  if (!uis.length) return <p className="muted">와이어프레임이 없습니다. 화면 블록의 세부 구성 › 와이어프레임에서 그릴 수 있습니다.</p>;
+  return <>{uis.map((n) => {
+    const calls = a.api.filter((c) => c.node === n.id);
+    return (
+      <div key={n.id}>
+        <h3 className="r-sub">{n.name}</h3>
+        {n.wireframe!.screens.filter((s) => s.items.length).map((s) => (
+          <figure key={s.name} className="r-fig"><WireImage screen={s} frame={frame} /><figcaption>{n.name} · {s.name} ({frame.name})</figcaption></figure>
+        ))}
+        {calls.length > 0 && <table className="r-grid"><thead><tr><th>화면 · 컨트롤</th><th>호출</th><th>받는 블록</th><th>접속당</th><th>피크 RPS</th><th>이벤트 피크 RPS</th></tr></thead><tbody>
+          {calls.map((c) => <tr key={c.screen + c.item}><td>{c.screen} · {c.label}</td><td>{c.method} {c.path || '/'}</td><td>{name(c.to)}</td><td>{fmt(c.perSession)}회</td><td>{fmtMetric(c.rps)}</td><td>{fmtMetric(c.rpsEvent)}</td></tr>)}
+        </tbody></table>}
+      </div>
+    );
+  })}</>;
 }

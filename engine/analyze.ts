@@ -10,6 +10,7 @@ import { timeline, usersAt, type Milestone } from './growth';
 import { checkRules, judgeNode, mergeScenario, type NodeJudgement, type RuleHit, type Scenario } from './judge';
 import { nodeP99, pathP99, syncPaths } from './latency';
 import { limitFactor } from './limits';
+import { apiLoads, type ApiLoad } from './api';
 import { computedScenarios, nodeLoads, type NodeLoad } from './load';
 import type { Metric } from './model';
 import { checkRegulation, type LawHit } from './regulation';
@@ -41,6 +42,8 @@ export type Analysis = {
   growth?: { milestones: Milestone[]; monthlyCost: (Metric | undefined)[]; /** 파티션 없는 테이블이 서버 메모리를 넘는 달 (nodeId = '노드.테이블') */ tables: Milestone[] };
   /** 테이블별 크기·파티션 */
   tables: TableAnalysis[];
+  /** 화면 와이어프레임의 API 호출별 피크 RPS */
+  api: ApiLoad[];
   /** 16절 로컬 실행 메모리 (로컬 exe·모바일·하이브리드에서 메모리 입력이 있을 때). share = 기기 메모리 중 차지하는 비율 */
   localMemory?: { mb: Metric; share?: Metric };
   /** 저장량 비교: 페르소나 추정(쓰기 × 건당 KB)과 테이블 합계 */
@@ -194,6 +197,7 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     judgements: p.nodes.map((n) => judgeNode(n, d.catalog, judged.get(n.id))),
     rules: checkRules(p, d.rules, tables.map((x) => ({ target: `${p.nodes.find((n) => n.id === x.nodeId)!.name}.${x.table}`, vars: x.vars }))),
     tables,
+    api: loads ? apiLoads(p, loads) : [],
     ...(t && {
       storage: {
         personaGb: t.storageGbWithOverhead,

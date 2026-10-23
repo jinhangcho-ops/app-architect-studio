@@ -333,3 +333,24 @@ textarea.spec { width: 100%; min-height: 90px; font-family: ui-monospace, monosp
 .wi-text.sel { border-color: #2b5fd9; }
 .wi-tabs { background: linear-gradient(#3b4452, #3b4452) left bottom / 25% 2px no-repeat, #fff; }
 .wsize { position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; background: #2b5fd9; cursor: nwse-resize; border-radius: 2px 0 2px 0; }
+.winspect { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 8px 12px; background: var(--panel); border-top: 1px solid var(--line); font-size: 12px; max-height: 120px; overflow-y: auto; }
+.winspect label { display: inline-flex; gap: 4px; align-items: center; color: var(--muted); }
+.winspect input[type=number] { width: 56px; }
+.winspect input[aria-label='경로'] { width: 150px; }
+.winspect .warn { flex-basis: 100%; }
+.wcall { display: inline-flex; gap: 6px; align-items: center; padding: 2px 8px; border: 1px solid var(--line-2); border-radius: 6px; }
+.wcall code { color: var(--accent); }
+.wire .inside-hint { position: static; padding: 4px 12px; background: var(--panel); }
+.wi .wapi { position: absolute; right: 3px; bottom: 2px; font-size: 9px; padding: 0 4px; border-radius: 3px; background: #2b5fd9; color: #fff; pointer-events: none; white-space: nowrap; }
+.wi .wapi.none { background: #d98a00; }
+
+/* 끄는 동안 놓을 수 있는 곳 */
+body[data-drag='add'] .detail .react-flow, body[data-drag='add'] .dwrap { outline: 2px dashed var(--accent); outline-offset: -6px; }
+body[data-drag='add'] .dbox.router { border-color: var(--accent); background: #2ec4a614; }
+body[data-drag='ui'] .wframe { box-shadow: 0 0 0 3px var(--accent), 0 8px 30px #0008; }
+body[data-drag='remove'] .palette { background: #ff5a5a12; outline: 2px dashed var(--fail); outline-offset: -6px; }
+body[data-drag='remove'] .palette::before { content: '여기에 놓으면 빠져요'; display: block; margin-bottom: 8px; color: var(--fail); font-weight: 700; }
+.r-sub { font-size: 11pt; margin: 10px 0 4px; }
+.r-fig { margin: 6px 0 10px; break-inside: avoid; }
+.r-wire { width: 100%; height: auto; border: 1px solid #cfd5dc; }
+.r-fig figcaption { font-size: 9pt; color: #6b7380; }

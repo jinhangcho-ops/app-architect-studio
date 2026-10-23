@@ -6,7 +6,7 @@ import type { Analysis } from '../../engine/analyze';
 import { LAYER_NAMES } from '../../engine/model';
 import { DEFAULT_STORAGE, selectedFeatures, storageProfileOf, TABLE_LAYERS, type ProjectNode } from '../../engine/schema';
 import { catalog } from './data';
-import { overPalette } from './Palette';
+import { markDrag, overPalette } from './Palette';
 import type { TableAnalysis } from '../../engine/tables';
 import { valueBytes } from '../../engine/tables';
 import { addAction, addTable, addWrite, dropItem, dropRemove, removeWrite, setFeature } from './edit';
@@ -102,7 +102,7 @@ export function NodeInside({ nodeId, analysis, onSelect }: { nodeId: string; ana
       {shown === 'servers' && <ServersInside nodeId={nodeId} analysis={analysis} />}
       {shown === 'tables' && <TablesInside nodeId={nodeId} analysis={analysis} onSelect={onSelect} />}
       {shown === 'parts' && <PartsInside nodeId={nodeId} analysis={analysis} canEnter={canEnter} />}
-      {shown === 'wireframe' && <WireframeInside nodeId={nodeId} />}
+      {shown === 'wireframe' && <WireframeInside nodeId={nodeId} analysis={analysis} />}
     </div>
   );
 }
@@ -158,7 +158,8 @@ function TablesInside({ nodeId, analysis, onSelect }: { nodeId: string; analysis
         onConnect={(c) => c.source?.startsWith('a:') && c.target?.startsWith('t:') && edit((x) => addWrite(x, c.source.slice(2), nodeId, c.target.slice(2)))}
         onEdgesDelete={(es) => edit((x) => es.reduce((acc, e) => removeWrite(acc, e.source.slice(2), nodeId, e.target.slice(2)), x))}
         // 테이블 블록을 왼편 목록으로 끌어 놓으면 테이블을 지운다 (Ctrl+Z로 되돌림)
-        onNodeDragStop={(e, node) => node.id.startsWith('t:') && overPalette(e) && edit((x) => dropRemove(x, nodeId, { kind: 'remove', what: 'table', id: node.id.slice(2) }))}
+        onNodeDragStart={(_, node) => node.id.startsWith('t:') && markDrag('remove')}
+        onNodeDragStop={(e, node) => (markDrag(), node.id.startsWith('t:') && overPalette(e)) && edit((x) => dropRemove(x, nodeId, { kind: 'remove', what: 'table', id: node.id.slice(2) }))}
         onNodeClick={(_, node) => {
           if (!node.id.startsWith('t:')) return select(null);
           select({ kind: 'table', node: nodeId, table: node.id.slice(2) });

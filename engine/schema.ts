@@ -178,6 +178,13 @@ export const WireItem = z.object({
   kind: z.enum(WIRE_KINDS),
   label: z.string().default(''),
   x: z.number(), y: z.number(), w: z.number().positive(), h: z.number().positive(),
+  /** 이 컨트롤이 부르는 API. to = 받는 노드 id (연결선이 있어야 부하가 간다), per_session = 접속 1회당 횟수 (호출끼리 나누는 비율) */
+  api: z.object({
+    method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).default('GET'),
+    path: z.string().default(''),
+    to: z.string().optional(),
+    per_session: z.number().nonnegative().default(1),
+  }).optional(),
 });
 export const Screen = z.object({ name: z.string().min(1), items: z.array(WireItem).default([]) });
 
@@ -430,6 +437,11 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
   }
   for (const e of p.edges) {
     if (!nodeIds.has(e.from) || !nodeIds.has(e.to)) errors.push(`연결선 ${e.from} → ${e.to}: 없는 노드`);
+  }
+  for (const n of p.nodes) {
+    for (const sc of n.wireframe?.screens ?? []) {
+      for (const it of sc.items) if (it.api?.to && !nodeIds.has(it.api.to)) errors.push(`${n.id} ${sc.name} ${it.label || it.id}: API 대상 노드 ${it.api.to}가 없음`);
+    }
   }
   for (const n of p.nodes) errors.push(...n.tables.flatMap((t) => checkTable(t).map((e) => `${n.id}.${t.name}: ${e}`)));
   for (const n of p.nodes) {

@@ -10,7 +10,14 @@ import { dropRemove, type Drag } from './edit';
 import { useStore } from './store';
 
 const MIME = 'application/x-aas-drag';
-export const startDrag = (e: DragEvent, d: Drag) => { e.dataTransfer.setData(MIME, JSON.stringify(d)); e.dataTransfer.effectAllowed = 'copyMove'; };
+/** 끄는 동안 놓을 수 있는 곳을 강조한다 (body[data-drag]: add = 그림, ui = 화면 틀, remove = 왼편 목록) */
+export const markDrag = (kind?: 'add' | 'ui' | 'remove') => { if (kind) document.body.dataset.drag = kind; else delete document.body.dataset.drag; };
+if (typeof document !== 'undefined') for (const ev of ['dragend', 'drop']) document.addEventListener(ev, () => markDrag());
+export const startDrag = (e: DragEvent, d: Drag) => {
+  e.dataTransfer.setData(MIME, JSON.stringify(d));
+  e.dataTransfer.effectAllowed = 'copyMove';
+  markDrag(d.kind === 'remove' ? 'remove' : d.kind === 'ui' ? 'ui' : 'add');
+};
 export const isOurDrag = (e: DragEvent) => e.dataTransfer.types.includes(MIME);
 export const readDrag = (e: DragEvent): Drag | undefined => {
   try { return JSON.parse(e.dataTransfer.getData(MIME)); } catch { return undefined; }
