@@ -36,6 +36,7 @@ export function ProjectPanel() {
             <option value="single">혼자</option><option value="team">팀·사내</option><option value="public">공개 서비스</option>
           </select>
         </Row>
+        {['local_exe', 'mobile', 'hybrid'].includes(p.deploy.mode) && <LocalMemory />}
       </Section>
 
       <Section title="규모">
@@ -162,4 +163,23 @@ function ActionsSection() {
       </>}
     </Section>
   );
+}
+
+/** 로컬 실행 메모리 입력: 런타임 + 시작할 때 올리는 라이브러리 합 + 필요할 때 올리는 것 중 가장 큰 하나 + 캐시 */
+function LocalMemory() {
+  const { project: p, edit } = useStore();
+  const mem = p.deploy.memory ?? { runtime_mb: 0, eager_mb: [], lazy_mb: [] };
+  const setMem = (patch: Partial<typeof mem>) => edit((x) => ({ ...x, deploy: { ...x.deploy, memory: { ...mem, ...patch } } }));
+  const nums = (s: string) => s.split(',').map((v) => Number(v.trim())).filter((v) => Number.isFinite(v) && v >= 0 && s.trim() !== '');
+  return <>
+    <NumField label="기기 메모리(GB)" value={p.deploy.device_spec?.memGb} onChange={(v) => edit((x) => ({ ...x, deploy: { ...x.deploy, device_spec: { ...x.deploy.device_spec, memGb: v } } }))} />
+    <NumField label="런타임(MB)" value={p.deploy.memory?.runtime_mb} hint="Electron·JVM·Python 등 실행 환경 자체" onChange={(v) => setMem({ runtime_mb: v ?? 0 })} />
+    <Row label="상시 로드(MB)" hint="시작할 때 올리는 라이브러리, 쉼표로 구분">
+      <input defaultValue={mem.eager_mb.join(', ')} onBlur={(e) => setMem({ eager_mb: nums(e.target.value) })} />
+    </Row>
+    <Row label="지연 로드(MB)" hint="필요할 때 올리는 라이브러리, 쉼표로 구분 (가장 큰 하나만 더함)">
+      <input defaultValue={mem.lazy_mb.join(', ')} onBlur={(e) => setMem({ lazy_mb: nums(e.target.value) })} />
+    </Row>
+    <NumField label="데이터 캐시(MB)" value={p.deploy.memory?.cache_mb} onChange={(v) => setMem({ cache_mb: v })} />
+  </>;
 }

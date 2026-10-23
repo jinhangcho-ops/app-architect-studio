@@ -5,7 +5,7 @@ import { calibrate } from './calibrate';
 import { hourlyInstances, instancesNeeded } from './capacity';
 import { monthlyCost, type CostResult } from './cost';
 import { costLines } from './meters';
-import { enabled } from './deploy';
+import { enabled, localMemoryMb } from './deploy';
 import { timeline, usersAt, type Milestone } from './growth';
 import { checkRules, judgeNode, mergeScenario, type NodeJudgement, type RuleHit, type Scenario } from './judge';
 import { nodeP99, pathP99, syncPaths } from './latency';
@@ -41,6 +41,8 @@ export type Analysis = {
   growth?: { milestones: Milestone[]; monthlyCost: (Metric | undefined)[]; /** 파티션 없는 테이블이 서버 메모리를 넘는 달 (nodeId = '노드.테이블') */ tables: Milestone[] };
   /** 테이블별 크기·파티션 */
   tables: TableAnalysis[];
+  /** 16절 로컬 실행 메모리 (로컬 exe·모바일·하이브리드에서 메모리 입력이 있을 때). share = 기기 메모리 중 차지하는 비율 */
+  localMemory?: { mb: Metric; share?: Metric };
   /** 저장량 비교: 페르소나 추정(쓰기 × 건당 KB)과 테이블 합계 */
   storage?: { personaGb: Metric; tablesGb?: Metric };
   judgements: NodeJudgement[];
@@ -199,6 +201,16 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
       },
     }),
     regulation: checkRegulation(p, d.laws ?? []),
+    ...(enabled(p.deploy, 'localMemory') && p.deploy.memory && (() => {
+      const mb = localMemoryMb(p.deploy.memory);
+      const device = p.deploy.device_spec?.memGb;
+      return {
+        localMemory: {
+          mb,
+          ...(device && { share: { value: mb.value / (device * 1000), unit: '비율', formula: '로컬 메모리 / 기기 메모리', inputs: { 로컬MB: mb.value, 기기GB: device } } }),
+        },
+      };
+    })()),
     scenarios: Object.fromEntries(judged),
   };
 }

@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { analyze } from '../analyze';
 import { localMemoryMb } from '../deploy';
 import { loadCatalog, loadProject } from '../io';
 import { computedScenarios, nodeLoads } from '../load';
@@ -140,6 +141,15 @@ describe('구동 방식 (16절)', () => {
 
   it('로컬 메모리: 런타임 + 상시 로드 합 + 지연 로드 중 최대 + 캐시', () => {
     expect(localMemoryMb({ runtime_mb: 80, eager_mb: [30, 20], lazy_mb: [150, 60], cache_mb: 50 }).value).toBe(330);
+  });
+
+  it('로컬 exe 분석: 메모리 입력이 있으면 점유와 기기 메모리 중 비율, 웹 방식이면 계산하지 않음', () => {
+    const deploy = { mode: 'local_exe', device_spec: { memGb: 8 }, memory: { runtime_mb: 80, eager_mb: [30, 20], lazy_mb: [150, 60], cache_mb: 50 } };
+    const data = { catalog: catalog.byId, rules: catalog.rules, prices: [] };
+    const a = analyze(Project.parse({ name: 'p', deploy, nodes: [] }), data, '2026-10-24');
+    expect(a.localMemory!.mb.value).toBe(330);
+    expect(a.localMemory!.share!.value).toBeCloseTo(330 / 8000);
+    expect(analyze(Project.parse({ name: 'p', deploy: { ...deploy, mode: 'web' }, nodes: [] }), data, '2026-10-24').localMemory).toBeUndefined();
   });
 });
 

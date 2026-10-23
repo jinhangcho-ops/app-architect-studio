@@ -20,6 +20,14 @@ export function ResultsPanel({ analysis: a }: { analysis?: Analysis }) {
 
   return (
     <div className="panel">
+      {a.localMemory && <Section title="로컬 실행 메모리">
+        <table className="metrics"><tbody>
+          <Line label="예상 점유" m={a.localMemory.mb} />
+          <Line label="기기 메모리 중" m={a.localMemory.share} />
+        </tbody></table>
+        {a.localMemory.share && a.localMemory.share.value > 0.5 && <p className="warn">기기 메모리의 절반 넘게 씁니다. 큰 라이브러리를 지연 로드로 돌리거나 캐시를 줄여 보세요 (기준 50%는 예시값).</p>}
+      </Section>}
+
       <Section title="규모">
         {!t && <p className="muted">서버 트래픽 계산 없음 (로컬 exe이거나 규모·페르소나가 없음)</p>}
         {t && <table className="metrics"><tbody>
@@ -82,6 +90,10 @@ ${howMetric(a.storage.personaGb)}`}>
         {a.bottleneck
           ? <p title={howMetric(a.bottleneck.limitUsers)}>첫 병목: <b>{name(a.bottleneck.nodeId)}</b> — {a.bottleneck.limitUsers.value === 0 ? '지금 구조에서 이미 안 됨' : `활성 사용자 약 ${fmt(a.bottleneck.limitUsers.value)}명에서 안 됨`}</p>
           : <p className="muted">한계를 계산할 노드가 없습니다.</p>}
+        {a.growth && a.growth.monthlyCost.length > 0 && <p className="muted">
+          월 비용: {[0, 6, 12, 24].filter((mo) => mo < a.growth!.monthlyCost.length).map((mo) => `${mo}개월째 ${fmtMetric(a.growth!.monthlyCost[mo])}`).join(' · ')}
+          {a.cost && a.cost.missing.length > 0 && ' (계산하지 못한 항목이 있어 실제보다 작음)'}
+        </p>}
         {a.growth && <ul>{a.growth.milestones.map((ms) => (
           <li key={ms.nodeId}>{name(ms.nodeId)}: {ms.month === undefined ? '성장해도 닿지 않음' : `${ms.month}개월째 한계, ${ms.startMonth}개월째 착수`}</li>
         ))}</ul>}

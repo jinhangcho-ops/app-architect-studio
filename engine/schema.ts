@@ -160,7 +160,15 @@ export const Deploy = z.object({
   offline_required: z.boolean().default(false),
   scope: z.enum(['single', 'team', 'public']).default('public'),
   targets: z.array(z.string()).default([]),
+  /** 사용자 기기 사양 (memGb로 로컬 메모리 점유율을 낸다) */
   device_spec: Spec.optional(),
+  /** 로컬 실행 메모리(MB): 런타임 기본, 시작할 때 올리는 라이브러리, 필요할 때 올리는 라이브러리, 데이터 캐시 */
+  memory: z.object({
+    runtime_mb: z.number().nonnegative(),
+    eager_mb: z.array(z.number().nonnegative()).default([]),
+    lazy_mb: z.array(z.number().nonnegative()).default([]),
+    cache_mb: z.number().nonnegative().optional(),
+  }).optional(),
 });
 
 // 데이터 명세: 테이블·컬럼·인덱스. 크기 계산과 SQLite 실험이 이 정의를 그대로 쓴다
