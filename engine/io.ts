@@ -1,8 +1,8 @@
 // 파일 읽기는 여기에만 둔다. 검증은 data.ts(브라우저와 공용)가 한다.
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildCatalog, buildPrices, parseProject, type JsonFile } from './data';
-import type { CatalogItem, PriceRow, Project } from './schema';
+import { buildCatalog, buildLaws, buildPrices, parseProject, type JsonFile } from './data';
+import type { CatalogItem, LawRow, PriceRow, Project } from './schema';
 
 const readJson = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8'));
 const readDir = (dir: string): JsonFile[] =>
@@ -11,3 +11,4 @@ const readDir = (dir: string): JsonFile[] =>
 export const loadCatalog = (dir: string) => buildCatalog(readDir(dir));
 export const loadPrices = (dir: string): PriceRow[] => buildPrices(readDir(dir));
 export const loadProject = (path: string, items: CatalogItem[]): Project => parseProject(readJson(path), items, path);
+export const loadLaws = (dir: string): LawRow[] => buildLaws(readDir(dir));

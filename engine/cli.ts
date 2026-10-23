@@ -1,7 +1,7 @@
 // 사용법: npm run judge -- <프로젝트.json> [카탈로그 폴더] [가격표 폴더]
 import { fileURLToPath } from 'node:url';
 import { analyze } from './analyze';
-import { loadCatalog, loadPrices, loadProject } from './io';
+import { loadCatalog, loadLaws, loadPrices, loadProject } from './io';
 import { VERDICT_NAMES, type Metric } from './model';
 
 const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
@@ -18,7 +18,7 @@ try {
   const catalog = loadCatalog(catalogDir);
   const project = loadProject(projectPath, catalog.items);
   const today = new Date().toISOString().slice(0, 10);
-  const a = analyze(project, { catalog: catalog.byId, rules: catalog.rules, prices: loadPrices(pricesDir) }, today);
+  const a = analyze(project, { catalog: catalog.byId, rules: catalog.rules, prices: loadPrices(pricesDir), laws: loadLaws(fileURLToPath(new URL('../data/laws', import.meta.url))) }, today);
   const nameOf = (id: string) => project.nodes.find((n) => n.id === id)!.name;
   console.log(`# ${project.name}\n`);
 
@@ -98,6 +98,11 @@ try {
   }
   if (a.rules.length) console.log('\n## 구조 규칙');
   for (const h of a.rules) console.log(`❌ ${h.target}\n    ${h.why}\n    → ${h.instead}`);
+  if (a.regulation.length) console.log('\n## 확인 필요 조문 (법률 검토를 대신하지 않음)');
+  for (const h of a.regulation) {
+    const name = project.nodes.find((n) => n.id === h.nodeId)?.name ?? h.nodeId;
+    console.log(`⚖️  ${name}: ${h.law} ${h.article} 확인 필요 — ${h.reason}${h.verified ? '' : ' (조문 번호 미확인)'}`);
+  }
 } catch (e) {
   console.error((e as Error).message);
   process.exit(1);

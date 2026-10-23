@@ -1,0 +1,50 @@
+[
+  {
+    "id": "kr-29", "law": "개인정보 보호법", "article": "제29조",
+    "trigger": "personal and subject_KR",
+    "reason": "한국 사용자 개인정보 저장",
+    "as_of": "2026-10-23", "source": "https://www.law.go.kr/법령/개인정보보호법", "verified": false
+  },
+  {
+    "id": "kr-23", "law": "개인정보 보호법", "article": "제23조",
+    "trigger": "sensitive and subject_KR",
+    "reason": "한국 사용자 민감정보 포함",
+    "as_of": "2026-10-23", "source": "https://www.law.go.kr/법령/개인정보보호법", "verified": false
+  },
+  {
+    "id": "kr-24", "law": "개인정보 보호법", "article": "제24조",
+    "trigger": "unique_id and subject_KR",
+    "reason": "고유식별정보 필드 포함",
+    "as_of": "2026-10-23", "source": "https://www.law.go.kr/법령/개인정보보호법", "verified": false
+  },
+  {
+    "id": "kr-28-8", "law": "개인정보 보호법", "article": "제28조의8",
+    "trigger": "personal and subject_KR and store_country != 'KR' and store_country != 'local' and store_country != 'unknown'",
+    "reason": "한국 사용자 개인정보 + {store_country} 리전 저장",
+    "as_of": "2026-10-23", "source": "https://www.law.go.kr/법령/개인정보보호법", "verified": false
+  },
+  {
+    "id": "kr-17", "law": "개인정보 보호법", "article": "제17조",
+    "trigger": "personal and subject_KR and sends_external",
+    "reason": "개인정보를 외부 연동 노드로 전송",
+    "as_of": "2026-10-23", "source": "https://www.law.go.kr/법령/개인정보보호법", "verified": false
+  },
+  {
+    "id": "jp-23", "law": "個人情報保護法", "article": "第23条",
+    "trigger": "personal and subject_JP",
+    "reason": "일본 사용자 개인정보 저장",
+    "as_of": "2026-10-23", "source": "https://laws.e-gov.go.jp/law/415AC0000000057", "verified": false
+  },
+  {
+    "id": "jp-28", "law": "個人情報保護法", "article": "第28条",
+    "trigger": "personal and subject_JP and store_country != 'JP' and store_country != 'local' and store_country != 'unknown'",
+    "reason": "일본 사용자 개인정보 + {store_country} 리전 저장",
+    "as_of": "2026-10-23", "source": "https://laws.e-gov.go.jp/law/415AC0000000057", "verified": false
+  },
+  {
+    "id": "jp-27", "law": "個人情報保護法", "article": "第27条",
+    "trigger": "personal and subject_JP and sends_external",
+    "reason": "일본 사용자 개인정보를 외부 연동 노드로 전송",
+    "as_of": "2026-10-23", "source": "https://laws.e-gov.go.jp/law/415AC0000000057", "verified": false
+  }
+]

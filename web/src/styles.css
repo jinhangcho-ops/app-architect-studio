@@ -69,3 +69,15 @@ button:disabled { opacity: 0.4; cursor: default; }
 .card-name { font-weight: 600; margin: 2px 0; }
 .card-item, .card-detail { font-size: 12px; color: var(--muted); }
 .card-spof { font-size: 11px; color: var(--fail); margin-top: 2px; }
+/* 3D 뷰 */
+.view3d { width: 100%; height: 100%; background: #0f1724; cursor: grab; user-select: none; }
+.view3d .slab { fill: #ffffff10; stroke: #ffffff30; }
+.view3d .slab-label { fill: #c9d2de; font-size: 13px; }
+.view3d .edge3d { stroke: #8fa3bd; stroke-width: 1.5; }
+.view3d .edge3d.async { stroke-dasharray: 6 4; }
+.view3d .cube { cursor: pointer; }
+.view3d .cube-label { fill: #fff; font-size: 13px; text-anchor: middle; font-weight: 600; }
+.law { margin: 4px 0; }
+.tag { margin-left: 6px; font-size: 11px; color: var(--cond); border: 1px solid var(--cond); border-radius: 4px; padding: 0 4px; }
+.regions { padding-left: 16px; margin: 4px 0; }
+.regions code, .alt code { font-size: 11px; }

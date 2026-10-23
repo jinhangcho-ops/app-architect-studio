@@ -3,9 +3,11 @@ import { parseProject } from '../../engine/data';
 import { LAYERS, LAYER_NAMES, type Layer } from '../../engine/model';
 import { Canvas } from './Canvas';
 import { catalog, examples } from './data';
+import { mergeCodeAnalysis } from './codeImport';
 import { addNode, run } from './edit';
 import { EdgePanel, NodePanel } from './NodePanel';
 import { OptimizePanel } from './OptimizePanel';
+import { View3D } from './View3D';
 import { ProjectPanel } from './ProjectPanel';
 import { ResultsPanel } from './ResultsPanel';
 import { exportProject, useStore } from './store';
@@ -18,6 +20,8 @@ export function App() {
   const result = useMemo(() => run(project, today), [project]);
   const [tab, setTab] = useState<'selected' | 'results' | 'optimize'>('results');
   const fileRef = useRef<HTMLInputElement>(null);
+  const codeRef = useRef<HTMLInputElement>(null);
+  const [view, setView] = useState<'2d' | '3d'>('2d');
 
   const add = (layer: Layer) => {
     let id = '';
@@ -55,7 +59,8 @@ export function App() {
           <option value="">+ 노드 추가</option>
           {LAYERS.map((l) => <option key={l} value={l}>{LAYER_NAMES[l]}</option>)}
         </select>
-        <button onClick={relayout}>자동 배치</button>
+        <button onClick={relayout} disabled={view === '3d'}>자동 배치</button>
+        <button onClick={() => setView(view === '2d' ? '3d' : '2d')}>{view === '2d' ? '3D 보기' : '2D 보기'}</button>
         <span className="spacer" />
         <select aria-label="예시 불러오기" value="" onChange={(e) => {
           const ex = examples.find((x) => x.name === e.target.value);
@@ -66,11 +71,25 @@ export function App() {
         </select>
         <button onClick={() => fileRef.current?.click()}>열기</button>
         <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => e.target.files?.[0] && open(e.target.files[0])} />
+        <button onClick={() => codeRef.current?.click()} title="tools/analyze_py.py가 만든 JSON">코드 분석 불러오기</button>
+        <input ref={codeRef} type="file" accept="application/json" hidden onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (!f) return;
+          try {
+            const data = JSON.parse(await f.text());
+            edit((p) => mergeCodeAnalysis(p, data));
+          } catch (err) {
+            alert((err as Error).message);
+          }
+          e.target.value = '';
+        }} />
         <button onClick={save}>저장</button>
       </header>
       <aside className="left"><ProjectPanel /></aside>
       <main className="center">
-        <Canvas analysis={result.analysis} onSelect={() => setTab('selected')} />
+        {view === '2d'
+          ? <Canvas analysis={result.analysis} onSelect={() => setTab('selected')} />
+          : <View3D analysis={result.analysis} onSelect={() => setTab('selected')} />}
         {result.error && <pre className="error-banner">{result.error}</pre>}
       </main>
       <aside className="right">

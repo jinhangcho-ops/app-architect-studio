@@ -2,8 +2,10 @@ import { useState } from 'react';
 import type { Analysis } from '../../engine/analyze';
 import { judgeItem } from '../../engine/judge';
 import { LAYERS, LAYER_NAMES, VERDICT_NAMES, type Layer } from '../../engine/model';
+import { REGIONS } from '../../engine/schema';
 import { catalog, prices } from './data';
-import { applyAlternative, removeEdge, removeNode, setVar, updateEdge, updateNode } from './edit';
+import { parseHtml, type ApiCall } from './htmlImport';
+import { addEdge, applyAlternative, removeEdge, removeNode, setVar, updateEdge, updateNode } from './edit';
 import { NumField, Row, Section, TextField } from './fields';
 import { fmtMetric, howMetric } from './format';
 import { useStore } from './store';
@@ -17,6 +19,7 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
   const { project, edit, select } = useStore();
   const [goal, setGoal] = useState('');
   const [newVar, setNewVar] = useState('');
+  const [apiCalls, setApiCalls] = useState<ApiCall[]>([]);
   const n = project.nodes.find((x) => x.id === id);
   if (!n) return <p className="muted">노드가 없습니다.</p>;
 
@@ -131,6 +134,68 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
             {prices.filter((r) => r.unit === 'hour' || r.unit === 'month').map((r) => <option key={r.id} value={r.id}>{r.id}</option>)}
           </select>
         </Row>
+      </Section>
+
+      {n.layer === 'ui' && (
+        <Section title="HTML 화면">
+          <input type="file" accept=".html,.htm" onChange={async (e) => {
+            const f = e.target.files?.[0];
+            if (!f) return;
+            const r = parseHtml(await f.text());
+            upd({ html: { file: f.name, regions: r.regions } });
+            setApiCalls(r.apiCalls);
+          }} />
+          {n.html && <>
+            <p className="muted">{n.html.file} — 영역 {n.html.regions.length}개</p>
+            <ul className="regions">{n.html.regions.map((r, i) => (
+              <li key={i}><b>{r.role}</b> <code>{r.selector}</code>{r.controls.length > 0 && <div className="muted">{r.controls.join(' · ')}</div>}</li>
+            ))}</ul>
+          </>}
+          {apiCalls.length > 0 && <>
+            <p>찾은 API 호출 — 연결할 노드를 고르면 연결선을 만듭니다</p>
+            {apiCalls.map((c) => (
+              <div key={c.method + c.path} className="alt">
+                <code>{c.method} {c.path}</code>
+                <select value="" onChange={(e) => e.target.value && edit((p) => addEdge(p, id, e.target.value))}>
+                  <option value="">연결할 노드</option>
+                  {project.nodes.filter((x) => x.layer === 'gateway' || x.layer === 'backend').map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                </select>
+              </div>
+            ))}
+          </>}
+        </Section>
+      )}
+
+      <Section title="데이터 위치·개인정보">
+        <Row label="저장 위치">
+          <select value={n.region ?? ''} onChange={(e) => upd({ region: (e.target.value || undefined) as typeof n.region })}>
+            <option value="">(미정)</option>
+            <option value="local">사용자 기기</option>
+            {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </Row>
+        {(() => {
+          const pv = n.privacy ?? { personal: false, sensitive: false, unique_id: false, subjects: [], sends_external: false };
+          const setPv = (patch: Partial<typeof pv>) => upd({ privacy: { ...pv, ...patch } });
+          const subj = (c: string, on: boolean) => setPv({ subjects: on ? [...pv.subjects, c] : pv.subjects.filter((x) => x !== c) });
+          return (
+            <div className="checks">
+              <label><input type="checkbox" checked={pv.personal} onChange={(e) => setPv({ personal: e.target.checked })} />개인정보 포함</label>
+              <label><input type="checkbox" checked={pv.sensitive} onChange={(e) => setPv({ sensitive: e.target.checked })} />민감정보 포함</label>
+              <label><input type="checkbox" checked={pv.unique_id} onChange={(e) => setPv({ unique_id: e.target.checked })} />고유식별정보 포함</label>
+              <label><input type="checkbox" checked={pv.sends_external} onChange={(e) => setPv({ sends_external: e.target.checked })} />외부(제3자)로 전송</label>
+              <label><input type="checkbox" checked={pv.subjects.includes('KR')} onChange={(e) => subj('KR', e.target.checked)} />한국 사용자 데이터</label>
+              <label><input type="checkbox" checked={pv.subjects.includes('JP')} onChange={(e) => subj('JP', e.target.checked)} />일본 사용자 데이터</label>
+            </div>
+          );
+        })()}
+        {analysis?.regulation.filter((h) => h.nodeId === id).map((h) => (
+          <div key={h.article + h.law} className="law" title={`출처: ${h.source}
+기준일: ${h.asOf}`}>
+            ⚖️ <b>{h.law} {h.article} 확인 필요</b> <span className="muted">— {h.reason}</span>
+            {!h.verified && <span className="tag">조문 번호 미확인</span>}
+          </div>
+        ))}
       </Section>
 
       <Section title="직접 넣는 값">

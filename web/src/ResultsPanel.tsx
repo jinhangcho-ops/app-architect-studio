@@ -75,6 +75,18 @@ export function ResultsPanel({ analysis: a }: { analysis?: Analysis }) {
         ))}
       </Section>
 
+      <Section title="확인 필요 조문">
+        {!a.regulation.length && <p className="muted">개인정보 노드가 없거나 걸린 조문이 없습니다.</p>}
+        {a.regulation.map((h) => (
+          <div key={h.nodeId + h.article + h.law} className="law" title={`출처: ${h.source}
+기준일: ${h.asOf}`}>
+            ⚖️ {name(h.nodeId)} · <b>{h.law} {h.article} 확인 필요</b> <span className="muted">— {h.reason}</span>
+            {!h.verified && <span className="tag">조문 번호 미확인</span>}
+          </div>
+        ))}
+        {a.regulation.length > 0 && <p className="muted">법률 검토를 대신하지 않습니다. 조문 내용은 원문에서 확인하세요.</p>}
+      </Section>
+
       <Section title="판정 요약">
         {a.judgements.flatMap((j) => j.items.filter((i) => i.verdict !== 'ok').map((i) => (
           <div key={j.nodeId + i.itemId}>{name(j.nodeId)} · {catalog.byId.get(i.itemId)?.name}: {i.reasons[0]}</div>

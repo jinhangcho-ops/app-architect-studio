@@ -11,7 +11,8 @@ import { nodeP99, pathP99, syncPaths } from './latency';
 import { limitFactor } from './limits';
 import { computedScenarios, nodeLoads, type NodeLoad } from './load';
 import type { Metric } from './model';
-import type { CatalogItem, PriceRow, Project, ProjectNode, Rule } from './schema';
+import { checkRegulation, type LawHit } from './regulation';
+import type { CatalogItem, LawRow, PriceRow, Project, ProjectNode, Rule } from './schema';
 import { traffic, type Traffic } from './traffic';
 
 export type NodeAnalysis = {
@@ -38,11 +39,13 @@ export type Analysis = {
   growth?: { milestones: Milestone[]; monthlyCost: (Metric | undefined)[] };
   judgements: NodeJudgement[];
   rules: RuleHit[];
+  /** 15절 "법령명 제N조 확인 필요" 목록 */
+  regulation: LawHit[];
   /** 노드별 판정 변수(계산값 + 직접 넣은 값). 화면이 후보 항목을 다시 계산 없이 판정하는 데 쓴다 */
   scenarios: Record<string, Scenario>;
 };
 
-export type Data = { catalog: Map<string, CatalogItem>; rules: Rule[]; prices: PriceRow[] };
+export type Data = { catalog: Map<string, CatalogItem>; rules: Rule[]; prices: PriceRow[]; laws?: LawRow[] };
 
 const m = (value: number, unit: string, formula: string, inputs: Record<string, number>): Metric => ({ value, unit, formula, inputs });
 
@@ -170,6 +173,7 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     growth,
     judgements: p.nodes.map((n) => judgeNode(n, d.catalog, judged.get(n.id))),
     rules: checkRules(p, d.rules),
+    regulation: checkRegulation(p, d.laws ?? []),
     scenarios: Object.fromEntries(judged),
   };
 }

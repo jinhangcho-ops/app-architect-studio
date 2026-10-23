@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8" /><title>화이트라벨 주문/결제 화면</title></head>
+<body>
+  <header id="top-header">
+    <select name="i18n_lang_currency"><option>KRW</option></select>
+    <a href="/my-orders">주문내역</a>
+    <a href="/cart">장바구니</a>
+  </header>
+  <nav class="gnb-navbar">
+    <a href="/products">상품목록</a>
+    <a href="/settlement">가맹점 정산현황</a>
+  </nav>
+  <main id="checkout-main">
+    <form id="order-payment-form" action="/api/v2/orders" method="post">
+      <input type="text" name="address" placeholder="국가별 주소 포맷" />
+      <select name="local_pg_method"></select>
+      <button type="submit">결제 요청</button>
+    </form>
+    <table class="order-item-table">
+      <tr><th>상품명</th><th>수량</th><th>현지 통화 금액</th></tr>
+    </table>
+  </main>
+  <aside class="order-sidebar">
+    <input type="text" name="coupon" placeholder="쿠폰·포인트 입력" />
+    <button data-api="GET /api/v2/pricing">현지 통화·VAT 계산</button>
+  </aside>
+  <footer id="page-footer"><button>법적 고지</button></footer>
+</body>
+</html>

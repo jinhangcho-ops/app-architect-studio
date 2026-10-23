@@ -1,6 +1,6 @@
 // 이미 읽은 JSON을 검증해 엔진 입력으로 바꾼다. 파일을 모르므로 Node(io.ts)와 브라우저(web)가 함께 쓴다.
 import { z } from 'zod';
-import { CatalogItem, PriceRow, Project, Rule, checkCatalog, checkProject } from './schema';
+import { CatalogItem, LawRow, PriceRow, Project, Rule, checkCatalog, checkProject } from './schema';
 
 export type JsonFile = { name: string; data: unknown };
 
@@ -40,3 +40,6 @@ export function parseProject(data: unknown, items: CatalogItem[], where = '프�
   if (errors.length) throw new Error(`프로젝트 오류\n${errors.map((e) => `  - ${e}`).join('\n')}`);
   return p;
 }
+
+export const buildLaws = (files: JsonFile[]): LawRow[] =>
+  [...files].sort((a, b) => a.name.localeCompare(b.name)).flatMap((f) => parseOrThrow(z.array(LawRow), f.data, f.name));

@@ -66,6 +66,22 @@ export const Rule = z.object({
 
 const Vars = z.record(z.string(), z.union([z.number(), z.boolean(), z.string()]));
 
+// 9절 가격표: 한국·일본 리전만 받는다
+export const REGIONS = [
+  'aws:ap-northeast-1', 'aws:ap-northeast-2', 'aws:ap-northeast-3',
+  'gcp:asia-northeast1', 'gcp:asia-northeast2', 'gcp:asia-northeast3',
+  'azure:koreacentral', 'azure:koreasouth', 'azure:japaneast', 'azure:japanwest',
+  'supabase:ap-northeast-1', 'supabase:ap-northeast-2',
+] as const;
+
+/** 리전이 있는 나라 (15절 국외 이전 판단) */
+export const REGION_COUNTRY: Record<(typeof REGIONS)[number], 'KR' | 'JP'> = {
+  'aws:ap-northeast-1': 'JP', 'aws:ap-northeast-2': 'KR', 'aws:ap-northeast-3': 'JP',
+  'gcp:asia-northeast1': 'JP', 'gcp:asia-northeast2': 'JP', 'gcp:asia-northeast3': 'KR',
+  'azure:koreacentral': 'KR', 'azure:koreasouth': 'KR', 'azure:japaneast': 'JP', 'azure:japanwest': 'JP',
+  'supabase:ap-northeast-1': 'JP', 'supabase:ap-northeast-2': 'KR',
+};
+
 export const PATTERN_IDS = ['power', 'enthusiast', 'active', 'regular', 'occasional', 'rare', 'dormant'] as const;
 
 // 16절 구동 방식
@@ -150,6 +166,20 @@ export const Project = z.object({
     availability: z.number().min(0).max(1).optional(),
     /** 9절 가격표의 인스턴스 상품 id (시간당 과금 또는 월 정액) */
     price: z.string().optional(),
+    /** 15절 이 노드가 데이터를 두는 곳: 클라우드 리전 또는 사용자 기기(local) */
+    region: z.union([z.enum(REGIONS), z.literal('local')]).optional(),
+    /** 15절 개인정보 속성. 사람이 확정한다(코드 분석은 후보만 표시) */
+    privacy: z.object({
+      personal: z.boolean().default(false),
+      sensitive: z.boolean().default(false),
+      unique_id: z.boolean().default(false),
+      /** 데이터 주체의 나라 (KR, JP …) */
+      subjects: z.array(z.string().regex(/^[A-Z]{2}$/)).default([]),
+      /** 개인정보를 외부 연동(제3자)으로 보냄 */
+      sends_external: z.boolean().default(false),
+    }).optional(),
+    /** 6단계 HTML 와이어프레임에서 뽑은 화면 영역 */
+    html: z.object({ file: z.string(), regions: z.array(z.object({ role: z.string(), selector: z.string(), controls: z.array(z.string()) })) }).optional(),
     min_instances: z.number().int().nonnegative().default(1),
   })),
   edges: z.array(z.object({
@@ -180,13 +210,6 @@ export const Project = z.object({
   growth: z.object({ monthly_rate: z.number().gt(-1), months: z.number().int().positive().default(24), lead_months: z.number().int().nonnegative().default(3) }).optional(),
 });
 
-// 9절 가격표: 한국·일본 리전만 받는다
-export const REGIONS = [
-  'aws:ap-northeast-1', 'aws:ap-northeast-2', 'aws:ap-northeast-3',
-  'gcp:asia-northeast1', 'gcp:asia-northeast2', 'gcp:asia-northeast3',
-  'azure:koreacentral', 'azure:koreasouth', 'azure:japaneast', 'azure:japanwest',
-  'supabase:ap-northeast-1', 'supabase:ap-northeast-2',
-] as const;
 
 export const PriceRow = z.object({
   id: z.string(),
@@ -241,3 +264,19 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
   }
   return errors;
 }
+
+// 15절 법령 표: 조문 내용은 넣지 않고 번호·트리거·출처만 둔다
+export const LawRow = z.object({
+  id: z.string(),
+  law: z.string(),
+  article: z.string(),
+  /** 노드 개인정보 속성으로 쓴 조건식 (personal, sensitive, unique_id, subject_KR, store_country, sends_external …) */
+  trigger: Expr,
+  /** 걸린 이유(설계 기준). {store_country} 같은 변수를 넣을 수 있다 */
+  reason: z.string().min(1),
+  as_of: z.iso.date(),
+  source: z.string().min(1),
+  /** 원문과 대조했는지. false면 화면에 '조문 번호 미확인'으로 표시 */
+  verified: z.boolean(),
+});
+export type LawRow = z.infer<typeof LawRow>;
