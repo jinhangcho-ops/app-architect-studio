@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { checkRules, judgeNode } from '../judge';
-import { loadCatalog, loadProject } from '../load';
+import { loadCatalog, loadProject } from '../io';
 import { Project } from '../schema';
 
 const catalog = loadCatalog(fileURLToPath(new URL('../../data/catalog', import.meta.url)));

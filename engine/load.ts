@@ -1,37 +1,73 @@
-// 파일 읽기는 여기에만 둔다. 나머지 엔진은 파일을 모르는 순수 함수다.
-import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { z } from 'zod';
-import { CatalogItem, Project, Rule, checkCatalog, checkProject } from './schema';
+// 노드별 부하: 화면 노드에서 시작해 연결선을 위상 정렬 순서로 따라가며 λ × callRatio를 더해 내려간다.
+import { deployVars } from './deploy';
+import type { Scenario } from './judge';
+import type { Project } from './schema';
+import type { Traffic } from './traffic';
 
-const readJson = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8'));
+type Pair = { normal: number; event: number };
+export type NodeLoad = { rps: Pair; writeRps: Pair };
 
-function parseOrThrow<T>(schema: z.ZodType<T>, data: unknown, where: string): T {
-  const r = schema.safeParse(data);
-  if (!r.success) {
-    const lines = r.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`);
-    throw new Error(`${where} 검증 실패\n${lines.join('\n')}`);
+export function nodeLoads(p: Project, t: Traffic): Map<string, NodeLoad> {
+  const loads = new Map<string, NodeLoad>(p.nodes.map((n) => [n.id, {
+    rps: { normal: 0, event: 0 },
+    writeRps: { normal: 0, event: 0 },
+  }]));
+
+  const entries = p.nodes.filter((n) => n.layer === 'ui');
+  for (const n of entries) {
+    const share = n.entry_share ?? 1 / entries.length;
+    const l = loads.get(n.id)!;
+    l.rps = { normal: t.peakRps.value * share, event: t.peakRpsEvent.value * share };
+    l.writeRps = { normal: t.peakWriteRps.value * share, event: t.peakWriteRpsEvent.value * share };
   }
-  return r.data;
+
+  for (const id of topoOrder(p)) {
+    const from = loads.get(id)!;
+    for (const e of p.edges.filter((x) => x.from === id)) {
+      const to = loads.get(e.to)!;
+      for (const s of ['normal', 'event'] as const) {
+        const w = from.writeRps[s];
+        const r = e.carries === 'all' ? from.rps[s] : e.carries === 'write' ? w : from.rps[s] - w;
+        to.rps[s] += r * e.callRatio;
+        if (e.carries !== 'read') to.writeRps[s] += w * e.callRatio;
+      }
+    }
+  }
+  return loads;
 }
 
-/** data/catalog의 rules.json은 구조 규칙, 나머지 *.json은 카탈로그 항목 배열이다. */
-export function loadCatalog(dir: string) {
-  const items: CatalogItem[] = [];
-  let rules: Rule[] = [];
-  for (const f of readdirSync(dir).filter((x) => x.endsWith('.json')).sort()) {
-    const data = readJson(join(dir, f));
-    if (f === 'rules.json') rules = parseOrThrow(z.array(Rule), data, f);
-    else items.push(...parseOrThrow(z.array(CatalogItem), data, f));
+/** Kahn 위상 정렬. 순환 연결이 있으면 부하가 끝없이 불어나므로 오류로 멈춘다. */
+function topoOrder(p: Project): string[] {
+  const indeg = new Map(p.nodes.map((n) => [n.id, 0]));
+  for (const e of p.edges) indeg.set(e.to, indeg.get(e.to)! + 1);
+  const queue = p.nodes.filter((n) => indeg.get(n.id) === 0).map((n) => n.id);
+  const order: string[] = [];
+  while (queue.length) {
+    const id = queue.shift()!;
+    order.push(id);
+    for (const e of p.edges.filter((x) => x.from === id)) {
+      indeg.set(e.to, indeg.get(e.to)! - 1);
+      if (indeg.get(e.to) === 0) queue.push(e.to);
+    }
   }
-  const errors = checkCatalog(items);
-  if (errors.length) throw new Error(`카탈로그 오류\n${errors.map((e) => `  - ${e}`).join('\n')}`);
-  return { items, rules, byId: new Map(items.map((i) => [i.id, i])) };
+  if (order.length !== p.nodes.length) {
+    const stuck = p.nodes.filter((n) => !order.includes(n.id)).map((n) => n.name);
+    throw new Error(`순환 연결이 있어 부하를 계산할 수 없음: ${stuck.join(', ')}`);
+  }
+  return order;
 }
 
-export function loadProject(path: string, items: CatalogItem[]): Project {
-  const p = parseOrThrow(Project, readJson(path), path);
-  const errors = checkProject(p, items);
-  if (errors.length) throw new Error(`프로젝트 오류\n${errors.map((e) => `  - ${e}`).join('\n')}`);
-  return p;
+/** 계산한 부하와 구동 방식을 노드의 판정 변수로 바꾼다. 트래픽이 없으면 구동 방식 변수만 준다. */
+export function computedScenarios(p: Project, t: Traffic | undefined): Map<string, Scenario> {
+  const common = deployVars(p.deploy);
+  const loads = t && nodeLoads(p, t);
+  return new Map(p.nodes.map((n) => {
+    const l = loads?.get(n.id);
+    const at = (s: 'normal' | 'event') => ({
+      ...common,
+      writer_nodes: new Set(p.edges.filter((e) => e.to === n.id && e.carries !== 'read').map((e) => e.from)).size,
+      ...(l && { peak_rps: l.rps[s], peak_write_rps: l.writeRps[s] }),
+    });
+    return [n.id, { normal: at('normal'), event: at('event') }];
+  }));
 }

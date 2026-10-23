@@ -67,15 +67,20 @@ export function judgeItem(item: CatalogItem, node: ProjectNode, s: Scenario): Om
 
 const RANK: Record<Verdict, number> = { ok: 0, conditional: 1, unknown: 2, fail: 3 };
 
-export function judgeNode(node: ProjectNode, catalog: Map<string, CatalogItem>): NodeJudgement {
+/** computed = 엔진이 계산한 변수. 노드에 직접 넣은 vars가 있으면 그 값이 우선한다(실측·수동 보정). */
+export function judgeNode(node: ProjectNode, catalog: Map<string, CatalogItem>, computed?: Scenario): NodeJudgement {
+  const s: Scenario = {
+    normal: { ...computed?.normal, ...node.vars.normal },
+    event: { ...computed?.event, ...node.vars.event },
+  };
   const ids = [node.primary, ...node.extras].filter((x): x is string => !!x);
   const items = ids.map((id) => {
     const item = catalog.get(id);
     if (!item) throw new Error(`${node.id}: 없는 카탈로그 항목 ${id}`);
-    const j = judgeItem(item, node, node.vars);
+    const j = judgeItem(item, node, s);
     // 됨이 아니면 같은 노드·같은 변수로 대안을 판정해, 안 됨이 아닌 것만 좋은 순서로 남긴다
     const alternatives = j.verdict === 'ok' ? [] : item.alternatives
-      .map((a) => ({ id: a.id, note: a.note, verdict: judgeItem(catalog.get(a.id)!, node, node.vars).verdict }))
+      .map((a) => ({ id: a.id, note: a.note, verdict: judgeItem(catalog.get(a.id)!, node, s).verdict }))
       .filter((a) => a.verdict !== 'fail')
       .sort((a, b) => RANK[a.verdict] - RANK[b.verdict]);
     return { ...j, alternatives };
