@@ -26,6 +26,8 @@ export function costLines(
   const gbPerRequest = t && t.dailyRequests.value > 0 ? t.egressGbPerDay.value / t.dailyRequests.value : 0;
 
   for (const n of p.nodes) {
+    // 사용자 기기에서 도는 노드는 클라우드 과금이 없다
+    if (n.region === 'local') continue;
     const billing = n.primary ? catalog.get(n.primary)?.billing : undefined;
     const region = regionOf(n);
     const instances = (product: string) => {
@@ -74,8 +76,12 @@ export function costLines(
     for (const e of p.edges) {
       const a = regionOf(byId.get(e.from)!), b = regionOf(byId.get(e.to)!);
       if (!a || !b || a === b) continue;
+      // 연결선이 나르는 몫: 전부, 쓰기만, 읽기만 (load.ts의 전파 규칙과 같다)
+      const l = loads?.get(e.from);
+      const r = l?.rps.normal ?? 0, w = l?.writeRps.normal ?? 0;
+      const carried = !r ? 0 : e.carries === 'all' ? 1 : e.carries === 'write' ? w / r : (r - w) / r;
       // shortcut: 노드 사이 응답 크기를 사용자 응답 평균 크기로 본다. 구간별 크기가 필요해지면 연결선에 payload_kb를 둔다
-      const gb = requestsPerMonth(byId.get(e.from)!) * e.callRatio * gbPerRequest;
+      const gb = requestsPerMonth(byId.get(e.from)!) * carried * e.callRatio * gbPerRequest;
       lines.push({ key: '리전 간 전송', product: p.cost.transfer, region: a, quantities: { gb_interregion: gb }, how: { gb_interregion: `${e.from}→${e.to} 월 요청 × 호출 비율 × 요청당 응답 GB` } });
     }
   }

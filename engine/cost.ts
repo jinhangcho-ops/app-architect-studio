@@ -30,10 +30,10 @@ const UNIT_NAME: Record<PriceRow['unit'], string> = {
   vcpu_second: 'vCPU·초', gb_second: 'GB·초', million_requests: '요청 100만 건', tb_scanned: '스캔 TB',
 };
 
-/** 행 찾기: id가 같으면 그 행, 아니면 같은 상품 키 + 같은 리전 */
+/** 행 찾기: id가 같으면 그 행, 아니면 같은 상품 키 + 같은 리전. 리전을 모르면 아무 리전 행을 고르지 않는다 */
 export function findPrice(prices: PriceRow[], product: string, region?: string): PriceRow | undefined {
   return prices.find((r) => r.id === product)
-    ?? prices.find((r) => (r.product ?? r.id) === product && (region === undefined || r.region === region));
+    ?? (region === undefined ? undefined : prices.find((r) => (r.product ?? r.id) === product && r.region === region));
 }
 
 /** today는 'YYYY-MM-DD'. missingInputs는 계량값을 못 구한 이유(분석 단계에서 넘김) */

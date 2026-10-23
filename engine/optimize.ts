@@ -90,6 +90,7 @@ export function optimize(p: Project, d: Data, today: string, opts: { beam?: numb
   });
 
   // 빔 탐색: 항목 점수의 합으로 부분 조합을 줄여 나간다
+  // shortcut: 점수만 보고 줄이므로 '최저 비용'·'최대 확장'은 점수 상위 beam개 안에서 고른 값이다. 놓치는 조합이 문제되면 노드별 최저 비용 후보를 따로 남긴다
   let partial: { as: Record<string, string>; score: number }[] = [{ as: {}, score: 0 }];
   for (const c of candidates) {
     partial = partial

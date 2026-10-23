@@ -17,6 +17,7 @@ export function nodeP99(lambda: number, serviceMs: number, c: number, serviceP99
   const rho = a / c;
   const s99 = serviceP99Ms ?? serviceMs * Math.log(100); // 실측이 없으면 지수분포 가정
   const inputs = { λ: lambda, S_ms: serviceMs, c, ρ: rho };
+  if (!lambda) return { value: s99, unit: 'ms', formula: '부하 0: 대기 없이 처리 시간만', inputs: { ...inputs, S99_ms: s99 } };
   if (rho >= 1) return { value: Infinity, unit: 'ms', formula: 'ρ ≥ 1: 대기열이 끝없이 길어짐', inputs };
   const C = erlangC(c, a);
   const wait = (Math.max(0, Math.log(C / 0.01)) / (c * mu - lambda)) * 1000;

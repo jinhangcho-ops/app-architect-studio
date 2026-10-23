@@ -78,10 +78,11 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     };
     if (load && per.rps && enabled(p.deploy, 'scale')) {
       const at = (s: 'normal' | 'event') => {
-        const N = instancesNeeded(load.rps[s], per.rps!.value, u, n.min_instances || 1, per.max);
+        // 비용(hourlyOf)과 같은 최소 대수를 쓴다. 0대까지 줄어드는 노드는 부하가 0일 때 0대
+        const N = instancesNeeded(load.rps[s], per.rps!.value, u, n.min_instances, per.max);
         return {
           N: m(N, '대', 'ceil(부하 / (대당 처리량 × 목표 사용률)), 최소·최대 대수로 자름', { 부하: load.rps[s], 대당: per.rps!.value, 목표사용률: u }),
-          util: m(load.rps[s] / (N * per.rps!.value), '비율', '부하 / (대수 × 대당 처리량)', { 부하: load.rps[s], 대수: N }),
+          util: m(N ? load.rps[s] / (N * per.rps!.value) : 0, '비율', '부하 / (대수 × 대당 처리량)', { 부하: load.rps[s], 대수: N }),
           N_value: N,
         };
       };

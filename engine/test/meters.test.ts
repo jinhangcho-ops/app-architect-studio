@@ -13,12 +13,12 @@ const prices = loadPrices(root('data/prices'));
 const m = (value: number) => ({ value });
 // 하루 1,000만 요청, 피크 200 rps, 하루 송신 100GB, 저장 50GB
 const t = { dailyRequests: m(1e7), peakRps: m(200), egressGbPerDay: m(100), storageGbWithOverhead: m(50) } as unknown as Traffic;
-const load = (normal: number) => ({ rps: { normal } }) as unknown as NodeLoad;
+const load = (normal: number, write = 0) => ({ rps: { normal }, writeRps: { normal: write } }) as unknown as NodeLoad;
 
 const project = (nodes: unknown[], edges: unknown[] = [], cost: object = { region: 'aws:ap-northeast-2' }) =>
   parseProject({ name: 't', nodes, edges, cost }, catalog.items);
-const run = (p: ReturnType<typeof project>, loads: Record<string, number>, hourly = [2, 3]) =>
-  costLines(p, t, new Map(Object.entries(loads).map(([k, v]) => [k, load(v)])), catalog.byId, () => hourly, 1);
+const run = (p: ReturnType<typeof project>, loads: Record<string, number | [number, number]>, hourly = [2, 3]) =>
+  costLines(p, t, new Map(Object.entries(loads).map(([k, v]) => [k, typeof v === 'number' ? load(v) : load(...v)])), catalog.byId, () => hourly, 1);
 
 describe('과금 방식별 계량', () => {
   it('서버리스: 요청 수와 GB·초를 노드 부하 비율로 계산', () => {
@@ -60,6 +60,27 @@ describe('과금 방식별 계량', () => {
     // 월 요청 1.5억 × 요청당 1e-5 GB
     expect(tr[0].quantities.gb_interregion).toBeCloseTo(1500);
     expect(lines.some((l) => l.key === 'app')).toBe(false);
+  });
+
+  it('쓰기만 나르는 연결선은 쓰기 몫만 전송량에 넣음', () => {
+    const p = project(
+      [
+        { id: 'w', name: '워커', layer: 'batch', primary: 'on_demand_worker' },
+        { id: 'db', name: 'DB', layer: 'db', primary: 'postgresql', region: 'aws:ap-northeast-1' },
+      ],
+      [{ from: 'w', to: 'db', carries: 'write' }],
+      { region: 'aws:ap-northeast-2', transfer: 'transfer-interregion' },
+    );
+    // 워커 100 RPS 중 쓰기 10 → 1,500 GB의 10분의 1
+    const tr = run(p, { w: [100, 10], db: 100 }).lines.find((l) => l.key === '리전 간 전송')!;
+    expect(tr.quantities.gb_interregion).toBeCloseTo(150);
+  });
+
+  it('리전을 모르면 다른 리전 가격을 대신 쓰지 않음 (id로 직접 지정한 행만)', () => {
+    const p = project([{ id: 'db', name: 'DB', layer: 'db', primary: 'postgresql' }], [], {});
+    const { lines, missing } = run(p, { db: 1 });
+    expect(lines).toEqual([]);
+    expect(missing[0]).toMatch(/리전 없음/);
   });
 
   it('월 정액 항목: 그 리전 가격이 있으면 1개월분, 없으면 가격 없음', () => {

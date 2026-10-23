@@ -107,7 +107,8 @@ export const Persona = z.object({
   name: z.string(),
   share: z.number().min(0).max(1),
   pattern: z.enum(PATTERN_IDS),
-  sessions_per_day: z.number().nonnegative().optional(),
+  // 포아송 추첨(exp(−λ))이 λ가 수백이면 0으로 넘쳐 틀린 값을 내므로 상한을 둔다
+  sessions_per_day: z.number().nonnegative().max(100).optional(),
   reads_per_session: z.number().nonnegative().optional(),
   writes_per_session: z.number().nonnegative().optional(),
   session_minutes: z.number().nonnegative().optional(),

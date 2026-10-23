@@ -168,3 +168,13 @@ describe('이중화 대수가 비용에 들어감', () => {
     expect(a.cost!.parts.db.value).toBeCloseTo(2 * 720 * 0.2);
   });
 });
+
+describe('성장 그래프의 월별 비용', () => {
+  it('0개월째는 지금 비용과 같고, 사용자가 늘면 비용도 늘어남', () => {
+    const p = loadProject(here('../../examples/phase3.json'), catalog.items);
+    const a = analyze(p, { catalog: catalog.byId, rules: catalog.rules, prices }, '2026-10-23');
+    const series = a.growth!.monthlyCost.map((x) => x!.value);
+    expect(series[0]).toBeCloseTo(a.cost!.total!.value);
+    expect(series.at(-1)!).toBeGreaterThan(series[0]);
+  });
+});
