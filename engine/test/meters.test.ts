@@ -83,6 +83,25 @@ describe('과금 방식별 계량', () => {
     expect(tr.quantities.gb_interregion).toBeCloseTo(150);
   });
 
+  it('화면 와이어프레임 호출이 있으면 그 호출 몫만 전송량에 넣음 (부하 전파와 같은 규칙)', () => {
+    const p = project(
+      [
+        { id: 'ui', name: '화면', layer: 'ui', wireframe: { screens: [{ name: 's', items: [
+          { id: 'w1', kind: 'button', x: 0, y: 0, w: 10, h: 10, api: { method: 'GET', path: '/a', to: 'api', per_session: 3 } },
+          { id: 'w2', kind: 'button', x: 0, y: 0, w: 10, h: 10, api: { method: 'GET', path: '/b', to: 'db', per_session: 1 } },
+        ] }] } },
+        { id: 'api', name: 'API', layer: 'backend', primary: 'api_autoscale' },
+        { id: 'db', name: 'DB', layer: 'db', primary: 'postgresql', region: 'aws:ap-northeast-1' },
+      ],
+      [{ from: 'ui', to: 'api' }, { from: 'ui', to: 'db' }],
+      { region: 'aws:ap-northeast-2', transfer: 'transfer-interregion' },
+    );
+    // 화면 200 RPS(전부 읽기) 중 db로 가는 몫 1/4 → 월 요청 3억 × 1/4 × 요청당 1e-5 GB
+    const tr = run(p, { ui: 200, api: 150, db: 50 }).lines.filter((l) => l.key === '리전 간 전송');
+    expect(tr).toHaveLength(1);
+    expect(tr[0].quantities.gb_interregion).toBeCloseTo(750);
+  });
+
   it('리전을 모르면 다른 리전 가격을 대신 쓰지 않음 (id로 직접 지정한 행만)', () => {
     const p = project([{ id: 'db', name: 'DB', layer: 'db', primary: 'postgresql' }], [], {});
     const { lines, missing } = run(p, { db: 1 });
