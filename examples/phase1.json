@@ -1,0 +1,43 @@
+{
+  "name": "1단계 예시 — 설계서 4절 규모(DAU 10만, 프로모션 3배)",
+  "nodes": [
+    { "id": "web", "name": "웹 화면", "layer": "ui" },
+    {
+      "id": "lb", "name": "게이트웨이", "layer": "gateway", "primary": "round_robin", "extras": ["token_bucket"],
+      "vars": { "normal": { "service_time_cv": 1.8 }, "event": { "service_time_cv": 1.8 } }
+    },
+    {
+      "id": "api", "name": "주문 API", "layer": "backend", "primary": "api_single",
+      "vars": { "normal": { "peak_rps": 300 }, "event": { "peak_rps": 900 } }
+    },
+    {
+      "id": "db", "name": "주문 DB", "layer": "db", "primary": "sqlite",
+      "vars": {
+        "normal": { "peak_write_rps": 19, "writer_nodes": 2, "db_connections": 60 },
+        "event": { "peak_write_rps": 58, "writer_nodes": 2, "db_connections": 60 }
+      }
+    },
+    {
+      "id": "worker", "name": "정산 워커", "layer": "batch", "primary": "always_on_worker",
+      "vars": {
+        "normal": { "idle_ratio": 0.95, "cold_start_s": 20, "max_start_delay_s": 300 },
+        "event": { "idle_ratio": 0.9, "cold_start_s": 20, "max_start_delay_s": 300 }
+      }
+    },
+    {
+      "id": "pg", "name": "결제사 연동", "layer": "external", "primary": "sync_external_call",
+      "vars": {
+        "normal": { "has_timeout": false, "needs_sync_response": false },
+        "event": { "has_timeout": false, "needs_sync_response": false }
+      }
+    }
+  ],
+  "edges": [
+    { "from": "web", "to": "lb" },
+    { "from": "lb", "to": "api" },
+    { "from": "api", "to": "db" },
+    { "from": "worker", "to": "db" },
+    { "from": "api", "to": "pg" },
+    { "from": "web", "to": "db" }
+  ]
+}

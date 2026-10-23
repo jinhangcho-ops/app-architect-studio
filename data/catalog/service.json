@@ -1,0 +1,215 @@
+[
+  {
+    "id": "sqlite",
+    "name": "SQLite",
+    "area": "서비스", "role": "주", "kind": "도구",
+    "attaches_to": ["db"],
+    "goals": { "메모리": "좋음", "속도": "보통", "동시성": "나쁨", "운영 난이도": "좋음" },
+    "works_when": [{ "if": "writer_nodes == 1", "why": "쓰는 주체가 하나라 파일 락 경합이 없습니다" }],
+    "fails_when": [
+      { "if": "writer_nodes > 1", "why": "쓰는 노드가 {writer_nodes}개입니다. SQLite는 쓰기 때 파일 전체를 잠가 동시 쓰기에서 database is locked가 납니다" },
+      { "if": "peak_write_rps > th.write_rps", "why": "피크 쓰기 {peak_write_rps}건/초가 기준 {th.write_rps}건/초를 넘습니다" }
+    ],
+    "alternatives": [
+      { "id": "postgresql", "better_for": ["동시성"] },
+      { "id": "sqlite_wal", "better_for": ["동시성"], "note": "가벼움을 유지하는 절충안" }
+    ],
+    "settings": [{ "name": "PRAGMA journal_mode=WAL", "goal": "동시성" }],
+    "thresholds": { "write_rps": { "value": 50, "unit": "건/초", "source": "예시값(설계서 5절) — 실측·공식 자료로 교체 필요" } },
+    "sources": ["https://www.sqlite.org/lockingv3.html"]
+  },
+  {
+    "id": "sqlite_wal",
+    "name": "SQLite (WAL 모드)",
+    "area": "서비스", "role": "주", "kind": "도구",
+    "attaches_to": ["db"],
+    "goals": { "메모리": "좋음", "속도": "보통", "동시성": "보통", "운영 난이도": "좋음" },
+    "works_when": [{ "if": "writer_nodes == 1", "why": "읽기와 쓰기가 서로 막지 않아 단일 프로그램에서 동시성이 좋아집니다" }],
+    "fails_when": [
+      { "if": "writer_nodes > 1", "why": "쓰는 노드가 {writer_nodes}개입니다. 여러 서버가 같은 DB 파일을 공유할 수 없습니다" },
+      { "if": "peak_write_rps > th.write_rps", "why": "피크 쓰기 {peak_write_rps}건/초가 기준 {th.write_rps}건/초를 넘습니다" }
+    ],
+    "alternatives": [{ "id": "postgresql", "better_for": ["동시성", "확장성"] }],
+    "thresholds": { "write_rps": { "value": 200, "unit": "건/초", "source": "예시값 — 실측·공식 자료로 교체 필요" } },
+    "sources": ["https://www.sqlite.org/wal.html"]
+  },
+  {
+    "id": "postgresql",
+    "name": "PostgreSQL",
+    "area": "서비스", "role": "주", "kind": "도구",
+    "attaches_to": ["db"],
+    "goals": { "메모리": "보통", "속도": "좋음", "동시성": "좋음", "운영 난이도": "보통" },
+    "works_when": [{ "if": "writer_nodes >= 1", "why": "행 단위 락과 MVCC로 여러 노드가 동시에 써도 됩니다" }],
+    "fails_when": [
+      { "if": "peak_write_rps > th.write_rps", "why": "피크 쓰기 {peak_write_rps}건/초가 기준 {th.write_rps}건/초를 넘습니다" },
+      { "if": "db_connections > th.max_connections", "why": "동시 연결 {db_connections}개가 연결 한도 {th.max_connections}개를 넘습니다" }
+    ],
+    "alternatives": [{ "id": "connection_pooler", "better_for": ["동시성"], "note": "연결 수 문제일 때" }],
+    "thresholds": {
+      "write_rps": { "value": 2000, "unit": "건/초", "base_spec": { "vcpu": 2 }, "bound_by": "vcpu", "source": "예시값(설계서 8절) — 실측·공식 자료로 교체 필요" },
+      "max_connections": { "value": 100, "unit": "개", "source": "PostgreSQL max_connections 기본값" }
+    },
+    "sources": ["https://www.postgresql.org/docs/current/runtime-config-connection.html"]
+  },
+  {
+    "id": "connection_pooler",
+    "name": "커넥션 풀러 (예: PgBouncer)",
+    "area": "서비스", "role": "보조", "kind": "도구",
+    "attaches_to": ["db"],
+    "goals": { "동시성": "좋음", "지연시간": "좋음", "운영 난이도": "보통" },
+    "works_when": [{ "if": "db_connections > 0", "why": "많은 앱 연결을 적은 DB 연결로 묶어 연결 한도 문제를 줄입니다" }],
+    "settings": [{ "name": "트랜잭션 단위 풀링", "goal": "동시성" }],
+    "sources": ["https://www.pgbouncer.org/features.html"]
+  },
+  {
+    "id": "supabase",
+    "name": "Supabase",
+    "area": "서비스", "role": "주", "kind": "도구",
+    "attaches_to": ["backend", "db"],
+    "provides": ["데이터베이스(PostgreSQL)", "자동 REST API", "인증", "파일 저장소", "실시간 구독", "서버리스 함수"],
+    "goals": { "운영 난이도": "좋음", "비용": "보통", "확장성": "보통" },
+    "works_when": [{ "if": "offline_required == false", "why": "DB·API·인증·저장소를 따로 운영하지 않아도 됩니다" }],
+    "fails_when": [
+      { "if": "offline_required == true", "why": "오프라인에서도 동작해야 하는데 Supabase는 인터넷 연결이 필요합니다" },
+      { "if": "db_connections > th.connections", "why": "피크 동시 연결 {db_connections}개가 현재 컴퓨트 크기의 연결 한도 {th.connections}개를 넘습니다" }
+    ],
+    "alternatives": [
+      { "id": "sqlite", "better_for": ["오프라인"], "note": "로컬 전용일 때" },
+      { "id": "postgresql", "better_for": ["확장성", "비용"], "note": "직접 구성, 운영 부담 증가" }
+    ],
+    "settings": [
+      { "name": "Row Level Security 켜기", "goal": "보안" },
+      { "name": "서버리스 환경에서는 연결 풀러 사용", "goal": "동시성" }
+    ],
+    "thresholds": { "connections": { "value": null, "unit": "개", "source": "컴퓨트 크기별 값 — Supabase 문서에서 기준일과 함께 입력 필요" } },
+    "sources": ["https://supabase.com/docs"]
+  },
+  {
+    "id": "round_robin",
+    "name": "Round-Robin 분산",
+    "area": "서비스", "role": "주", "kind": "알고리즘",
+    "attaches_to": ["gateway"],
+    "goals": { "운영 난이도": "좋음", "지연시간": "보통" },
+    "works_when": [{ "if": "service_time_cv <= th.cv_max", "why": "요청 처리 시간이 고르면 순서대로 나눠도 고르게 분산됩니다" }],
+    "fails_when": [{ "if": "service_time_cv > th.cv_max", "why": "요청 처리 시간 편차(변동계수 {service_time_cv})가 커서, 무거운 요청이 몰린 서버에도 기계적으로 요청을 보내 대기가 쌓입니다" }],
+    "alternatives": [{ "id": "least_connections", "better_for": ["지연시간"] }],
+    "thresholds": { "cv_max": { "value": 1, "unit": "변동계수", "source": "예시값(지수분포의 변동계수 1) — 실측으로 교체 필요" } },
+    "sources": ["설계서 v2 규칙 5"]
+  },
+  {
+    "id": "least_connections",
+    "name": "Least-Connections 분산",
+    "area": "서비스", "role": "주", "kind": "알고리즘",
+    "attaches_to": ["gateway"],
+    "goals": { "지연시간": "좋음", "운영 난이도": "보통" },
+    "works_when": [{ "if": "service_time_cv > 0", "why": "현재 처리 중인 연결이 가장 적은 서버로 보내 느린 서버를 자동으로 피합니다" }],
+    "sources": ["설계서 v2 규칙 5"]
+  },
+  {
+    "id": "token_bucket",
+    "name": "Token Bucket 속도 제한",
+    "area": "서비스", "role": "보조", "kind": "알고리즘",
+    "attaches_to": ["gateway"],
+    "goals": { "안정성": "좋음" },
+    "settings": [{ "name": "테넌트·사용자별 버킷 분리", "goal": "안정성" }],
+    "sources": ["설계서 v2 규칙 5"]
+  },
+  {
+    "id": "api_single",
+    "name": "API 서버 1대",
+    "area": "서비스", "role": "주", "kind": "패턴",
+    "attaches_to": ["backend"],
+    "goals": { "비용": "좋음", "확장성": "나쁨", "가용성": "나쁨" },
+    "fails_when": [{ "if": "peak_rps > th.rps", "why": "피크 {peak_rps} RPS가 서버 1대 기준 {th.rps} RPS를 넘습니다" }],
+    "alternatives": [{ "id": "api_autoscale", "better_for": ["확장성", "가용성"] }],
+    "thresholds": { "rps": { "value": 500, "unit": "RPS", "base_spec": { "vcpu": 2 }, "bound_by": "vcpu", "source": "예시값(설계서 8절) — 실측으로 교체 필요" } },
+    "sources": ["설계서 8절"]
+  },
+  {
+    "id": "api_autoscale",
+    "name": "API 서버 오토스케일링",
+    "area": "서비스", "role": "주", "kind": "패턴",
+    "attaches_to": ["backend"],
+    "goals": { "확장성": "좋음", "비용": "보통", "운영 난이도": "보통" },
+    "fails_when": [{ "if": "peak_rps > th.rps * th.max_instances", "why": "피크 {peak_rps} RPS가 최대 {th.max_instances}대 처리량({th.rps} RPS × 대수)을 넘습니다" }],
+    "thresholds": {
+      "rps": { "value": 500, "unit": "RPS", "base_spec": { "vcpu": 2 }, "bound_by": "vcpu", "source": "예시값(설계서 8절) — 실측으로 교체 필요" },
+      "max_instances": { "value": 20, "unit": "대", "source": "예시값 — 예산·할당량에 맞게 입력" }
+    },
+    "sources": ["설계서 8절"]
+  },
+  {
+    "id": "redis_cache",
+    "name": "Redis 캐시 (Cache-Aside)",
+    "area": "서비스", "role": "주", "kind": "도구",
+    "attaches_to": ["cache"],
+    "goals": { "속도": "좋음", "지연시간": "좋음", "메모리": "나쁨" },
+    "works_when": [{ "if": "read_ratio >= th.min_read_ratio", "why": "읽기 비율 {read_ratio}로 같은 데이터를 반복 조회해 캐시 효과가 큽니다" }],
+    "fails_when": [{ "if": "read_ratio < th.min_read_ratio", "why": "읽기 비율 {read_ratio}가 낮아 캐시에 맞는 요청이 적고 데이터 불일치만 늘어납니다" }],
+    "thresholds": { "min_read_ratio": { "value": 0.5, "unit": "비율", "source": "예시값 — 실측 적중률로 교체 필요" } },
+    "sources": ["설계서 v2 규칙 3(DB 구간)"]
+  },
+  {
+    "id": "streaming_per_event",
+    "name": "이벤트 1건마다 즉시 처리",
+    "area": "서비스", "role": "주", "kind": "패턴",
+    "attaches_to": ["queue", "batch"],
+    "goals": { "지연시간": "좋음", "비용": "나쁨" },
+    "fails_when": [{ "if": "peak_event_rps > external_rate_limit_rps", "why": "이벤트 {peak_event_rps}건/초를 1건씩 외부 API로 보내면 호출 제한 {external_rate_limit_rps}건/초를 넘습니다" }],
+    "alternatives": [{ "id": "kafka_micro_batch", "better_for": ["비용", "안정성"] }],
+    "sources": ["설계서 v2 규칙 3"]
+  },
+  {
+    "id": "kafka_micro_batch",
+    "name": "큐 + 마이크로 배치 (청크 폴링·합산)",
+    "area": "서비스", "role": "주", "kind": "패턴",
+    "attaches_to": ["queue", "batch"],
+    "goals": { "비용": "좋음", "안정성": "좋음", "지연시간": "나쁨" },
+    "fails_when": [{ "if": "required_freshness_s < th.batch_interval_s", "why": "결과가 {required_freshness_s}초 안에 반영돼야 하는데 배치 주기 {th.batch_interval_s}초보다 짧습니다" }],
+    "alternatives": [{ "id": "streaming_per_event", "better_for": ["지연시간"] }],
+    "thresholds": { "batch_interval_s": { "value": 300, "unit": "초", "source": "예시값(v2 5분 배치) — 설계에 맞게 입력" } },
+    "sources": ["설계서 v2 규칙 3"]
+  },
+  {
+    "id": "sync_external_call",
+    "name": "외부 API 동기 호출",
+    "area": "서비스", "role": "주", "kind": "패턴",
+    "attaches_to": ["external", "backend"],
+    "goals": { "지연시간": "보통", "안정성": "나쁨" },
+    "fails_when": [{ "if": "has_timeout == false", "why": "타임아웃이 없어 외부가 느려지면 내 서버의 스레드까지 모두 묶입니다" }],
+    "alternatives": [{ "id": "async_retry_dlq", "better_for": ["안정성"] }],
+    "settings": [{ "name": "연결·읽기 타임아웃 3초", "goal": "안정성" }],
+    "sources": ["설계서 v2 규칙 6"]
+  },
+  {
+    "id": "async_retry_dlq",
+    "name": "비동기 전송 + 지수 백오프 재시도 + Dead Letter",
+    "area": "서비스", "role": "주", "kind": "패턴",
+    "attaches_to": ["external", "batch"],
+    "goals": { "안정성": "좋음", "지연시간": "나쁨" },
+    "fails_when": [{ "if": "needs_sync_response == true", "why": "응답에 외부 결과가 즉시 필요해 비동기로 보낼 수 없습니다" }],
+    "alternatives": [{ "id": "sync_external_call", "better_for": ["지연시간"], "note": "타임아웃을 반드시 설정" }],
+    "sources": ["설계서 v2 규칙 6"]
+  },
+  {
+    "id": "always_on_worker",
+    "name": "상시 켜진 워커",
+    "area": "서비스", "role": "주", "kind": "패턴",
+    "attaches_to": ["batch"],
+    "goals": { "지연시간": "좋음", "비용": "나쁨", "메모리": "나쁨" },
+    "fails_when": [{ "if": "idle_ratio > th.idle_ratio_max", "why": "하루의 {idle_ratio} 비율을 놀고 있어 상시 켜두면 자원과 비용을 낭비합니다" }],
+    "alternatives": [{ "id": "on_demand_worker", "better_for": ["비용", "메모리"] }],
+    "thresholds": { "idle_ratio_max": { "value": 0.8, "unit": "비율", "source": "예시값 — 설계에 맞게 입력" } },
+    "sources": ["설계서 v2 규칙 7"]
+  },
+  {
+    "id": "on_demand_worker",
+    "name": "필요할 때만 켜지는 워커 (0대 축소)",
+    "area": "서비스", "role": "주", "kind": "패턴",
+    "attaches_to": ["batch"],
+    "goals": { "비용": "좋음", "메모리": "좋음", "지연시간": "나쁨" },
+    "fails_when": [{ "if": "cold_start_s > max_start_delay_s", "why": "켜지는 데 {cold_start_s}초가 걸려 허용 지연 {max_start_delay_s}초를 넘습니다" }],
+    "alternatives": [{ "id": "always_on_worker", "better_for": ["지연시간"] }],
+    "sources": ["설계서 v2 규칙 7"]
+  }
+]
