@@ -10,8 +10,8 @@ export function Row({ label, children, hint }: { label: string; children: ReactN
   );
 }
 
-export function NumField({ label, value, onChange, step, hint }: {
-  label: string; value?: number; onChange: (v: number | undefined) => void; step?: number; hint?: string;
+export function NumField({ label, value, onChange, step, hint, disabled }: {
+  label: string; value?: number; onChange: (v: number | undefined) => void; step?: number; hint?: string; disabled?: boolean;
 }) {
   return (
     <Row label={label} hint={hint}>
@@ -19,6 +19,7 @@ export function NumField({ label, value, onChange, step, hint }: {
         type="number"
         step={step ?? 'any'}
         value={value ?? ''}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
       />
     </Row>

@@ -6,6 +6,7 @@ import { LAYERS, LAYER_NAMES, VERDICT_NAMES, type Layer } from '../../engine/mod
 import { REGIONS, TABLE_LAYERS } from '../../engine/schema';
 import { catalog, prices } from './data';
 import { parseHtml, type ApiCall } from './htmlImport';
+import { callSplit } from '../../engine/api';
 import { addEdge, applyAlternative, removeEdge, removeNode, setVar, updateEdge, updateNode } from './edit';
 import { NumField, Row, Section, TextField } from './fields';
 import { fmtMetric, howMetric } from './format';
@@ -241,13 +242,16 @@ export function EdgePanel({ from, to }: { from: string; to: string }) {
   if (!e) return <p className="muted">연결선이 없습니다.</p>;
   const name = (id: string) => project.nodes.find((n) => n.id === id)?.name ?? id;
   const upd = (patch: Parameters<typeof updateEdge>[3]) => edit((p) => updateEdge(p, from, to, patch));
+  // 화면 와이어프레임에 호출이 있으면 엔진이 호출 비율로 나누고 이 연결의 호출 비율·흐르는 요청은 쓰지 않는다
+  const byCalls = !!callSplit(project, project.nodes.find((n) => n.id === from)!);
   return (
     <div className="panel">
       <Section title={`${name(from)} → ${name(to)}`}>
+        {byCalls && <p className="muted">와이어프레임의 API 호출이 이 연결의 부하를 정합니다. 호출 비율·흐르는 요청은 화면 블록의 세부 구성 › 와이어프레임에서 바꾸세요.</p>}
         <Row label="동기 호출"><input type="checkbox" checked={e.sync} onChange={(x) => upd({ sync: x.target.checked })} /></Row>
-        <NumField label="호출 비율" value={e.callRatio} hint="요청 1건당 이 연결로 몇 번 부르는지" onChange={(v) => upd({ callRatio: v ?? 1 })} />
+        <NumField label="호출 비율" value={e.callRatio} hint="요청 1건당 이 연결로 몇 번 부르는지" disabled={byCalls} onChange={(v) => upd({ callRatio: v ?? 1 })} />
         <Row label="흐르는 요청">
-          <Select value={e.carries} onChange={(x) => upd({ carries: x.target.value as typeof e.carries })}>
+          <Select value={e.carries} disabled={byCalls} onChange={(x) => upd({ carries: x.target.value as typeof e.carries })}>
             <option value="all">전체</option><option value="read">읽기만</option><option value="write">쓰기만</option>
           </Select>
         </Row>
