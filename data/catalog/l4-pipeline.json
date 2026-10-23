@@ -1,0 +1,95 @@
+[
+  {
+    "id": "kafka",
+    "name": "Apache Kafka 4 (KRaft)",
+    "area": "파이프라인", "role": "주", "kind": "도구",
+    "attaches_to": ["queue"],
+    "summary": "디스크 로그에 이벤트를 순서대로 쌓아 여러 소비자가 각자 위치에서 다시 읽는 스트리밍 플랫폼입니다. 4.0부터 ZooKeeper 없이 KRaft로만 동작해 구성이 단순해졌습니다",
+    "goals": { "확장성": "좋음", "안정성": "좋음", "운영 난이도": "나쁨", "비용": "보통" },
+    "works_when": [{ "if": "true", "why": "높은 처리량, 보관 기간 동안 재처리, 같은 키의 순서 보장이 필요할 때 표준입니다" }],
+    "fails_when": [{ "if": "offline_required == true and deploy_mode == 'local_exe'", "why": "로컬 exe에 브로커 클러스터를 넣는 것은 과합니다" }],
+    "alternatives": [
+      { "id": "nats_jetstream", "better_for": ["운영 난이도"], "note": "단일 바이너리" },
+      { "id": "redpanda", "better_for": ["운영 난이도", "지연시간"], "note": "Kafka API 호환" }
+    ],
+    "sources": ["https://kafka.apache.org/41/getting-started/upgrade/", "https://www.infoq.com/news/2025/04/kafka-4-kraft-architecture"]
+  },
+  {
+    "id": "redpanda",
+    "name": "Redpanda (Kafka API 호환)",
+    "area": "파이프라인", "role": "주", "kind": "도구",
+    "attaches_to": ["queue"],
+    "summary": "C++로 다시 만든 Kafka API 호환 스트리밍 플랫폼입니다. JVM이 없고 단일 바이너리라 운영이 단순하며 꼬리 지연이 낮은 것을 강조합니다",
+    "goals": { "지연시간": "좋음", "운영 난이도": "좋음", "비용": "보통" },
+    "works_when": [{ "if": "true", "why": "Kafka 클라이언트·도구를 그대로 쓰면서 운영 부담을 줄일 수 있습니다" }],
+    "alternatives": [{ "id": "kafka", "better_for": ["안정성"], "note": "커뮤니티·생태계가 가장 큼" }],
+    "sources": ["https://docs.redpanda.com/current/get-started/architecture/"]
+  },
+  {
+    "id": "rabbitmq",
+    "name": "RabbitMQ",
+    "area": "파이프라인", "role": "주", "kind": "도구",
+    "attaches_to": ["queue"],
+    "summary": "교환기(exchange)로 메시지를 여러 큐에 유연하게 나눠 보내는 메시지 브로커입니다. 작업 분배·요청 응답에 강하고, Streams로 재생 가능한 로그도 지원합니다",
+    "goals": { "운영 난이도": "보통", "지연시간": "좋음", "확장성": "보통" },
+    "works_when": [{ "if": "true", "why": "작업 큐·우선순위·라우팅 규칙이 처리량보다 중요할 때 잘 맞습니다" }],
+    "alternatives": [{ "id": "kafka", "better_for": ["확장성"], "note": "대량 이벤트 보관·재처리" }],
+    "sources": ["https://www.rabbitmq.com/docs/streams"]
+  },
+  {
+    "id": "nats_jetstream",
+    "name": "NATS + JetStream",
+    "area": "파이프라인", "role": "주", "kind": "도구",
+    "attaches_to": ["queue"],
+    "summary": "20MB 안팎 단일 바이너리에 메시징·스트리밍(JetStream)·키값·오브젝트 저장소를 모았습니다. 설정이 적고 엣지·멀티 리전 구성이 쉽습니다",
+    "goals": { "운영 난이도": "좋음", "지연시간": "좋음", "확장성": "보통" },
+    "works_when": [{ "if": "true", "why": "여러 메시징 요구를 부품 하나로 해결하고 운영을 가볍게 하고 싶을 때 좋습니다" }],
+    "alternatives": [{ "id": "kafka", "better_for": ["확장성"], "note": "지속적인 대량 처리량" }],
+    "sources": ["https://docs.nats.io/compare-nats", "https://docs.nats.io/nats-concepts/jetstream"]
+  },
+  {
+    "id": "sqs",
+    "name": "Amazon SQS (관리형 큐)",
+    "area": "파이프라인", "role": "주", "kind": "도구",
+    "attaches_to": ["queue"],
+    "summary": "서버 관리 없이 쓰는 완전 관리형 메시지 큐입니다. 메시지 수만큼 과금되고, FIFO 큐로 순서와 중복 제거를 보장할 수 있습니다",
+    "goals": { "운영 난이도": "좋음", "비용": "좋음", "지연시간": "보통" },
+    "works_when": [{ "if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "브로커를 운영하지 않고 작업 큐를 바로 쓸 수 있습니다" }],
+    "fails_when": [{ "if": "offline_required == true", "why": "AWS에서만 동작하는 관리형 서비스입니다" }],
+    "alternatives": [{ "id": "rabbitmq", "better_for": ["오프라인"], "note": "직접 운영 가능" }],
+    "sources": ["https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/welcome.html"]
+  },
+  {
+    "id": "temporal",
+    "name": "Temporal (지속 실행 워크플로)",
+    "area": "파이프라인", "role": "주", "kind": "도구",
+    "attaches_to": ["batch"],
+    "summary": "여러 단계로 된 업무 흐름을 코드로 쓰면, 중간에 서버가 죽어도 상태를 기록해 이어서 실행합니다. 재시도·타이머·보상 처리를 직접 만들지 않아도 됩니다",
+    "goals": { "안정성": "좋음", "운영 난이도": "보통", "비용": "보통" },
+    "works_when": [{ "if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "결제·정산처럼 며칠에 걸친 여러 단계를 실패 없이 끝내야 할 때 맞습니다" }],
+    "alternatives": [{ "id": "k8s_cronjob", "better_for": ["운영 난이도"], "note": "단순 주기 작업" }],
+    "sources": ["https://docs.temporal.io/temporal"]
+  },
+  {
+    "id": "k8s_cronjob",
+    "name": "주기 작업 (Kubernetes CronJob 등)",
+    "area": "파이프라인", "role": "주", "kind": "패턴",
+    "attaches_to": ["batch"],
+    "summary": "정해진 시각에 컨테이너를 띄워 일을 하고 끝나면 내려갑니다. 단순하고 쉬는 동안 자원을 쓰지 않습니다",
+    "goals": { "운영 난이도": "좋음", "비용": "좋음", "안정성": "보통" },
+    "works_when": [{ "if": "idle_ratio > 0.5", "why": "하루 대부분 쉬는 작업이라 필요할 때만 띄우면 자원을 아낍니다" }],
+    "alternatives": [{ "id": "temporal", "better_for": ["안정성"], "note": "여러 단계·재시도가 복잡할 때" }],
+    "sources": ["https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/"]
+  },
+  {
+    "id": "flink",
+    "name": "Apache Flink (스트림 처리)",
+    "area": "파이프라인", "role": "주", "kind": "도구",
+    "attaches_to": ["batch", "queue"],
+    "summary": "끊임없이 들어오는 이벤트를 상태와 함께 실시간 집계·조인하며, 장애가 나도 정확히 한 번 처리를 보장하는 스트림 처리 엔진입니다",
+    "goals": { "지연시간": "좋음", "확장성": "좋음", "운영 난이도": "나쁨" },
+    "works_when": [{ "if": "required_freshness_s < 60", "why": "결과를 {required_freshness_s}초 안에 반영해야 해 배치보다 스트림 처리가 맞습니다" }],
+    "alternatives": [{ "id": "kafka_micro_batch", "better_for": ["비용", "운영 난이도"], "note": "분 단위 지연이 괜찮을 때" }],
+    "sources": ["https://nightlies.apache.org/flink/flink-docs-stable/docs/concepts/overview/"]
+  }
+]

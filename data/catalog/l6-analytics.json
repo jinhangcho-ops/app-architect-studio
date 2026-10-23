@@ -1,0 +1,73 @@
+[
+  {
+    "id": "snowflake",
+    "name": "Snowflake",
+    "area": "파이프라인", "role": "주", "kind": "도구",
+    "attaches_to": ["analytics"],
+    "summary": "저장과 연산(가상 웨어하우스)을 나눈 클라우드 데이터 웨어하우스입니다. 쓰지 않으면 웨어하우스가 자동으로 멈춰 연산 요금이 나가지 않습니다",
+    "goals": { "운영 난이도": "좋음", "확장성": "좋음", "비용": "보통" },
+    "works_when": [{ "if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "SQL 중심 재무·BI 분석을 운영 DB와 분리해 돌릴 수 있습니다" }],
+    "fails_when": [{ "if": "offline_required == true", "why": "클라우드에서만 동작하는 관리형 서비스입니다" }],
+    "settings": [{ "name": "웨어하우스 자동 일시정지(짧게)", "goal": "비용" }],
+    "alternatives": [{ "id": "duckdb", "better_for": ["비용", "오프라인"], "note": "데이터가 한 대에 들어갈 때" }],
+    "sources": ["https://docs.snowflake.com/en/user-guide/warehouses-overview"]
+  },
+  {
+    "id": "databricks",
+    "name": "Databricks (레이크하우스)",
+    "area": "파이프라인", "role": "주", "kind": "도구",
+    "attaches_to": ["analytics"],
+    "summary": "Spark 기반 레이크하우스로 객체 저장소의 Delta·Iceberg 테이블에서 대용량 정제·머신러닝·SQL 분석을 함께 합니다",
+    "goals": { "확장성": "좋음", "운영 난이도": "보통", "비용": "보통" },
+    "works_when": [{ "if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "대용량 정제와 AI 학습을 같은 데이터에서 해야 할 때 맞습니다" }],
+    "fails_when": [{ "if": "offline_required == true", "why": "클라우드에서만 동작하는 관리형 서비스입니다" }],
+    "alternatives": [{ "id": "snowflake", "better_for": ["운영 난이도"], "note": "SQL·BI 위주일 때" }],
+    "sources": ["https://docs.databricks.com/aws/en/lakehouse/"]
+  },
+  {
+    "id": "bigquery",
+    "name": "Google BigQuery",
+    "area": "파이프라인", "role": "주", "kind": "도구",
+    "attaches_to": ["analytics"],
+    "summary": "서버를 전혀 관리하지 않는 서버리스 데이터 웨어하우스로, 읽은 데이터 양이나 예약 용량으로 과금합니다. GA4 등 Google 데이터와 바로 연결됩니다",
+    "goals": { "운영 난이도": "좋음", "확장성": "좋음", "비용": "보통" },
+    "works_when": [{ "if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "인프라 없이 큰 데이터를 바로 SQL로 분석할 수 있습니다" }],
+    "fails_when": [{ "if": "offline_required == true", "why": "클라우드에서만 동작하는 관리형 서비스입니다" }],
+    "settings": [{ "name": "파티션·클러스터링으로 읽는 양 줄이기", "goal": "비용" }],
+    "alternatives": [{ "id": "clickhouse", "better_for": ["지연시간"], "note": "실시간 대시보드" }],
+    "sources": ["https://cloud.google.com/bigquery/docs/introduction"]
+  },
+  {
+    "id": "clickhouse",
+    "name": "ClickHouse",
+    "area": "파이프라인", "role": "주", "kind": "도구",
+    "attaches_to": ["analytics"],
+    "summary": "열 단위로 압축 저장하는 오픈소스 분석 DB로, 대량 이벤트를 넣으면서 바로 집계하는 실시간 대시보드에 강합니다. Iceberg REST 카탈로그도 읽습니다",
+    "goals": { "지연시간": "좋음", "속도": "좋음", "운영 난이도": "보통" },
+    "works_when": [{ "if": "true", "why": "로그·이벤트를 몇 초 안에 집계해 보여줘야 할 때 맞습니다" }],
+    "alternatives": [{ "id": "bigquery", "better_for": ["운영 난이도"], "note": "서버 관리 없이" }],
+    "sources": ["https://clickhouse.com/docs/intro", "https://clickhouse.com/blog/google-lakehouse-runtime"]
+  },
+  {
+    "id": "duckdb",
+    "name": "DuckDB (내장형 분석 DB)",
+    "area": "파이프라인", "role": "주", "kind": "도구",
+    "attaches_to": ["analytics", "batch"],
+    "summary": "프로그램 안에 넣어 쓰는 열 기반 분석 DB입니다. 서버 없이 Parquet·CSV·Iceberg 파일을 바로 SQL로 읽고, 노트북 한 대에서 수십 GB도 다룹니다",
+    "goals": { "비용": "좋음", "운영 난이도": "좋음", "오프라인": "좋음", "동시성": "나쁨" },
+    "works_when": [{ "if": "writer_nodes <= 1", "why": "한 프로세스가 쓰는 분석·배치에서 서버 없이 빠르게 집계합니다" }],
+    "fails_when": [{ "if": "writer_nodes > 1", "why": "쓰는 노드가 {writer_nodes}개입니다. DuckDB 파일은 한 번에 한 프로세스만 쓸 수 있습니다" }],
+    "alternatives": [{ "id": "clickhouse", "better_for": ["동시성"], "note": "여러 곳에서 동시에 넣을 때" }],
+    "sources": ["https://duckdb.org/docs/stable/connect/concurrency", "https://duckdb.org/docs/current/core_extensions/iceberg/overview"]
+  },
+  {
+    "id": "iceberg",
+    "name": "Apache Iceberg (오픈 테이블 포맷)",
+    "area": "파이프라인", "role": "보조", "kind": "도구",
+    "attaches_to": ["analytics"],
+    "summary": "객체 저장소의 파일을 트랜잭션·스키마 변경·시점 조회가 되는 테이블로 다루게 하는 오픈 포맷입니다. REST 카탈로그로 여러 엔진이 같은 데이터를 복사 없이 함께 씁니다",
+    "goals": { "비용": "좋음", "확장성": "좋음", "운영 난이도": "보통" },
+    "works_when": [{ "if": "true", "why": "Snowflake·Databricks·DuckDB·ClickHouse 등 여러 엔진이 같은 데이터를 읽어야 할 때 저장을 하나로 합칩니다" }],
+    "sources": ["https://iceberg.apache.org/docs/latest/", "https://duckdb.org/docs/stable/core_extensions/iceberg/iceberg_rest_catalogs"]
+  }
+]

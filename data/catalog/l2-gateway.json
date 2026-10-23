@@ -1,0 +1,87 @@
+[
+  {
+    "id": "nginx",
+    "name": "NGINX (리버스 프록시)",
+    "area": "서비스", "role": "주", "kind": "도구",
+    "attaches_to": ["gateway"],
+    "summary": "이벤트 기반 구조로 적은 메모리로 많은 연결을 처리하는 웹 서버·리버스 프록시입니다. TLS 종료, 정적 파일, 로드밸런싱을 한 곳에서 합니다",
+    "goals": { "메모리": "좋음", "속도": "좋음", "운영 난이도": "좋음" },
+    "works_when": [{ "if": "deploy_mode == 'web' or deploy_mode == 'server' or deploy_mode == 'hybrid'", "why": "가장 널리 쓰여 설정 예시와 운영 경험이 많습니다" }],
+    "alternatives": [
+      { "id": "envoy_gateway", "better_for": ["확장성"], "note": "쿠버네티스 Gateway API" },
+      { "id": "least_connections", "better_for": ["지연시간"], "note": "분산 알고리즘" }
+    ],
+    "sources": ["https://nginx.org/en/docs/http/load_balancing.html"]
+  },
+  {
+    "id": "envoy_gateway",
+    "name": "Envoy Gateway (Kubernetes Gateway API)",
+    "area": "서비스", "role": "주", "kind": "도구",
+    "attaches_to": ["gateway"],
+    "summary": "쿠버네티스의 새 표준인 Gateway API를 Envoy 프록시로 구현합니다. 라우팅·재시도·속도 제한·mTLS를 선언형 리소스로 관리합니다",
+    "goals": { "확장성": "좋음", "안정성": "좋음", "운영 난이도": "보통" },
+    "works_when": [{ "if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "Ingress를 대체하는 Gateway API로 옮겨 가는 쿠버네티스 환경에 맞습니다" }],
+    "fails_when": [{ "if": "deploy_mode == 'local_exe'", "why": "쿠버네티스 클러스터용 게이트웨이라 로컬 exe에는 필요 없습니다" }],
+    "alternatives": [{ "id": "traefik", "better_for": ["운영 난이도"] }],
+    "sources": ["https://gateway.envoyproxy.io/docs/", "https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/"]
+  },
+  {
+    "id": "ingress_nginx",
+    "name": "Ingress NGINX 컨트롤러 (지원 종료)",
+    "area": "서비스", "role": "주", "kind": "도구",
+    "attaches_to": ["gateway"],
+    "summary": "쿠버네티스 커뮤니티의 Ingress 컨트롤러입니다. 2025년 11월 은퇴가 발표됐고 2026년 3월부터 보안 패치를 포함한 유지보수가 없습니다",
+    "goals": { "안정성": "나쁨", "운영 난이도": "보통" },
+    "fails_when": [{ "if": "true", "why": "2026년 3월 유지보수가 끝나 보안 취약점이 더 이상 고쳐지지 않습니다" }],
+    "alternatives": [
+      { "id": "envoy_gateway", "better_for": ["안정성"], "note": "Gateway API로 이전" },
+      { "id": "traefik", "better_for": ["운영 난이도"], "note": "기존 설정을 덜 바꾸고 옮기기" }
+    ],
+    "sources": ["https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/"]
+  },
+  {
+    "id": "traefik",
+    "name": "Traefik",
+    "area": "서비스", "role": "주", "kind": "도구",
+    "attaches_to": ["gateway"],
+    "summary": "컨테이너·쿠버네티스의 서비스 변화를 자동으로 감지해 라우팅을 갱신하고, Let's Encrypt 인증서를 자동 발급합니다",
+    "goals": { "운영 난이도": "좋음", "확장성": "보통" },
+    "works_when": [{ "if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "서비스가 자주 늘고 줄어도 설정 파일을 손으로 고치지 않아도 됩니다" }],
+    "alternatives": [{ "id": "envoy_gateway", "better_for": ["확장성"] }],
+    "sources": ["https://doc.traefik.io/traefik/"]
+  },
+  {
+    "id": "haproxy",
+    "name": "HAProxy",
+    "area": "서비스", "role": "주", "kind": "도구",
+    "attaches_to": ["gateway"],
+    "summary": "TCP·HTTP 로드밸런서로 leastconn 등 다양한 분산 알고리즘, 정밀한 헬스체크, 높은 처리량을 제공합니다",
+    "goals": { "속도": "좋음", "안정성": "좋음", "운영 난이도": "보통" },
+    "works_when": [{ "if": "service_time_cv > 0", "why": "요청마다 처리 시간이 달라도 leastconn으로 한가한 서버에 보낼 수 있습니다" }],
+    "alternatives": [{ "id": "nginx", "better_for": ["운영 난이도"] }],
+    "sources": ["https://docs.haproxy.org/"]
+  },
+  {
+    "id": "kong",
+    "name": "Kong Gateway (API 게이트웨이)",
+    "area": "서비스", "role": "주", "kind": "도구",
+    "attaches_to": ["gateway"],
+    "summary": "NGINX 기반 API 게이트웨이로 인증·속도 제한·로깅을 플러그인으로 붙여, 여러 백엔드 API의 공통 기능을 한곳에서 처리합니다",
+    "goals": { "안정성": "좋음", "운영 난이도": "보통", "비용": "보통" },
+    "works_when": [{ "if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "외부에 여는 API가 여럿일 때 인증·속도 제한을 서비스마다 다시 만들지 않아도 됩니다" }],
+    "alternatives": [{ "id": "nginx", "better_for": ["운영 난이도", "비용"], "note": "API가 하나뿐일 때" }],
+    "sources": ["https://developer.konghq.com/gateway/"]
+  },
+  {
+    "id": "cdn_edge",
+    "name": "CDN·엣지 캐시 (CloudFront, Cloudflare 등)",
+    "area": "서비스", "role": "보조", "kind": "도구",
+    "attaches_to": ["gateway"],
+    "summary": "사용자와 가까운 거점에서 정적 파일과 캐시 가능한 응답을 돌려줘 왕복 지연과 원본 서버 송신 비용을 줄입니다",
+    "goals": { "지연시간": "좋음", "비용": "좋음", "운영 난이도": "좋음" },
+    "works_when": [{ "if": "deploy_mode == 'web' or deploy_mode == 'mobile'", "why": "공개·정적 응답이 많을수록 원본 부하와 송신량이 줄어듭니다" }],
+    "fails_when": [{ "if": "offline_required == true", "why": "CDN은 인터넷 연결이 있어야 동작합니다" }],
+    "settings": [{ "name": "정적 파일 장기 캐시 + 파일명에 해시", "goal": "비용" }],
+    "sources": ["https://aws.amazon.com/cloudfront/features/", "https://developers.cloudflare.com/cache/"]
+  }
+]
