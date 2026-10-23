@@ -6,6 +6,7 @@ import { parseProject } from '../../engine/data';
 import type { Project } from '../../engine/schema';
 import { catalog } from './data';
 import type { XY } from './layout';
+import { desktop, stamp, stampTime } from './desktop';
 import { exportProject } from './store';
 
 const AUTO_KEY = 'app-architect-studio.autosave.v1';
@@ -29,18 +30,30 @@ function rawList(storage: Store, key: string): Raw[] {
   return Array.isArray(data) ? data : [data];
 }
 
+/** 저장 기록 한 칸 → 시점. 깨졌거나 지금 카탈로그로 검증되지 않으면 undefined (그 시점만 뺀다) */
+function toSnapshot(r: Raw): Snapshot | undefined {
+  try {
+    const positions = Object.fromEntries((r.project.nodes ?? []).filter((n) => n.pos).map((n) => [n.id, n.pos!]));
+    return { createdAt: r.createdAt ?? r.savedAt, savedAt: r.savedAt, project: parseProject(r.project, catalog.items, '저장 기록'), positions };
+  } catch {
+    return undefined;
+  }
+}
+
 function readList(storage: Store, key: string): Snapshot[] {
   let list: Raw[];
   try { list = rawList(storage, key); } catch { return []; }
-  // 하나가 깨졌거나 지금 카탈로그로 검증되지 않으면 그 시점만 뺀다
-  return list.flatMap((r) => {
-    try {
-      const positions = Object.fromEntries((r.project.nodes ?? []).filter((n) => n.pos).map((n) => [n.id, n.pos!]));
-      return [{ createdAt: r.createdAt ?? r.savedAt, savedAt: r.savedAt, project: parseProject(r.project, catalog.items, '저장 기록'), positions }];
-    } catch {
-      return [];
-    }
-  });
+  return list.map(toSnapshot).filter((s): s is Snapshot => !!s);
+}
+
+/** 프로젝트 폴더의 시점 파일(.saves/.autosave) → 시점. 파일 내용은 내보내기 JSON, 이름은 저장 시각 */
+export function snapshotFromFile(name: string, text: string): Snapshot | undefined {
+  try {
+    const savedAt = stampTime(name).toISOString();
+    return toSnapshot({ createdAt: savedAt, savedAt, project: JSON.parse(text) });
+  } catch {
+    return undefined;
+  }
 }
 
 /** 맨 앞에 넣거나(replace면 맨 앞을 바꿔) max개까지 남긴다. 저장소가 막혀 있으면 false (작업은 계속된다) */
@@ -102,3 +115,34 @@ export const readManualSaves = (storage: Store = local()) => readList(storage, M
 /** 목록에 보일 한 줄: 저장 시각 · 프로젝트 이름 · 노드 수 */
 export const snapshotLabel = (s: Snapshot) =>
   `${new Date(s.savedAt).toLocaleString('ko-KR')} · ${s.project.name.length > 24 ? `${s.project.name.slice(0, 23)}…` : s.project.name} · 노드 ${s.project.nodes.length}개`;
+
+// ── 데스크톱 앱: 프로젝트 파일이 있으면 같은 폴더의 .autosave/에도 자동 저장 (브라우저 저장소 기록과 같은 규칙) ──
+let folderTimer: ReturnType<typeof setTimeout> | undefined;
+let folderLatest: { file: string; name: string; created: number } | undefined;
+
+export function scheduleFolderAutosave(file: string, p: Project, positions: Record<string, XY>) {
+  const api = desktop;
+  if (!api) return;
+  clearTimeout(folderTimer);
+  folderTimer = setTimeout(() => {
+    const now = new Date();
+    const same = folderLatest?.file === file && now.getTime() - folderLatest.created < autosaveMinutes() * 60_000;
+    const name = same ? folderLatest!.name : stamp(now);
+    if (!same) folderLatest = { file, name, created: now.getTime() };
+    api.writeSnapshot(file, 'auto', name, JSON.stringify(exportProject(p, positions), null, 2), MAX_AUTO).catch(() => { /* 폴더에 못 쓰면 브라우저 저장소 기록만 남는다 */ });
+  }, WAIT_MS);
+}
+
+/** 직접 저장: 프로젝트 파일을 덮어쓰고(처음이면 저장 창) .saves/에 시점 파일을 남긴다. 저장한 경로, 취소면 null */
+export async function saveToFolder(file: string | undefined, p: Project, positions: Record<string, XY>): Promise<string | null> {
+  const api = desktop!;
+  const text = JSON.stringify(exportProject(p, positions), null, 2);
+  const saved = await api.saveFile(file, text, `${p.name.replace(/[\\/:*?"<>|]/g, '_').slice(0, 60)}.aas.json`);
+  if (saved) await api.writeSnapshot(saved, 'manual', stamp(), text, MAX_MANUAL);
+  return saved;
+}
+
+export async function readFolderSnapshots(file: string, kind: 'manual' | 'auto'): Promise<Snapshot[]> {
+  const list = await desktop!.listSnapshots(file, kind);
+  return list.map((x) => snapshotFromFile(x.name, x.text)).filter((s): s is Snapshot => !!s);
+}

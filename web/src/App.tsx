@@ -5,7 +5,9 @@ import { Canvas } from './Canvas';
 import { catalog, examples } from './data';
 import { mergeCodeAnalysis } from './codeImport';
 import { addNode, findPlans, pasteNode, run } from './edit';
-import { readAutosaves, scheduleAutosave, snapshotLabel, startNewSnapshot, writeManualSave, type Snapshot } from './autosave';
+import { readAutosaves, saveToFolder, scheduleAutosave, scheduleFolderAutosave, snapshotLabel, startNewSnapshot, writeManualSave, type Snapshot } from './autosave';
+import { baseName, desktop } from './desktop';
+import type { XY } from './layout';
 import { SaveHistory } from './SaveHistory';
 import { searchProject, type Hit } from './search';
 import type { OptimizeResult } from '../../engine/optimize';
@@ -35,19 +37,34 @@ export function App() {
   const [recovery, setRecovery] = useState<Snapshot | undefined>(() => readAutosaves()[0]);
   const [history, setHistory] = useState(false);
   const [notice, setNotice] = useState<string>();
-  const restore = (snap: Snapshot) => {
+  // 데스크톱 앱에서 지금 열려 있는 프로젝트 파일 (Ctrl+S가 이 파일을 덮어쓰고, 같은 폴더에 시점 파일을 남긴다)
+  const [filePath, setFilePath] = useState<string>();
+  useEffect(() => { document.title = filePath ? `${baseName(filePath)} - App Architect Studio` : 'App Architect Studio'; }, [filePath]);
+  const restore = (snap: Snapshot, sameFile = false) => {
     load(snap.project, snap.positions);
+    if (!sameFile) setFilePath(undefined);
     startNewSnapshot();
     setRecovery(undefined);
     setHistory(false);
   };
-  // 직접 저장(Ctrl+S): 브라우저 저장소에 시점을 남긴다 (최대 20개)
+  const say = (msg: string, ms = 2500) => { setNotice(msg); setTimeout(() => setNotice(undefined), ms); };
+  // 직접 저장(Ctrl+S). 데스크톱 앱: 프로젝트 파일 + 같은 폴더 .saves/ (최대 20개). 브라우저: 브라우저 저장소 (최대 20개)
   const save = () => {
+    if (desktop) {
+      saveToFolder(filePath, project, positions)
+        .then((saved) => { if (saved) { setFilePath(saved); say(`저장했습니다: ${baseName(saved)} · 시점은 .saves 폴더에`); } })
+        .catch((err: Error) => say(`저장하지 못했습니다: ${err.message}`, 8000));
+      return;
+    }
     const ok = writeManualSave(project, positions);
     setNotice(ok ? `저장했습니다 · ${new Date().toLocaleTimeString('ko-KR')}` : '브라우저 저장소를 쓸 수 없어 저장하지 못했습니다. "파일로 내보내기"(Ctrl+Shift+S)를 쓰세요');
     setTimeout(() => setNotice(undefined), ok ? 2500 : 8000);
   };
-  useEffect(() => { if (!recovery) scheduleAutosave(project, positions); }, [project, positions, recovery]);
+  useEffect(() => {
+    if (recovery) return;
+    scheduleAutosave(project, positions);
+    if (filePath) scheduleFolderAutosave(filePath, project, positions);
+  }, [project, positions, recovery, filePath]);
 
   const hits = find ? searchProject(project, catalog.byId, find.q) : [];
   const go = (h: Hit) => {
@@ -78,6 +95,12 @@ export function App() {
 
   /** JSON 파일로 내보내기 (Ctrl+Shift+S) */
   const exportFile = () => {
+    // 데스크톱 앱: "다른 이름으로 저장" (새 파일을 고르고 그 파일로 이어서 작업)
+    if (desktop) {
+      saveToFolder(undefined, project, positions).then((saved) => { if (saved) { setFilePath(saved); say(`저장했습니다: ${baseName(saved)}`); } })
+        .catch((err: Error) => say(`저장하지 못했습니다: ${err.message}`, 8000));
+      return;
+    }
     const blob = new Blob([JSON.stringify(exportProject(project, positions), null, 2)], { type: 'application/json' });
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `${project.name || 'project'}.json` });
     a.click();
@@ -99,7 +122,7 @@ export function App() {
       const k = e.code.startsWith('Key') ? e.code.slice(3).toLowerCase() : e.key.toLowerCase();
       if (k === 's') { e.preventDefault(); if (e.shiftKey) exportFile(); else save(); return; }
       if (k === 'f') { e.preventDefault(); setFind({ q: find?.q ?? '', at: 0 }); return; }
-      if (k === 'o') { e.preventDefault(); fileRef.current?.click(); return; }
+      if (k === 'o') { e.preventDefault(); openProject(); return; }
       if (typing) return;
       // 페이지 글자를 드래그해 골라 둔 경우에는 브라우저의 복사를 그대로 둔다
       if (k === 'c' && selected?.kind === 'node' && !window.getSelection()?.toString()) {
@@ -113,6 +136,18 @@ export function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
+
+  // 데스크톱 앱은 열기 창에서 고른 파일 경로를 기억해 Ctrl+S가 그 파일에 저장한다
+  const openProject = () => {
+    if (!desktop) return fileRef.current?.click();
+    desktop.openFile().then((r) => {
+      if (!r) return;
+      const data = JSON.parse(r.text);
+      const pos = Object.fromEntries((data.nodes ?? []).filter((n: { pos?: unknown }) => n.pos).map((n: { id: string; pos: XY }) => [n.id, n.pos]));
+      load(parseProject(data, catalog.items, baseName(r.path)), pos);
+      setFilePath(r.path);
+    }).catch((err: Error) => alert(err.message));
+  };
 
   const open = async (file: File) => {
     try {
@@ -140,12 +175,12 @@ export function App() {
         <span className="spacer" />
         <select aria-label="예시 불러오기" value="" onChange={(e) => {
           const ex = examples.find((x) => x.name === e.target.value);
-          if (ex) load(parseProject(ex.data, catalog.items, ex.name));
+          if (ex) { load(parseProject(ex.data, catalog.items, ex.name)); setFilePath(undefined); }
         }}>
           <option value="">예시 불러오기</option>
           {examples.map((e) => <option key={e.name} value={e.name}>{e.name}</option>)}
         </select>
-        <button onClick={() => fileRef.current?.click()}>열기</button>
+        <button onClick={openProject} title="Ctrl+O">열기</button>
         <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => e.target.files?.[0] && open(e.target.files[0])} />
         <button onClick={() => codeRef.current?.click()} title="tools/analyze_py.py가 만든 JSON">코드 분석 불러오기</button>
         <input ref={codeRef} type="file" accept="application/json" hidden onChange={async (e) => {
@@ -181,7 +216,7 @@ export function App() {
             <button onClick={() => { startNewSnapshot(); setRecovery(undefined); }}>닫기</button>
           </div>
         )}
-        {history && <SaveHistory onRestore={restore} onClose={() => setHistory(false)} />}
+        {history && <SaveHistory filePath={desktop ? filePath : undefined} onRestore={restore} onClose={() => setHistory(false)} />}
         {notice && <div className="notice" role="status">{notice}</div>}
         {find && (
           <div className="find" role="search">
