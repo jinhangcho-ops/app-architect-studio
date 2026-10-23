@@ -10,6 +10,7 @@ import { NumField, Row, Section, TextField } from './fields';
 import { fmtMetric, howMetric } from './format';
 import { useStore } from './store';
 import { StorageSection, TablesSection } from './TablesPanel';
+import { canEnter } from './NodeInside';
 
 const itemName = (id: string) => catalog.byId.get(id)?.name ?? id;
 
@@ -17,7 +18,7 @@ const itemName = (id: string) => catalog.byId.get(id)?.name ?? id;
 const parseValue = (s: string) => (s === 'true' ? true : s === 'false' ? false : s !== '' && !Number.isNaN(Number(s)) ? Number(s) : s);
 
 export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis }) {
-  const { project, edit, select } = useStore();
+  const { project, edit, select, setFocus } = useStore();
   const [goal, setGoal] = useState('');
   const [newVar, setNewVar] = useState('');
   const [apiCalls, setApiCalls] = useState<ApiCall[]>([]);
@@ -226,6 +227,7 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
         </div>
       </Section>
 
+      {canEnter(n.layer) && <button onClick={() => setFocus(id)}>안으로 들어가기 (테이블 다이어그램)</button>}
       <button className="danger" onClick={() => { edit((p) => removeNode(p, id)); select(null); }}>노드 삭제</button>
     </div>
   );

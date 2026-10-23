@@ -192,7 +192,7 @@ function PersonaTable({ t }: { t: Traffic }) {
 }
 
 /** 테이블 하나를 브라우저 SQLite에 만들어 1만 행을 넣고 잰다. 주 항목이 SQLite 계열이면 실측값을 테이블에 넣을 수 있다 */
-function TableLab({ nodeId, table }: { nodeId: string; table: string }) {
+export function TableLab({ nodeId, table }: { nodeId: string; table: string }) {
   const { project, edit } = useStore();
   const [state, setState] = useState<{ running?: boolean; result?: LabResult; error?: string }>({});
   const node = project.nodes.find((n) => n.id === nodeId)!;

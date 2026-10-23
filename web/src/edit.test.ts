@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseProject } from '../../engine/data';
 import { catalog, examples } from './data';
 import { parseSpec } from '../../engine/spec';
-import { addAction, addEdge, addNode, addTable, applyAlternative, importTables, removeAction, removeNode, removeTable, run, setActionRate, setVar, updateAction, updateNode, updateTable, worstVerdict } from './edit';
+import { addAction, addEdge, addWrite, removeWrite, addNode, addTable, applyAlternative, importTables, removeAction, removeNode, removeTable, run, setActionRate, setVar, updateAction, updateNode, updateTable, worstVerdict } from './edit';
 import { autoLayout } from './layout';
 
 const today = '2026-10-23';
@@ -124,5 +124,24 @@ describe('노드 삭제·주 항목 변경이 다른 입력을 깨뜨리지 않�
     const moved = updateNode(picked, 'db', { primary: 'mysql' });
     expect(moved.nodes.find((n) => n.id === 'db')!.storage_features).toBeUndefined();
     expect(run(moved, today).error).toBeUndefined();
+  });
+});
+
+describe('안쪽 다이어그램에서 선 긋기·지우기', () => {
+  const ax = examples.find((e) => e.name === 'actions.json')!;
+  const p0 = parseProject(ax.data, catalog.items, ax.name);
+
+  it('행동 → 테이블 선을 그으면 쓰기 1행이 생기고, 같은 선은 두 번 생기지 않음', () => {
+    const p = addWrite(addWrite(p0, '리뷰', 'db', 'orders'), '리뷰', 'db', 'orders');
+    expect(p.actions.find((a) => a.name === '리뷰')!.writes).toEqual([{ node: 'db', table: 'reviews', rows: 1 }, { node: 'db', table: 'orders', rows: 1 }]);
+    expect(run(p, today).error).toBeUndefined();
+  });
+
+  it('선을 지우면 쓰기가 빠지고, 마지막 쓰기를 지우면 행동과 페르소나 빈도도 지워짐', () => {
+    const p = removeWrite(p0, '리뷰', 'db', 'reviews');
+    expect(p.actions.map((a) => a.name)).toEqual(['주문']);
+    expect(p.personas.every((ps) => !('리뷰' in ps.action_rates))).toBe(true);
+    expect(removeWrite(p0, '주문', 'db', 'orders').actions.find((a) => a.name === '주문')!.writes.map((w) => w.table)).toEqual(['order_items']);
+    expect(run(p, today).error).toBeUndefined();
   });
 });

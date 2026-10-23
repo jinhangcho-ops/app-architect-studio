@@ -167,3 +167,18 @@ export function setActionRate(p: Project, persona: number, action: string, value
     }),
   };
 }
+
+/** 행동이 이 테이블에 쓰게 한다 (이미 쓰면 그대로) */
+export function addWrite(p: Project, action: string, node: string, table: string): Project {
+  const a = p.actions.find((x) => x.name === action);
+  if (!a || a.writes.some((w) => w.node === node && w.table === table)) return p;
+  return updateAction(p, action, { writes: [...a.writes, { node, table, rows: 1 }] });
+}
+
+/** 행동의 쓰기 하나를 뺀다. 쓸 곳이 하나도 남지 않으면 행동을 지운다 */
+export function removeWrite(p: Project, action: string, node: string, table: string): Project {
+  const a = p.actions.find((x) => x.name === action);
+  if (!a) return p;
+  const writes = a.writes.filter((w) => !(w.node === node && w.table === table));
+  return writes.length ? updateAction(p, action, { writes }) : removeAction(p, action);
+}

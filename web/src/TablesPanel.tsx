@@ -50,16 +50,16 @@ export function TablesSection({ node }: { node: ProjectNode }) {
   );
 }
 
-function TableEditor({ node, t }: { node: ProjectNode; t: Table }) {
+export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t: Table; open?: boolean; onRename?: (name: string) => void }) {
   const { edit } = useStore();
   const upd = (patch: Partial<Table>) => edit((p) => updateTable(p, node.id, t.name, patch));
   const setCol = (i: number, patch: Partial<Column>) => upd({ columns: t.columns.map((c, k) => (k === i ? { ...c, ...patch } : c)) });
   const setIx = (i: number, patch: Partial<Table['indexes'][number]>) => upd({ indexes: t.indexes.map((x, k) => (k === i ? { ...x, ...patch } : x)) });
 
   return (
-    <details className="table-editor">
+    <details className="table-editor" open={open}>
       <summary><b>{t.name}</b> <span className="muted">컬럼 {t.columns.length} · 인덱스 {t.indexes.length}{t.partition ? ' · 파티션' : ''}</span></summary>
-      <Row label="이름"><input defaultValue={t.name} onBlur={(e) => e.target.value && e.target.value !== t.name && upd({ name: e.target.value })} /></Row>
+      <Row label="이름"><input defaultValue={t.name} onBlur={(e) => { if (e.target.value && e.target.value !== t.name) { upd({ name: e.target.value }); onRename?.(e.target.value); } }} /></Row>
       <NumField label="보관 일수" value={t.retention_days} hint="비우면 프로젝트 보관 기간" onChange={(v) => upd({ retention_days: v })} />
       <NumField label="갱신 비율" value={t.update_ratio} step={0.05} hint="쓰기 중 새 행이 아니라 기존 행을 고치는 비율" onChange={(v) => upd({ update_ratio: v ?? 0 })} />
       <Row label="기본 키" hint="쉼표로 구분, 순서대로">

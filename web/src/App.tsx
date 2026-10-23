@@ -7,6 +7,7 @@ import { mergeCodeAnalysis } from './codeImport';
 import { addNode, findPlans, run } from './edit';
 import type { OptimizeResult } from '../../engine/optimize';
 import { Report } from './Report';
+import { NodeInside, TableSidePanel } from './NodeInside';
 import { EdgePanel, NodePanel } from './NodePanel';
 import { OptimizePanel } from './OptimizePanel';
 import { View3D } from './View3D';
@@ -18,7 +19,7 @@ import { exportProject, useStore } from './store';
 const today = new Date().toLocaleDateString('sv-SE');
 
 export function App() {
-  const { project, positions, selected, load, edit, relayout, select } = useStore();
+  const { project, positions, selected, load, edit, relayout, select, focus } = useStore();
   // 위치를 끌어도 다시 계산하지 않도록 프로젝트가 바뀔 때만 분석한다
   const result = useMemo(() => run(project, today), [project]);
   const [tab, setTab] = useState<'selected' | 'results' | 'optimize'>('results');
@@ -94,7 +95,9 @@ export function App() {
       </header>
       <aside className="left"><ProjectPanel /></aside>
       <main className="center">
-        {view === '2d'
+        {focus
+          ? <NodeInside nodeId={focus} analysis={result.analysis} onSelect={() => setTab('selected')} />
+          : view === '2d'
           ? <Canvas analysis={result.analysis} onSelect={() => setTab('selected')} />
           : <View3D analysis={result.analysis} onSelect={() => setTab('selected')} />}
         {result.error && <pre className="error-banner">{result.error}</pre>}
@@ -109,6 +112,7 @@ export function App() {
         {tab === 'optimize' && <OptimizePanel today={today} />}
         {tab === 'selected' && selected?.kind === 'node' && <NodePanel id={selected.id} analysis={result.analysis} />}
         {tab === 'selected' && selected?.kind === 'edge' && <EdgePanel from={selected.from} to={selected.to} />}
+        {tab === 'selected' && selected?.kind === 'table' && <TableSidePanel nodeId={selected.node} table={selected.table} analysis={result.analysis} />}
         {tab === 'selected' && !selected && <p className="muted">캔버스에서 노드나 연결선을 고르세요.</p>}
       </aside>
     </div>

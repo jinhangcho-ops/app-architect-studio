@@ -5,6 +5,7 @@ import type { ProjectNode } from '../../engine/schema';
 import { catalog } from './data';
 import { addEdge, removeEdge, removeNode, worstVerdict } from './edit';
 import { fmt } from './format';
+import { canEnter } from './NodeInside';
 import { useStore } from './store';
 
 type CardData = { node: ProjectNode; verdict?: Verdict; detail?: string; spof: boolean };
@@ -31,7 +32,7 @@ function Card({ data, selected }: NodeProps<Node<CardData>>) {
 const nodeTypes = { card: Card };
 
 export function Canvas({ analysis, onSelect }: { analysis?: Analysis; onSelect: () => void }) {
-  const { project, positions, selected, edit, move, select } = useStore();
+  const { project, positions, selected, edit, move, select, setFocus } = useStore();
 
   const nodes: Node<CardData>[] = project.nodes.map((n) => {
     const na = analysis?.nodes[n.id];
@@ -78,6 +79,8 @@ export function Canvas({ analysis, onSelect }: { analysis?: Analysis; onSelect: 
       onEdgesDelete={(es) => edit((p) => es.reduce((acc, e) => removeEdge(acc, e.source, e.target), p))}
       onConnect={(c) => c.source && c.target && edit((p) => addEdge(p, c.source, c.target))}
       onNodeClick={(_, n) => { select({ kind: 'node', id: n.id }); onSelect(); }}
+      // 테이블을 두는 블록(DB·캐시·분석)은 두 번 누르면 안쪽 다이어그램으로 들어간다
+      onNodeDoubleClick={(_, n) => { if (canEnter(project.nodes.find((x) => x.id === n.id)?.layer)) setFocus(n.id); }}
       onEdgeClick={(_, e) => { select({ kind: 'edge', from: e.source, to: e.target }); onSelect(); }}
       onPaneClick={() => select(null)}
     >

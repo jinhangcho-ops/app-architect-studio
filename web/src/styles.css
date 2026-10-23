@@ -129,3 +129,19 @@ textarea.spec { width: 100%; min-height: 90px; font-family: ui-monospace, monosp
   .r-h { break-after: avoid; }
   section { break-inside: auto; }
 }
+
+/* 블록 안 다이어그램 (DB 테이블) */
+.inside { position: relative; height: 100%; display: flex; flex-direction: column; }
+.inside-bar { display: flex; gap: 8px; align-items: center; padding: 6px 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.inside > .react-flow { flex: 1; }
+.inside-empty { padding: 8px 12px; }
+.inside-hint { position: absolute; left: 10px; bottom: 6px; margin: 0; font-size: 11px; pointer-events: none; }
+.tblock { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; min-width: 260px; font-size: 12px; }
+.tblock.sel { border-color: var(--accent); box-shadow: 0 0 0 2px #2b5fd933; }
+.tblock-head { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding-bottom: 3px; margin-bottom: 3px; }
+.tblock-sub { color: var(--muted); font-size: 11px; margin: 2px 0; }
+.tblock table { border-collapse: collapse; width: 100%; }
+.tblock td { padding: 1px 4px; white-space: nowrap; }
+.tblock-key { width: 18px; text-align: center; }
+.tblock .num { text-align: right; }
+.ablock { background: #f3f7ff; border: 1px solid var(--accent); border-radius: 18px; padding: 6px 14px; font-size: 12px; min-width: 120px; }

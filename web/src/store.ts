@@ -5,7 +5,7 @@ import type { Project } from '../../engine/schema';
 import { catalog, examples } from './data';
 import { autoLayout, type XY } from './layout';
 
-export type Selection = { kind: 'node'; id: string } | { kind: 'edge'; from: string; to: string } | null;
+export type Selection = { kind: 'node'; id: string } | { kind: 'edge'; from: string; to: string } | { kind: 'table'; node: string; table: string } | null;
 
 type State = {
   project: Project;
@@ -17,6 +17,9 @@ type State = {
   move: (id: string, xy: XY) => void;
   relayout: () => void;
   select: (s: Selection) => void;
+  /** 안으로 들어가 본 블록(노드 id). 없으면 전체 다이어그램 */
+  focus?: string;
+  setFocus: (id?: string) => void;
 };
 
 const first = examples.find((e) => e.name === 'phase3.json') ?? examples[0];
@@ -26,7 +29,7 @@ export const useStore = create<State>((set) => ({
   project: initial,
   positions: autoLayout(initial),
   selected: null,
-  load: (p, positions) => set({ project: p, positions: { ...autoLayout(p), ...positions }, selected: null }),
+  load: (p, positions) => set({ project: p, positions: { ...autoLayout(p), ...positions }, selected: null, focus: undefined }),
   edit: (fn) => set((s) => {
     const project = fn(s.project);
     // 새로 생긴 노드에만 자리를 준다
@@ -38,6 +41,7 @@ export const useStore = create<State>((set) => ({
   move: (id, xy) => set((s) => ({ positions: { ...s.positions, [id]: xy } })),
   relayout: () => set((s) => ({ positions: autoLayout(s.project) })),
   select: (selected) => set({ selected }),
+  setFocus: (focus) => set({ focus, selected: null }),
 }));
 
 /** 저장 파일: 프로젝트 + 노드 위치(pos). 엔진 스키마는 pos를 모르고 무시한다. */
