@@ -10,6 +10,12 @@ export type Ctx = Pick<CanvasRenderingContext2D, 'fillRect' | 'strokeRect' | 'fi
 const REGION = new Set<WireItem['kind']>(['sidebar', 'main', 'form', 'list', 'card', 'table']);
 const BAR = new Set<WireItem['kind']>(['header', 'nav', 'footer']);
 
+/** 틀이 바뀌어(웹 → 모바일) 밖으로 나간 상자는 틀 안으로 당겨 보여 준다 */
+export function fitItem(it: WireItem, frame: { w: number; h: number }): WireItem {
+  const w = Math.min(it.w, frame.w), h = Math.min(it.h, frame.h);
+  return { ...it, w, h, x: Math.max(0, Math.min(it.x, frame.w - w)), y: Math.max(0, Math.min(it.y, frame.h - h)) };
+}
+
 /** 큰 상자(영역)부터 그려 작은 상자(컨트롤)가 위에 오게 한다 */
 export const drawOrder = (items: WireItem[]) => [...items].sort((a, b) => b.w * b.h - a.w * a.h);
 
@@ -18,7 +24,7 @@ export function drawScreen(c: Ctx, screen: Screen, frame: { w: number; h: number
   c.scale(k, k);
   c.fillStyle = '#f4f6f9';
   c.fillRect(0, 0, frame.w, frame.h);
-  for (const it of drawOrder(screen.items)) {
+  for (const it of drawOrder(screen.items.map((i) => fitItem(i, frame)))) {
     const { x, y, w, h, kind } = it;
     c.save();
     c.beginPath();

@@ -14,7 +14,7 @@ import { fmt, fmtMetric, howMetric } from './format';
 import { TableLab } from './ResultsPanel';
 import { useStore } from './store';
 import { TableEditor } from './TablesPanel';
-import { InsideBar, PART_LAYERS, PartsInside, READABLE } from './PartsInside';
+import { PART_LAYERS, PartsInside, READABLE } from './PartsInside';
 import { isOurDrag, readDrag, startDrag } from './Palette';
 import { isLocal, ServersInside } from './ServersInside';
 import { type DetailTab } from './store';
@@ -64,8 +64,6 @@ function ActionBlock({ data }: NodeProps<Node<ActionData>>) {
 
 const nodeTypes = { table: TableBlock, action: ActionBlock };
 
-/** 모든 블록은 세부 구성(서버 구성)을 연다 */
-export const canEnter = (layer?: string) => !!layer;
 
 /** 카드를 누르면 열리는 세부 구성: 서버(로컬이면 기기) 구성 + 테이블 구성(DB·캐시·분석) · 부품 구성(백엔드·게이트웨이·워커) · 와이어프레임(화면) */
 export function NodeInside({ nodeId, analysis, onSelect }: { nodeId: string; analysis?: Analysis; onSelect: () => void }) {
@@ -78,7 +76,12 @@ export function NodeInside({ nodeId, analysis, onSelect }: { nodeId: string; ana
   if (n.layer === 'ui') tabs.push(['wireframe', '와이어프레임']);
   const shown = tabs.some(([k]) => k === tab) ? tab : 'servers';
   return (
-    <div className="detail" onContextMenu={(e) => { e.preventDefault(); setFocus(undefined); }}
+    <div className="detail" onContextMenu={(e) => {
+      // 입력칸에서는 브라우저 메뉴(붙여넣기 등)를 그대로 쓴다
+      if (e.target instanceof Element && e.target.closest('input, textarea, select, .select, .select-list')) return;
+      e.preventDefault();
+      setFocus(undefined);
+    }}
       onDragOver={(e) => isOurDrag(e) && e.preventDefault()}
       onDrop={(e) => {
         // 왼편 목록에서 끌어 온 것 (와이어프레임 상자는 와이어프레임이 직접 받는다)
@@ -101,7 +104,7 @@ export function NodeInside({ nodeId, analysis, onSelect }: { nodeId: string; ana
       </div>
       {shown === 'servers' && <ServersInside nodeId={nodeId} analysis={analysis} />}
       {shown === 'tables' && <TablesInside nodeId={nodeId} analysis={analysis} onSelect={onSelect} />}
-      {shown === 'parts' && <PartsInside nodeId={nodeId} analysis={analysis} canEnter={canEnter} />}
+      {shown === 'parts' && <PartsInside nodeId={nodeId} analysis={analysis} />}
       {shown === 'wireframe' && <WireframeInside nodeId={nodeId} analysis={analysis} />}
     </div>
   );
@@ -136,14 +139,14 @@ function TablesInside({ nodeId, analysis, onSelect }: { nodeId: string; analysis
 
   return (
     <div className="inside">
-      <InsideBar>
+      <div className="inside-bar">
         {sp && <span className="fchips">저장 기능 {selectedFeatures(sp, n).map((f) => (
           <span key={f.id} className="fchip" draggable title="왼편 목록으로 끌어 놓으면 꺼져요" onDragStart={(e) => startDrag(e, { kind: 'remove', what: 'feature', id: f.id })}>{f.label}</span>
         ))}</span>}
         <span className="spacer" />
         <button onClick={() => edit((x) => addTable(x, nodeId))}>테이블 추가</button>
         <button onClick={() => edit(addAction)} disabled={!n.tables.length && !p.nodes.some((x) => x.tables.length)}>행동 추가</button>
-      </InsideBar>
+      </div>
       {!n.tables.length && <p className="muted inside-empty">테이블이 없습니다. "테이블 추가"를 누르거나, 오른쪽 노드 패널에서 명세서를 붙여 넣으세요.</p>}
       <ReactFlow
         nodes={[...actionNodes, ...tableNodes]}

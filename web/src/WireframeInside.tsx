@@ -12,7 +12,7 @@ import { htmlToScreen } from './htmlImport';
 import { markDrag, overPalette, readDrag, WIRE_NAMES } from './Palette';
 import { Select } from './Select';
 import { useStore } from './store';
-import { downloadPng, frameOf } from './wireDraw';
+import { downloadPng, drawOrder, fitItem, frameOf } from './wireDraw';
 
 const GRID = 8;
 const snap = (v: number) => Math.round(v / GRID) * GRID;
@@ -92,7 +92,7 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
   };
 
   // 큰 상자(영역)를 먼저 그려 작은 상자(컨트롤)가 위에 오게 한다
-  const items = [...screen.items].map((it) => (live?.id === it.id ? live.now : it)).sort((a, b) => b.w * b.h - a.w * a.h);
+  const items = drawOrder(screen.items.map((it) => (live?.id === it.id ? live.now : fitItem(it, frame))));
 
   return (
     <div className="wire">
@@ -100,7 +100,7 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
         {screens.map((s, i) => (
           <span key={i} className={`wscreen ${i === si ? 'on' : ''}`} onClick={() => setCur(i)}>
             {editing === `screen:${i}`
-              ? <input autoFocus defaultValue={s.name} aria-label="화면 이름" onBlur={(e) => { const v = e.target.value.trim(); if (v) edit((x) => mapScreens(x, nodeId, (ss) => ss.map((y, j) => (j === i ? { ...y, name: v } : y)))); setEditing(undefined); }}
+              ? <input autoFocus defaultValue={s.name} aria-label="화면 이름" onBlur={(e) => { const v = e.target.value.trim(); if (v && !screens.some((y, j) => j !== i && y.name === v)) edit((x) => mapScreens(x, nodeId, (ss) => ss.map((y, j) => (j === i ? { ...y, name: v } : y)))); setEditing(undefined); }}
                 onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditing(undefined); }} />
               : <span onDoubleClick={() => setEditing(`screen:${i}`)} title="두 번 누르면 이름을 고쳐요">{s.name}</span>}
             {screens.length > 1 && <button aria-label={`${s.name} 지우기`} onClick={(e) => { e.stopPropagation(); edit((x) => mapScreens(x, nodeId, (ss) => ss.filter((_, j) => j !== i))); setCur(0); }}>×</button>}
@@ -115,6 +115,8 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
           e.target.value = '';
           if (!f) return;
           const sc = htmlToScreen(await f.text(), frame, f.name.replace(/\.html?$/i, ''));
+          // 화면 이름은 겹치지 않게 (호출 목록·설계서 표가 이름으로 줄을 가른다)
+          for (let k = 2, base = sc.name; screens.some((y) => y.name === sc.name); k++) sc.name = `${base} ${k}`;
           edit((x) => mapScreens(x, nodeId, (ss) => [...ss.filter((y) => y.items.length || ss.length > 1), sc]));
           setCur(screen.items.length || screens.length > 1 ? screens.length : 0);
         }} />

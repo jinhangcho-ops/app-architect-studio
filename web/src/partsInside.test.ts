@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { parseProject } from '../../engine/data';
 import { catalog, examples } from './data';
 import { applyAlternative, run, updateNode } from './edit';
-import { canEnter } from './NodeInside';
 import { partsOf } from './PartsInside';
 
 const today = '2026-10-24';
@@ -42,8 +41,4 @@ describe('백엔드·게이트웨이·워커 블록 안 (부품)', () => {
     expect(run(updateNode(p0, 'N-03', { extras: ['idempotency_key'] }), today).error).toBeUndefined();
   });
 
-  it('모든 블록은 세부 구성으로 들어갈 수 있음', () => {
-    expect(['ui', 'gateway', 'backend', 'cache', 'queue', 'batch', 'db', 'external', 'analytics'].every((l) => canEnter(l))).toBe(true);
-    expect(canEnter(undefined)).toBe(false);
-  });
 });

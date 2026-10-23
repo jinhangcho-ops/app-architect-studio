@@ -84,16 +84,21 @@ const dataApi = (el: Element): Api | undefined => {
 export function htmlToScreen(text: string, frame: { w: number; h: number }, name = '가져온 화면', parser: DOMParser = new DOMParser()): Screen {
   const doc = parser.parseFromString(text, 'text/html');
   const regions = [...doc.body.querySelectorAll('*')].filter((el) => roleOf(el));
-  const owner = (el: Element) => { let x = el.parentElement; while (x && !regions.includes(x)) x = x.parentElement; return x; };
+  /** el을 감싸는 가장 가까운 영역 (among = 후보 영역) */
+  const ownerIn = (among: Element[]) => (el: Element) => { let x = el.parentElement; while (x && !among.includes(x)) x = x.parentElement; return x; };
+  const owner = ownerIn(regions);
+  // 실제로 그리는 영역. 그 안에 든 다른 영역(헤더 안 nav 등)의 컨트롤은 바깥 영역에 놓는다
+  let placed: Element[] = [];
+  const usedForms = new Set<Element>();
   const items: Omit<WireItem, 'id'>[] = [];
   const G = 16;
 
-  const controlsOf2 = (r: Element) => [...r.querySelectorAll('button, input:not([type=hidden]), select, textarea, a[href]')].filter((c) => owner(c) === r);
+  const controlsOf2 = (r: Element) => [...r.querySelectorAll('button, input:not([type=hidden]), select, textarea, a[href]')].filter((c) => ownerIn(placed)(c) === r);
   /** 영역 하나와 그 안의 컨트롤을 놓고 쓴 높이를 돌려준다 */
   const place = (r: Element, x: number, y: number, w: number, minH: number): number => {
     const kind = ROLE_KIND[roleOf(r)!];
     const formApi = r.tagName === 'FORM' && r.getAttribute('action') ? apiOf((r.getAttribute('method') ?? 'GET').toUpperCase(), r.getAttribute('action')!) : undefined;
-    let cx = x + G, cy = y + 32, rowH = 0, used = false;
+    let cx = x + G, cy = y + 32, rowH = 0;
     for (const c of controlsOf2(r)) {
       const tag = c.tagName.toLowerCase();
       const t = (c.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 30);
@@ -107,29 +112,33 @@ export function htmlToScreen(text: string, frame: { w: number; h: number }, name
       if (cx + width > x + w - G) { cx = x + G; cy += rowH + 8; rowH = 0; }
       const href = tag === 'a' ? c.getAttribute('href') ?? '' : '';
       let api = dataApi(c) ?? (href.startsWith('/api') ? apiOf('GET', href) : undefined);
-      if (!api && formApi && k === 'button' && !used) { api = formApi; used = true; }
+      // 폼 action은 그 폼의 첫 버튼이 가져간다 (폼이 다른 영역 안에 있어도)
+      const fm = k === 'button' ? c.closest('form[action]') : null;
+      if (!api && fm && !usedForms.has(fm)) { usedForms.add(fm); api = apiOf((fm.getAttribute('method') ?? 'GET').toUpperCase(), fm.getAttribute('action')!); }
       items.push({ kind: k, label, x: cx, y: cy, w: width, h: ch, ...(api && { api }) });
       cx += width + 8;
       rowH = Math.max(rowH, ch);
     }
     const h = Math.max(minH, rowH ? cy + rowH + G - y : 0);
-    const api = dataApi(r) ?? (formApi && !used ? formApi : undefined);
+    const api = dataApi(r) ?? (formApi && !usedForms.has(r) ? formApi : undefined);
     items.push({ kind, label: roleOf(r)!, x, y, w, h, ...(api && { api }) });
     return h;
   };
 
   const kinds = (ks: Kind[]) => regions.filter((r) => ks.includes(ROLE_KIND[roleOf(r)!]) && !owner(r));
-  let top = 0;
-  for (const r of kinds(['header', 'nav'])) top += place(r, 0, top, frame.w, ROLE_KIND[roleOf(r)!] === 'header' ? 64 : 44);
+  const bars = kinds(['header', 'nav']);
   const footer = kinds(['footer'])[0];
+  const sides = kinds(['sidebar']);
+  const main = kinds(['main'])[0];
+  const body = regions.filter((r) => !['header', 'nav', 'footer', 'sidebar', 'main'].includes(ROLE_KIND[roleOf(r)!]) && (!owner(r) || owner(r) === main));
+  placed = [...bars, ...(footer ? [footer] : []), ...sides, ...(main ? [main] : []), ...body];
+  let top = 0;
+  for (const r of bars) top += place(r, 0, top, frame.w, ROLE_KIND[roleOf(r)!] === 'header' ? 64 : 44);
   const bottom = footer ? frame.h - 56 : frame.h;
   if (footer) place(footer, 0, bottom, frame.w, 56);
-  const sides = kinds(['sidebar']);
   sides.forEach((r) => place(r, 0, top, 240, bottom - top));
   const x0 = sides.length ? 256 : G, w0 = frame.w - x0 - G;
   // 본문: main이 있으면 그 안에, 없으면 바로 쌓는다
-  const main = kinds(['main'])[0];
-  const body = regions.filter((r) => !['header', 'nav', 'footer', 'sidebar', 'main'].includes(ROLE_KIND[roleOf(r)!]) && (!owner(r) || owner(r) === main));
   let y = top + G + (main ? 32 : 0);
   for (const r of body) y += place(r, x0 + (main ? G : 0), y, w0 - (main ? 2 * G : 0), ROLE_KIND[roleOf(r)!] === 'table' ? 200 : 120) + G;
   if (main) {

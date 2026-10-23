@@ -95,12 +95,8 @@ function PeerBlock({ data }: NodeProps<Node<PeerData>>) {
 
 const nodeTypes = { part: PartBlock, alt: AltBlock, peer: PeerBlock };
 
-/** 탭 안쪽 도구줄 (돌아가기·제목은 세부 구성 머리에 있다) */
-export function InsideBar({ children }: { children?: React.ReactNode }) {
-  return <div className="inside-bar">{children}</div>;
-}
 
-export function PartsInside({ nodeId, analysis, canEnter }: { nodeId: string; analysis?: Analysis; canEnter: (layer: string) => boolean }) {
+export function PartsInside({ nodeId, analysis }: { nodeId: string; analysis?: Analysis }) {
   const { project: p, edit, select, setFocus } = useStore();
   const n = p.nodes.find((x) => x.id === nodeId)!;
   const parts = partsOf(p, analysis, catalog.byId, nodeId);
@@ -131,7 +127,7 @@ export function PartsInside({ nodeId, analysis, canEnter }: { nodeId: string; an
   const main = n.primary ? `p:${n.primary}` : undefined;
   const peer = (other: string, x: number, i: number) => {
     const o = p.nodes.find((q) => q.id === other)!;
-    return { id: `n:${other}:${x}`, type: 'peer', position: { x, y: i * 80 }, data: { name: o.name, layer: LAYER_NAMES[o.layer], onEnter: canEnter(o.layer) ? () => setFocus(other) : undefined } satisfies PeerData };
+    return { id: `n:${other}:${x}`, type: 'peer', position: { x, y: i * 80 }, data: { name: o.name, layer: LAYER_NAMES[o.layer], onEnter: () => setFocus(other) } satisfies PeerData };
   };
   p.edges.filter((e) => e.to === nodeId).forEach((e, i) => {
     const pn = peer(e.from, 0, i); nodes.push(pn);
@@ -144,7 +140,7 @@ export function PartsInside({ nodeId, analysis, canEnter }: { nodeId: string; an
 
   return (
     <div className="inside">
-      <InsideBar>
+      <div className="inside-bar">
         <span className="spacer" />
         <Select aria-label="주 항목" value={n.primary ?? ''} onChange={(e) => edit((x) => updateNode(x, nodeId, { primary: e.target.value || undefined }))}>
           <option value="">주 항목 고르기</option>
@@ -154,7 +150,7 @@ export function PartsInside({ nodeId, analysis, canEnter }: { nodeId: string; an
           <option value="">+ 보조 항목</option>
           {extrasToAdd.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
         </Select>
-      </InsideBar>
+      </div>
       {!parts.length && <p className="muted inside-empty">항목이 없습니다. 위에서 주 항목을 고르세요.</p>}
       <ReactFlow nodes={nodes.map((x) => (moved[x.id] ? { ...x, position: moved[x.id] } : x))} edges={edges} nodeTypes={nodeTypes} colorMode="dark" fitView fitViewOptions={READABLE}
         onPaneClick={() => select(null)} nodesConnectable={false}

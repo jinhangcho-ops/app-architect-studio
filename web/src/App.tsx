@@ -213,7 +213,7 @@ export function App() {
       <main className="center">
         <div className="stage">
           {focus
-            ? <NodeInside nodeId={focus} analysis={result.analysis} onSelect={() => setTab('selected')} />
+            ? <NodeInside key={focus} nodeId={focus} analysis={result.analysis} onSelect={() => setTab('selected')} />
             : view === '2d'
             ? <Canvas analysis={result.analysis} onSelect={() => setTab('selected')} />
             : <View3D analysis={result.analysis} onSelect={() => setTab('selected')} />}

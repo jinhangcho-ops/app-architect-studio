@@ -81,6 +81,15 @@ describe('HTML → 와이어프레임', () => {
     expect(pay.x >= form.x && pay.y >= form.y && pay.x + pay.w <= form.x + form.w && pay.y + pay.h <= form.y + form.h).toBe(true);
   });
 
+  it('다른 영역 안에 든 영역(헤더 안 nav, 사이드바 안 폼)의 컨트롤은 바깥 영역에 놓임', () => {
+    const t = htmlToScreen('<header><nav><a href="/a">메뉴A</a></nav></header><aside><form action="/api/c" method="post"><button>쿠폰</button></form></aside>', frame);
+    const head = t.items.find((i) => i.kind === 'header')!, side = t.items.find((i) => i.kind === 'sidebar')!;
+    const a = t.items.find((i) => i.label === '메뉴A')!, b = t.items.find((i) => i.label === '쿠폰')!;
+    expect(a.y >= head.y && a.y + a.h <= head.y + head.h).toBe(true);
+    expect(b.x >= side.x && b.x + b.w <= side.x + side.w).toBe(true);
+    expect(b.api).toMatchObject({ method: 'POST', path: '/api/c' });
+  });
+
   it('폼 action은 첫 버튼에, data-api는 그 버튼에 API로 붙음', () => {
     expect(s.items.find((i) => i.label === '결제 요청')!.api).toMatchObject({ method: 'POST', path: '/api/v2/orders' });
     expect(s.items.find((i) => i.label === '현지 통화·VAT 계산')!.api).toMatchObject({ method: 'GET', path: '/api/v2/pricing' });

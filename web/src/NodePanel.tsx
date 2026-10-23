@@ -11,7 +11,6 @@ import { NumField, Row, Section, TextField } from './fields';
 import { fmtMetric, howMetric } from './format';
 import { useStore } from './store';
 import { StorageSection, TablesSection } from './TablesPanel';
-import { canEnter } from './NodeInside';
 import { NodeSummary } from './NodeSummary';
 
 const itemName = (id: string) => catalog.byId.get(id)?.name ?? id;
@@ -230,7 +229,7 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
         </div>
       </Section>
 
-      {canEnter(n.layer) && <button onClick={() => setFocus(id)}>안으로 들어가기 (구성 다이어그램)</button>}
+      <button onClick={() => setFocus(id)}>세부 구성 열기</button>
       <button className="danger" onClick={() => { edit((p) => removeNode(p, id)); select(null); }}>노드 삭제</button>
     </div>
   );
