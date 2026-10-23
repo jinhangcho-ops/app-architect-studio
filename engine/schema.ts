@@ -102,6 +102,57 @@ export const Deploy = z.object({
   device_spec: Spec.optional(),
 });
 
+// 데이터 명세: 테이블·컬럼·인덱스. 크기 계산과 SQLite 실험이 이 정의를 그대로 쓴다
+export const COLUMN_TYPES = ['int', 'bigint', 'float', 'numeric', 'bool', 'uuid', 'timestamp', 'date', 'text', 'json', 'bytes'] as const;
+/** SQLite 저장 클래스. 같은 시각도 integer(epoch)면 8바이트, text(ISO)면 24바이트처럼 크기가 달라진다 */
+export const STORAGE_FORMATS = ['integer', 'real', 'text', 'blob'] as const;
+/** 저장 형식을 안 적었을 때 타입별 기본값 */
+export const DEFAULT_STORAGE: Record<(typeof COLUMN_TYPES)[number], (typeof STORAGE_FORMATS)[number]> = {
+  int: 'integer', bigint: 'integer', bool: 'integer', timestamp: 'integer', date: 'integer',
+  float: 'real', numeric: 'real', uuid: 'blob', bytes: 'blob', text: 'text', json: 'text',
+};
+export const TABLE_LAYERS = ['db', 'cache', 'analytics'] as const;
+
+export const Column = z.object({
+  name: z.string().min(1),
+  type: z.enum(COLUMN_TYPES),
+  storage: z.enum(STORAGE_FORMATS).optional(),
+  /** text·bytes의 최대 길이(바이트) */
+  max_length: z.number().int().positive().optional(),
+  /** 실제 값의 평균 바이트. 없으면 크기 계산에서 가정값을 쓰고 그렇다고 표시한다 */
+  avg_bytes: z.number().positive().optional(),
+  nullable: z.boolean().default(false),
+  description: z.string().optional(),
+});
+export const Table = z.object({
+  name: z.string().min(1),
+  columns: z.array(Column).min(1),
+  primary_key: z.array(z.string()).default([]),
+  indexes: z.array(z.object({ name: z.string().min(1), columns: z.array(z.string()).min(1), unique: z.boolean().default(false) })).default([]),
+  /** 없으면 scale.retention_days */
+  retention_days: z.number().positive().optional(),
+  /** 쓰기 중 새 행이 아니라 기존 행을 고치는 비율 */
+  update_ratio: z.number().min(0).max(1).default(0),
+  partition: z.object({ column: z.string(), interval: z.enum(['day', 'week', 'month']) }).optional(),
+  /** SQLite 실험이나 운영에서 잰 값. 있으면 계산값보다 우선한다 */
+  measured: z.object({
+    row_bytes: z.number().positive().optional(),
+    index_bytes: z.number().nonnegative().optional(),
+    rows_per_day: z.number().nonnegative().optional(),
+  }).default({}),
+});
+export type Column = z.infer<typeof Column>;
+export type Table = z.infer<typeof Table>;
+
+/** 사용자 행동 1회가 어느 테이블에 몇 행을 쓰는지. 페르소나별 빈도로 테이블 데이터량이 나온다 */
+export const Action = z.object({
+  name: z.string().min(1),
+  /** 접속 1회당 평균 횟수 (페르소나의 action_rates가 덮어씀) */
+  per_session: z.number().nonnegative(),
+  writes: z.array(z.object({ node: z.string(), table: z.string(), rows: z.number().positive().default(1) })).min(1),
+});
+export type Action = z.infer<typeof Action>;
+
 // 4절 페르소나: 사용 패턴(프리셋) + 비율. 패턴 값은 필드별로 덮어쓸 수 있다. 크기 단위 KB = 1,000바이트
 export const Persona = z.object({
   name: z.string(),
@@ -116,6 +167,8 @@ export const Persona = z.object({
   response_kb: z.number().nonnegative().optional(),
   /** 하이브리드에서 접속 1회당 동기화 요청 수 (요청 1건 = 쓰기 1건) */
   sync_per_session: z.number().nonnegative().optional(),
+  /** 행동 이름 → 접속 1회당 횟수. 없는 행동은 action.per_session */
+  action_rates: z.record(z.string(), z.number().nonnegative()).default({}),
   /** 사용자가 사는 나라. 접속 시각은 이 나라 표준시로 뽑는다 */
   country: z.string().regex(/^[A-Z]{2}$/).default('KR'),
   /** 표에 없는 나라이거나 다른 시간대 지역이면 UTC 기준 시간을 직접 넣는다 (예: 미국 서부 -8) */
@@ -193,7 +246,10 @@ export const Project = z.object({
     min_instances: z.number().int().nonnegative().default(1),
     /** 9절 계산으로 알 수 없는 사용량 (분석 노드의 월 스캔량 등) */
     usage: z.object({ scanned_tb_month: z.number().nonnegative().optional() }).default({}),
+    /** 이 노드에 저장되는 테이블 (db·cache·analytics 노드) */
+    tables: z.array(Table).default([]),
   })),
+  actions: z.array(Action).default([]),
   edges: z.array(z.object({
     from: z.string(),
     to: z.string(),
@@ -284,6 +340,36 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
   for (const e of p.edges) {
     if (!nodeIds.has(e.from) || !nodeIds.has(e.to)) errors.push(`연결선 ${e.from} → ${e.to}: 없는 노드`);
   }
+  for (const n of p.nodes) errors.push(...n.tables.flatMap((t) => checkTable(t).map((e) => `${n.id}.${t.name}: ${e}`)));
+  for (const n of p.nodes) {
+    if (n.tables.length && !(TABLE_LAYERS as readonly string[]).includes(n.layer)) errors.push(`${n.id}: 테이블은 ${TABLE_LAYERS.join('·')} 노드에만 둘 수 있음`);
+    for (const d of dupes(n.tables.map((t) => t.name))) errors.push(`${n.id}: 테이블 이름 중복 ${d}`);
+  }
+  for (const d of dupes(p.actions.map((a) => a.name))) errors.push(`행동 이름 중복 ${d}`);
+  for (const a of p.actions) {
+    for (const w of a.writes) {
+      const node = p.nodes.find((n) => n.id === w.node);
+      if (!node) errors.push(`행동 ${a.name}: 없는 노드 ${w.node}`);
+      else if (!node.tables.some((t) => t.name === w.table)) errors.push(`행동 ${a.name}: ${w.node}에 없는 테이블 ${w.table}`);
+    }
+  }
+  const actionNames = new Set(p.actions.map((a) => a.name));
+  for (const ps of p.personas) {
+    for (const k of Object.keys(ps.action_rates)) if (!actionNames.has(k)) errors.push(`페르소나 ${ps.name}: 없는 행동 ${k}`);
+  }
+  return errors;
+}
+
+const dupes = (xs: string[]) => [...new Set(xs.filter((x, i) => xs.indexOf(x) !== i))];
+
+/** 테이블 하나의 내부 참조(키·인덱스·파티션 컬럼)가 실제 컬럼인지 */
+export function checkTable(t: Table): string[] {
+  const cols = new Set(t.columns.map((c) => c.name));
+  const errors = dupes(t.columns.map((c) => c.name)).map((d) => `컬럼 이름 중복 ${d}`);
+  for (const c of t.primary_key) if (!cols.has(c)) errors.push(`기본 키에 없는 컬럼 ${c}`);
+  for (const ix of t.indexes) for (const c of ix.columns) if (!cols.has(c)) errors.push(`인덱스 ${ix.name}에 없는 컬럼 ${c}`);
+  for (const d of dupes(t.indexes.map((x) => x.name))) errors.push(`인덱스 이름 중복 ${d}`);
+  if (t.partition && !cols.has(t.partition.column)) errors.push(`파티션에 없는 컬럼 ${t.partition.column}`);
   return errors;
 }
 
