@@ -44,6 +44,59 @@ export const Billing = z.object({
   products: z.partialRecord(z.enum(METERS), z.string()),
 });
 
+/** 저장 기능을 켰을 때 크기 계산에 주는 영향. 압축률처럼 데이터에 따라 크게 다른 값은 예시값이다 */
+const StorageEffect = z.object({
+  /** 압축 후 크기 비율 (0~1) */
+  compression: z.number().gt(0).max(1).optional(),
+  /** 압축이 걸리는 범위: text = 문자열·JSON·바이너리 컬럼만, all = 행 전체 */
+  compression_scope: z.enum(['text', 'all']).optional(),
+  /** 이 크기(바이트)를 넘는 행에만 압축이 걸림 (PostgreSQL TOAST 등) */
+  applies_above_row_bytes: z.number().positive().optional(),
+  table_fill: z.number().gt(0).max(1).optional(),
+  index_fill: z.number().gt(0).max(1).optional(),
+  /** 바뀌거나 지운 데이터를 이 일수만큼 더 보관(과금) — Time Travel·Fail-safe·VACUUM 보관 */
+  extra_retention_days: z.number().nonnegative().optional(),
+  /** 행마다 더 붙는 바이트 (DynamoDB 글로벌 테이블 48바이트 등) */
+  row_overhead_delta: z.number().optional(),
+});
+export const StorageFeature = z.object({
+  id: z.string().regex(/^[a-z0-9_]+$/),
+  group: z.string(),
+  label: z.string(),
+  /** 시스템 기본값이거나 공식 문서가 권하는 것. 사용자가 고르지 않으면 이것들이 켜진다 */
+  recommended: z.boolean().default(false),
+  effect: StorageEffect.default({}),
+  note: z.string().optional(),
+  source: z.string().min(1),
+});
+/** 시스템의 저장 방식과 고를 수 있는 기능. 테이블 크기 계산의 기준 */
+export const StorageProfile = z.object({
+  layout: z.enum(['row', 'columnar', 'document', 'kv']),
+  /** 행 1개당 고정 오버헤드(헤더·포인터) 바이트 */
+  row_overhead_bytes: z.number().nonnegative(),
+  /** 컬럼 1개당 오버헤드(타입·길이 표시) 바이트 */
+  per_column_overhead_bytes: z.number().nonnegative().default(0),
+  index_entry_overhead_bytes: z.number().nonnegative().default(0),
+  /** 행마다 컬럼(필드) 이름도 저장 (MongoDB·DynamoDB) */
+  stores_field_names: z.boolean().default(false),
+  /** 보조 인덱스가 기본 키 값을 함께 저장 (InnoDB) */
+  secondary_index_includes_pk: z.boolean().default(false),
+  table_fill: z.number().gt(0).max(1).default(1),
+  index_fill: z.number().gt(0).max(1).default(1),
+  /** 기능 묶음. one이면 그 묶음에서 하나만 고른다 */
+  groups: z.record(z.string(), z.object({ label: z.string(), one: z.boolean() })),
+  features: z.array(StorageFeature).default([]),
+  note: z.string().optional(),
+  sources: z.array(z.string()).min(1),
+}).superRefine((sp, ctx) => {
+  for (const f of sp.features) if (!sp.groups[f.group]) ctx.addIssue({ code: 'custom', message: `기능 ${f.id}: 없는 묶음 ${f.group}`, path: ['features'] });
+  for (const [g, def] of Object.entries(sp.groups)) {
+    if (def.one && sp.features.filter((f) => f.group === g && f.recommended).length > 1) ctx.addIssue({ code: 'custom', message: `묶음 ${g}: 하나만 고르는 묶음에 권장이 둘 이상`, path: ['groups'] });
+  }
+});
+export type StorageProfile = z.infer<typeof StorageProfile>;
+export type StorageFeature = z.infer<typeof StorageFeature>;
+
 export const CatalogItem = z.object({
   id: z.string().regex(/^[a-z0-9_]+$/),
   name: z.string(),
@@ -62,6 +115,8 @@ export const CatalogItem = z.object({
   thresholds: z.record(z.string(), Threshold).default({}),
   /** 9절 과금 방식과 계량 항목별 가격표 상품 키 (리전은 노드에서 정한다) */
   billing: Billing.optional(),
+  /** 저장 프로필. 같은 엔진을 쓰는 항목(Supabase → PostgreSQL)은 same_as로 가리킨다 */
+  storage: z.union([StorageProfile, z.object({ same_as: z.string() })]).optional(),
   sources: z.array(z.string()).min(1),
 });
 
@@ -134,6 +189,8 @@ export const Table = z.object({
   /** 쓰기 중 새 행이 아니라 기존 행을 고치는 비율 */
   update_ratio: z.number().min(0).max(1).default(0),
   partition: z.object({ column: z.string(), interval: z.enum(['day', 'week', 'month']) }).optional(),
+  /** 이 테이블만 다르게 켤 저장 기능 id. 없으면 노드 선택을 따른다 */
+  storage_features: z.array(z.string()).optional(),
   /** SQLite 실험이나 운영에서 잰 값. 있으면 계산값보다 우선한다 */
   measured: z.object({
     row_bytes: z.number().positive().optional(),
@@ -246,6 +303,8 @@ export const Project = z.object({
     min_instances: z.number().int().nonnegative().default(1),
     /** 9절 계산으로 알 수 없는 사용량 (분석 노드의 월 스캔량 등) */
     usage: z.object({ scanned_tb_month: z.number().nonnegative().optional() }).default({}),
+    /** 주 항목 저장 프로필에서 켠 기능 id. 없으면 권장 기능 */
+    storage_features: z.array(z.string()).optional(),
     /** 이 노드에 저장되는 테이블 (db·cache·analytics 노드) */
     tables: z.array(Table).default([]),
   })),
@@ -321,6 +380,10 @@ export function checkCatalog(items: CatalogItem[]): string[] {
   if (ids.size !== items.length) errors.push('카탈로그에 중복된 id가 있음');
   for (const it of items) {
     for (const a of it.alternatives) if (!ids.has(a.id)) errors.push(`${it.id}: 없는 대안 ${a.id}`);
+    if (it.storage && 'same_as' in it.storage) {
+      const target = items.find((x) => x.id === (it.storage as { same_as: string }).same_as);
+      if (!target?.storage || 'same_as' in target.storage) errors.push(`${it.id}: same_as는 프로필이 있는 항목을 가리켜야 함`);
+    }
   }
   return errors;
 }
@@ -352,6 +415,19 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
       if (!node) errors.push(`행동 ${a.name}: 없는 노드 ${w.node}`);
       else if (!node.tables.some((t) => t.name === w.table)) errors.push(`행동 ${a.name}: ${w.node}에 없는 테이블 ${w.table}`);
     }
+  }
+  for (const n of p.nodes) {
+    const sp = storageProfileOf(n.primary ? byId.get(n.primary) : undefined, byId);
+    const pick = (where: string, ids: string[] | undefined) => {
+      if (!ids) return;
+      if (!sp) return errors.push(`${where}: 주 항목에 저장 프로필이 없어 저장 기능을 고를 수 없음`);
+      for (const id of ids) if (!sp.features.some((f) => f.id === id)) errors.push(`${where}: 없는 저장 기능 ${id}`);
+      for (const [g, def] of Object.entries(sp.groups)) {
+        if (def.one && sp.features.filter((f) => f.group === g && ids.includes(f.id)).length > 1) errors.push(`${where}: ${def.label}은 하나만 고를 수 있음`);
+      }
+    };
+    pick(n.id, n.storage_features);
+    for (const t of n.tables) pick(`${n.id}.${t.name}`, t.storage_features);
   }
   const actionNames = new Set(p.actions.map((a) => a.name));
   for (const ps of p.personas) {
@@ -389,3 +465,18 @@ export const LawRow = z.object({
   verified: z.boolean(),
 });
 export type LawRow = z.infer<typeof LawRow>;
+
+/** 항목의 저장 프로필 (same_as를 따라간다) */
+export function storageProfileOf(item: CatalogItem | undefined, byId: Map<string, CatalogItem>): StorageProfile | undefined {
+  const st = item?.storage;
+  if (!st) return undefined;
+  if (!('same_as' in st)) return st;
+  const target = byId.get(st.same_as)?.storage;
+  return target && !('same_as' in target) ? target : undefined;
+}
+
+/** 실제로 켜진 기능: 테이블 선택 → 노드 선택 → 권장 기능 순 */
+export function selectedFeatures(sp: StorageProfile, node: { storage_features?: string[] }, table?: { storage_features?: string[] }): StorageFeature[] {
+  const ids = table?.storage_features ?? node.storage_features;
+  return ids ? sp.features.filter((f) => ids.includes(f.id)) : sp.features.filter((f) => f.recommended);
+}

@@ -2,35 +2,57 @@
   {
     "id": "sqlite",
     "name": "SQLite",
-    "area": "서비스", "role": "주", "kind": "도구",
+    "area": "서비스",
+    "role": "주",
+    "kind": "도구",
     "attaches_to": ["db"],
-    "goals": { "메모리": "좋음", "속도": "보통", "동시성": "나쁨", "운영 난이도": "좋음" },
-    "works_when": [{ "if": "writer_nodes == 1", "why": "쓰는 주체가 하나라 파일 락 경합이 없습니다" }],
-    "fails_when": [
-      { "if": "writer_nodes > 1", "why": "쓰는 노드가 {writer_nodes}개입니다. SQLite는 쓰기 때 파일 전체를 잠가 동시 쓰기에서 database is locked가 납니다" },
-      { "if": "peak_write_rps > th.write_rps", "why": "피크 쓰기 {peak_write_rps}건/초가 기준 {th.write_rps}건/초를 넘습니다" }
-    ],
-    "alternatives": [
-      { "id": "postgresql", "better_for": ["동시성"] },
-      { "id": "sqlite_wal", "better_for": ["동시성"], "note": "가벼움을 유지하는 절충안" }
-    ],
-    "settings": [{ "name": "PRAGMA journal_mode=WAL", "goal": "동시성" }],
-    "thresholds": { "write_rps": { "value": 50, "unit": "건/초", "source": "예시값(설계서 5절) — 실측·공식 자료로 교체 필요" } },
+    "goals": {"메모리": "좋음", "속도": "보통", "동시성": "나쁨", "운영 난이도": "좋음"},
+    "works_when": [{"if": "writer_nodes == 1", "why": "쓰는 주체가 하나라 파일 락 경합이 없습니다"}],
+    "fails_when": [{"if": "writer_nodes > 1", "why": "쓰는 노드가 {writer_nodes}개입니다. SQLite는 쓰기 때 파일 전체를 잠가 동시 쓰기에서 database is locked가 납니다"}, {"if": "peak_write_rps > th.write_rps", "why": "피크 쓰기 {peak_write_rps}건/초가 기준 {th.write_rps}건/초를 넘습니다"}],
+    "alternatives": [{"id": "postgresql", "better_for": ["동시성"]}, {"id": "sqlite_wal", "better_for": ["동시성"], "note": "가벼움을 유지하는 절충안"}],
+    "settings": [{"name": "PRAGMA journal_mode=WAL", "goal": "동시성"}],
+    "thresholds": {"write_rps": {"value": 50, "unit": "건/초", "source": "예시값(설계서 5절) — 실측·공식 자료로 교체 필요"}},
+    "storage": {
+      "layout": "row",
+      "row_overhead_bytes": 8,
+      "per_column_overhead_bytes": 1,
+      "index_entry_overhead_bytes": 8,
+      "groups": {
+        "keys": {
+          "label": "키 구조",
+          "one": false
+        }
+      },
+      "features": [
+        {
+          "id": "without_rowid",
+          "group": "keys",
+          "label": "WITHOUT ROWID 테이블",
+          "note": "정수가 아니거나 여러 컬럼인 기본 키에서 키를 한 번만 저장. 행이 페이지의 1/20(4KB 페이지면 약 200바이트)보다 작을 때 권장",
+          "source": "https://www.sqlite.org/withoutrowid.html"
+        }
+      ],
+      "note": "행 오버헤드 = 셀 포인터 2 + 크기·rowid varint 약 5 + 레코드 헤더 1, 컬럼마다 타입 표시 약 1바이트. 정확한 값은 SQLite 실험으로 잰다",
+      "sources": [
+        "https://www.sqlite.org/fileformat2.html",
+        "https://www.sqlite.org/withoutrowid.html"
+      ]
+    },
     "sources": ["https://www.sqlite.org/lockingv3.html"]
   },
   {
     "id": "sqlite_wal",
     "name": "SQLite (WAL 모드)",
-    "area": "서비스", "role": "주", "kind": "도구",
+    "area": "서비스",
+    "role": "주",
+    "kind": "도구",
     "attaches_to": ["db"],
-    "goals": { "메모리": "좋음", "속도": "보통", "동시성": "보통", "운영 난이도": "좋음" },
-    "works_when": [{ "if": "writer_nodes == 1", "why": "읽기와 쓰기가 서로 막지 않아 단일 프로그램에서 동시성이 좋아집니다" }],
-    "fails_when": [
-      { "if": "writer_nodes > 1", "why": "쓰는 노드가 {writer_nodes}개입니다. 여러 서버가 같은 DB 파일을 공유할 수 없습니다" },
-      { "if": "peak_write_rps > th.write_rps", "why": "피크 쓰기 {peak_write_rps}건/초가 기준 {th.write_rps}건/초를 넘습니다" }
-    ],
-    "alternatives": [{ "id": "postgresql", "better_for": ["동시성", "확장성"] }],
-    "thresholds": { "write_rps": { "value": 200, "unit": "건/초", "source": "예시값 — 실측·공식 자료로 교체 필요" } },
+    "goals": {"메모리": "좋음", "속도": "보통", "동시성": "보통", "운영 난이도": "좋음"},
+    "works_when": [{"if": "writer_nodes == 1", "why": "읽기와 쓰기가 서로 막지 않아 단일 프로그램에서 동시성이 좋아집니다"}],
+    "fails_when": [{"if": "writer_nodes > 1", "why": "쓰는 노드가 {writer_nodes}개입니다. 여러 서버가 같은 DB 파일을 공유할 수 없습니다"}, {"if": "peak_write_rps > th.write_rps", "why": "피크 쓰기 {peak_write_rps}건/초가 기준 {th.write_rps}건/초를 넘습니다"}],
+    "alternatives": [{"id": "postgresql", "better_for": ["동시성", "확장성"]}],
+    "thresholds": {"write_rps": {"value": 200, "unit": "건/초", "source": "예시값 — 실측·공식 자료로 교체 필요"}},
+    "storage": {"same_as": "sqlite"},
     "sources": ["https://www.sqlite.org/wal.html"]
   },
   {
@@ -46,6 +68,83 @@
     "fails_when": [{"if": "peak_write_rps > th.write_rps", "why": "피크 쓰기 {peak_write_rps}건/초가 기준 {th.write_rps}건/초를 넘습니다"}, {"if": "db_connections > th.max_connections", "why": "동시 연결 {db_connections}개가 연결 한도 {th.max_connections}개를 넘습니다"}, {"if": "peak_rps > th.rps", "why": "피크 {peak_rps} RPS가 주 DB 서버 1대 처리량 {th.rps} RPS를 넘습니다"}],
     "thresholds": {"write_rps": {"value": 2000, "unit": "건/초", "base_spec": {"vcpu": 2}, "bound_by": "vcpu", "source": "예시값(설계서 8절) — 실측·공식 자료로 교체 필요"}, "max_connections": {"value": 100, "unit": "개", "source": "PostgreSQL max_connections 기본값"}, "rps": {"value": 3000, "unit": "RPS", "base_spec": {"vcpu": 2}, "bound_by": "vcpu", "source": "예시값 — 실측으로 교체 필요"}},
     "billing": {"model": "provisioned", "products": {"instance": "db-2vcpu"}},
+    "storage": {
+      "layout": "row",
+      "row_overhead_bytes": 28,
+      "index_entry_overhead_bytes": 12,
+      "index_fill": 0.9,
+      "groups": {
+        "toast": {
+          "label": "큰 값 압축(TOAST)",
+          "one": true
+        },
+        "fill": {
+          "label": "테이블 채움률",
+          "one": true
+        }
+      },
+      "features": [
+        {
+          "id": "toast_pglz",
+          "group": "toast",
+          "label": "pglz (기본)",
+          "recommended": true,
+          "effect": {
+            "compression": 0.5,
+            "compression_scope": "text",
+            "applies_above_row_bytes": 2000
+          },
+          "note": "압축률은 예시값 — 데이터에 따라 크게 다름, 실측으로 교체 필요",
+          "source": "https://www.postgresql.org/docs/current/runtime-config-client.html"
+        },
+        {
+          "id": "toast_lz4",
+          "group": "toast",
+          "label": "lz4",
+          "effect": {
+            "compression": 0.55,
+            "compression_scope": "text",
+            "applies_above_row_bytes": 2000
+          },
+          "note": "--with-lz4로 빌드된 서버에서만. 압축·해제가 빠름. 압축률은 예시값 — 데이터에 따라 크게 다름, 실측으로 교체 필요",
+          "source": "https://www.postgresql.org/docs/current/runtime-config-client.html"
+        },
+        {
+          "id": "fill_100",
+          "group": "fill",
+          "label": "fillfactor 100 (기본)",
+          "recommended": true,
+          "source": "https://www.postgresql.org/docs/current/sql-createtable.html"
+        },
+        {
+          "id": "fill_90",
+          "group": "fill",
+          "label": "fillfactor 90",
+          "effect": {
+            "table_fill": 0.9
+          },
+          "note": "갱신이 잦은 테이블에서 같은 페이지 안 갱신(HOT) 여지를 남김",
+          "source": "https://www.postgresql.org/docs/current/sql-createtable.html"
+        },
+        {
+          "id": "fill_70",
+          "group": "fill",
+          "label": "fillfactor 70",
+          "effect": {
+            "table_fill": 0.7
+          },
+          "note": "갱신이 아주 잦을 때",
+          "source": "https://www.postgresql.org/docs/current/sql-createtable.html"
+        }
+      ],
+      "note": "행 오버헤드 = 튜플 헤더 23(정렬 24) + 항목 포인터 4. 인덱스 항목 = 인덱스 튜플 헤더 8 + 포인터 4, B-tree 기본 fillfactor 90. TOAST는 행이 약 2kB를 넘을 때 동작",
+      "sources": [
+        "https://www.postgresql.org/docs/current/storage-page-layout.html",
+        "https://www.postgresql.org/docs/current/runtime-config-client.html",
+        "https://www.postgresql.org/docs/current/sql-createtable.html",
+        "https://www.postgresql.org/docs/current/sql-createindex.html"
+      ]
+    },
     "sources": ["https://www.postgresql.org/docs/current/runtime-config-connection.html"]
   },
   {
@@ -61,25 +160,19 @@
   {
     "id": "supabase",
     "name": "Supabase",
-    "area": "서비스", "role": "주", "kind": "도구",
+    "area": "서비스",
+    "role": "주",
+    "kind": "도구",
     "attaches_to": ["backend", "db"],
     "provides": ["데이터베이스(PostgreSQL)", "자동 REST API", "인증", "파일 저장소", "실시간 구독", "서버리스 함수"],
-    "goals": { "운영 난이도": "좋음", "비용": "보통", "확장성": "보통" },
-    "works_when": [{ "if": "offline_required == false", "why": "DB·API·인증·저장소를 따로 운영하지 않아도 됩니다" }],
-    "fails_when": [
-      { "if": "offline_required == true", "why": "오프라인에서도 동작해야 하는데 Supabase는 인터넷 연결이 필요합니다" },
-      { "if": "db_connections > th.connections", "why": "피크 동시 연결 {db_connections}개가 현재 컴퓨트 크기의 연결 한도 {th.connections}개를 넘습니다" }
-    ],
-    "alternatives": [
-      { "id": "sqlite", "better_for": ["오프라인"], "note": "로컬 전용일 때" },
-      { "id": "postgresql", "better_for": ["확장성", "비용"], "note": "직접 구성, 운영 부담 증가" }
-    ],
-    "settings": [
-      { "name": "Row Level Security 켜기", "goal": "보안" },
-      { "name": "서버리스 환경에서는 연결 풀러 사용", "goal": "동시성" }
-    ],
-    "thresholds": { "connections": { "value": null, "unit": "개", "source": "컴퓨트 크기별 값 — Supabase 문서에서 기준일과 함께 입력 필요" } },
+    "goals": {"운영 난이도": "좋음", "비용": "보통", "확장성": "보통"},
+    "works_when": [{"if": "offline_required == false", "why": "DB·API·인증·저장소를 따로 운영하지 않아도 됩니다"}],
+    "fails_when": [{"if": "offline_required == true", "why": "오프라인에서도 동작해야 하는데 Supabase는 인터넷 연결이 필요합니다"}, {"if": "db_connections > th.connections", "why": "피크 동시 연결 {db_connections}개가 현재 컴퓨트 크기의 연결 한도 {th.connections}개를 넘습니다"}],
+    "alternatives": [{"id": "sqlite", "better_for": ["오프라인"], "note": "로컬 전용일 때"}, {"id": "postgresql", "better_for": ["확장성", "비용"], "note": "직접 구성, 운영 부담 증가"}],
+    "settings": [{"name": "Row Level Security 켜기", "goal": "보안"}, {"name": "서버리스 환경에서는 연결 풀러 사용", "goal": "동시성"}],
+    "thresholds": {"connections": {"value": null, "unit": "개", "source": "컴퓨트 크기별 값 — Supabase 문서에서 기준일과 함께 입력 필요"}},
     "billing": {"model": "plan", "products": {"month": "supabase-pro"}},
+    "storage": {"same_as": "postgresql"},
     "sources": ["https://supabase.com/docs"]
   },
   {

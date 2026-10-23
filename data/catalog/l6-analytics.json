@@ -2,54 +2,281 @@
   {
     "id": "snowflake",
     "name": "Snowflake",
-    "area": "파이프라인", "role": "주", "kind": "도구",
+    "area": "파이프라인",
+    "role": "주",
+    "kind": "도구",
     "attaches_to": ["analytics"],
     "summary": "저장과 연산(가상 웨어하우스)을 나눈 클라우드 데이터 웨어하우스입니다. 쓰지 않으면 웨어하우스가 자동으로 멈춰 연산 요금이 나가지 않습니다",
-    "goals": { "운영 난이도": "좋음", "확장성": "좋음", "비용": "보통" },
-    "works_when": [{ "if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "SQL 중심 재무·BI 분석을 운영 DB와 분리해 돌릴 수 있습니다" }],
-    "fails_when": [{ "if": "offline_required == true", "why": "클라우드에서만 동작하는 관리형 서비스입니다" }],
-    "settings": [{ "name": "웨어하우스 자동 일시정지(짧게)", "goal": "비용" }],
-    "alternatives": [{ "id": "duckdb", "better_for": ["비용", "오프라인"], "note": "데이터가 한 대에 들어갈 때" }],
+    "goals": {"운영 난이도": "좋음", "확장성": "좋음", "비용": "보통"},
+    "works_when": [{"if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "SQL 중심 재무·BI 분석을 운영 DB와 분리해 돌릴 수 있습니다"}],
+    "fails_when": [{"if": "offline_required == true", "why": "클라우드에서만 동작하는 관리형 서비스입니다"}],
+    "settings": [{"name": "웨어하우스 자동 일시정지(짧게)", "goal": "비용"}],
+    "alternatives": [{"id": "duckdb", "better_for": ["비용", "오프라인"], "note": "데이터가 한 대에 들어갈 때"}],
     "billing": {"model": "plan", "products": {"month": "snowflake-warehouse"}},
+    "storage": {
+      "layout": "columnar",
+      "row_overhead_bytes": 0,
+      "groups": {
+        "compression": {
+          "label": "압축",
+          "one": true
+        },
+        "retention": {
+          "label": "Time Travel",
+          "one": true
+        },
+        "layout": {
+          "label": "데이터 배치",
+          "one": false
+        }
+      },
+      "features": [
+        {
+          "id": "auto_compression",
+          "group": "compression",
+          "label": "자동 열 압축",
+          "recommended": true,
+          "effect": {
+            "compression": 0.25,
+            "compression_scope": "all"
+          },
+          "note": "마이크로 파티션(압축 전 50~500MB)마다 Snowflake가 알고리즘을 고름. 압축률은 예시값 — 데이터에 따라 크게 다름, 실측으로 교체 필요",
+          "source": "https://docs.snowflake.com/en/user-guide/tables-clustering-micropartitions"
+        },
+        {
+          "id": "time_travel_1d",
+          "group": "retention",
+          "label": "Time Travel 1일 (기본) + Fail-safe 7일",
+          "recommended": true,
+          "effect": {
+            "extra_retention_days": 8
+          },
+          "source": "https://docs.snowflake.com/en/user-guide/data-time-travel"
+        },
+        {
+          "id": "time_travel_90d",
+          "group": "retention",
+          "label": "Time Travel 90일 (Enterprise) + Fail-safe 7일",
+          "effect": {
+            "extra_retention_days": 97
+          },
+          "note": "바뀌거나 지운 데이터를 더 오래 보관해 저장 비용이 늘어남",
+          "source": "https://docs.snowflake.com/en/user-guide/data-time-travel"
+        },
+        {
+          "id": "clustering_key",
+          "group": "layout",
+          "label": "클러스터링 키",
+          "note": "아주 큰 테이블에서 조회 범위를 줄임. 자동 재클러스터링에 연산 비용이 듦",
+          "source": "https://docs.snowflake.com/en/user-guide/tables-clustering-micropartitions"
+        }
+      ],
+      "sources": [
+        "https://docs.snowflake.com/en/user-guide/tables-clustering-micropartitions",
+        "https://docs.snowflake.com/en/user-guide/data-time-travel"
+      ]
+    },
     "sources": ["https://docs.snowflake.com/en/user-guide/warehouses-overview"]
   },
   {
     "id": "databricks",
     "name": "Databricks (레이크하우스)",
-    "area": "파이프라인", "role": "주", "kind": "도구",
+    "area": "파이프라인",
+    "role": "주",
+    "kind": "도구",
     "attaches_to": ["analytics"],
     "summary": "Spark 기반 레이크하우스로 객체 저장소의 Delta·Iceberg 테이블에서 대용량 정제·머신러닝·SQL 분석을 함께 합니다",
-    "goals": { "확장성": "좋음", "운영 난이도": "보통", "비용": "보통" },
-    "works_when": [{ "if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "대용량 정제와 AI 학습을 같은 데이터에서 해야 할 때 맞습니다" }],
-    "fails_when": [{ "if": "offline_required == true", "why": "클라우드에서만 동작하는 관리형 서비스입니다" }],
-    "alternatives": [{ "id": "snowflake", "better_for": ["운영 난이도"], "note": "SQL·BI 위주일 때" }],
+    "goals": {"확장성": "좋음", "운영 난이도": "보통", "비용": "보통"},
+    "works_when": [{"if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "대용량 정제와 AI 학습을 같은 데이터에서 해야 할 때 맞습니다"}],
+    "fails_when": [{"if": "offline_required == true", "why": "클라우드에서만 동작하는 관리형 서비스입니다"}],
+    "alternatives": [{"id": "snowflake", "better_for": ["운영 난이도"], "note": "SQL·BI 위주일 때"}],
     "billing": {"model": "plan", "products": {"month": "databricks-workspace"}},
+    "storage": {
+      "layout": "columnar",
+      "row_overhead_bytes": 0,
+      "groups": {
+        "format": {
+          "label": "파일 형식",
+          "one": true
+        },
+        "layout": {
+          "label": "데이터 배치",
+          "one": true
+        },
+        "retention": {
+          "label": "지난 파일 보관",
+          "one": true
+        }
+      },
+      "features": [
+        {
+          "id": "delta_parquet",
+          "group": "format",
+          "label": "Delta (Parquet 열 압축)",
+          "recommended": true,
+          "effect": {
+            "compression": 0.25,
+            "compression_scope": "all"
+          },
+          "note": "압축률은 예시값 — 데이터에 따라 크게 다름, 실측으로 교체 필요",
+          "source": "https://docs.databricks.com/aws/en/delta/clustering"
+        },
+        {
+          "id": "liquid_clustering",
+          "group": "layout",
+          "label": "Liquid Clustering",
+          "recommended": true,
+          "note": "Databricks가 새 테이블에 권장. 파티션·Z-Order를 대신함",
+          "source": "https://docs.databricks.com/aws/en/delta/clustering"
+        },
+        {
+          "id": "zorder",
+          "group": "layout",
+          "label": "파티션 + Z-Order",
+          "source": "https://docs.databricks.com/aws/en/delta/clustering"
+        },
+        {
+          "id": "vacuum_7d",
+          "group": "retention",
+          "label": "VACUUM 보관 7일 (기본)",
+          "recommended": true,
+          "effect": {
+            "extra_retention_days": 7
+          },
+          "note": "VACUUM 전까지 지난 파일이 남아 저장 비용이 듦",
+          "source": "https://docs.databricks.com/aws/en/delta/vacuum"
+        }
+      ],
+      "sources": [
+        "https://docs.databricks.com/aws/en/delta/clustering",
+        "https://docs.databricks.com/aws/en/delta/vacuum"
+      ]
+    },
     "sources": ["https://docs.databricks.com/aws/en/lakehouse/"]
   },
   {
     "id": "bigquery",
     "name": "Google BigQuery",
-    "area": "파이프라인", "role": "주", "kind": "도구",
+    "area": "파이프라인",
+    "role": "주",
+    "kind": "도구",
     "attaches_to": ["analytics"],
     "summary": "서버를 전혀 관리하지 않는 서버리스 데이터 웨어하우스로, 읽은 데이터 양이나 예약 용량으로 과금합니다. GA4 등 Google 데이터와 바로 연결됩니다",
-    "goals": { "운영 난이도": "좋음", "확장성": "좋음", "비용": "보통" },
-    "works_when": [{ "if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "인프라 없이 큰 데이터를 바로 SQL로 분석할 수 있습니다" }],
-    "fails_when": [{ "if": "offline_required == true", "why": "클라우드에서만 동작하는 관리형 서비스입니다" }],
-    "settings": [{ "name": "파티션·클러스터링으로 읽는 양 줄이기", "goal": "비용" }],
-    "alternatives": [{ "id": "clickhouse", "better_for": ["지연시간"], "note": "실시간 대시보드" }],
+    "goals": {"운영 난이도": "좋음", "확장성": "좋음", "비용": "보통"},
+    "works_when": [{"if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "인프라 없이 큰 데이터를 바로 SQL로 분석할 수 있습니다"}],
+    "fails_when": [{"if": "offline_required == true", "why": "클라우드에서만 동작하는 관리형 서비스입니다"}],
+    "settings": [{"name": "파티션·클러스터링으로 읽는 양 줄이기", "goal": "비용"}],
+    "alternatives": [{"id": "clickhouse", "better_for": ["지연시간"], "note": "실시간 대시보드"}],
     "billing": {"model": "usage", "products": {"tb_scanned": "bq-tb-scanned"}},
+    "storage": {
+      "layout": "columnar",
+      "row_overhead_bytes": 0,
+      "groups": {
+        "billing": {
+          "label": "저장 과금 방식",
+          "one": true
+        },
+        "layout": {
+          "label": "데이터 배치",
+          "one": false
+        }
+      },
+      "features": [
+        {
+          "id": "logical_billing",
+          "group": "billing",
+          "label": "논리 저장 과금 (기본)",
+          "recommended": true,
+          "note": "압축 전 크기로 과금, Time Travel·Fail-safe 포함",
+          "source": "https://docs.cloud.google.com/bigquery/docs/storage_overview"
+        },
+        {
+          "id": "physical_billing",
+          "group": "billing",
+          "label": "물리 저장 과금",
+          "effect": {
+            "compression": 0.25,
+            "compression_scope": "all",
+            "extra_retention_days": 14
+          },
+          "note": "압축 후 크기로 과금하되 Time Travel(기본 7일)·Fail-safe(7일)를 따로 과금. 압축률은 예시값 — 데이터에 따라 크게 다름, 실측으로 교체 필요",
+          "source": "https://docs.cloud.google.com/bigquery/docs/storage_overview"
+        },
+        {
+          "id": "time_partition",
+          "group": "layout",
+          "label": "시간 단위 파티션",
+          "recommended": true,
+          "note": "파티션이 약 10GB보다 작아지면 클러스터링을 권장",
+          "source": "https://docs.cloud.google.com/bigquery/docs/partitioned-tables"
+        },
+        {
+          "id": "clustering",
+          "group": "layout",
+          "label": "클러스터링",
+          "recommended": true,
+          "source": "https://docs.cloud.google.com/bigquery/docs/partitioned-tables"
+        }
+      ],
+      "sources": [
+        "https://docs.cloud.google.com/bigquery/docs/storage_overview",
+        "https://docs.cloud.google.com/bigquery/docs/time-travel",
+        "https://docs.cloud.google.com/bigquery/docs/partitioned-tables"
+      ]
+    },
     "sources": ["https://cloud.google.com/bigquery/docs/introduction"]
   },
   {
     "id": "clickhouse",
     "name": "ClickHouse",
-    "area": "파이프라인", "role": "주", "kind": "도구",
+    "area": "파이프라인",
+    "role": "주",
+    "kind": "도구",
     "attaches_to": ["analytics"],
     "summary": "열 단위로 압축 저장하는 오픈소스 분석 DB로, 대량 이벤트를 넣으면서 바로 집계하는 실시간 대시보드에 강합니다. Iceberg REST 카탈로그도 읽습니다",
-    "goals": { "지연시간": "좋음", "속도": "좋음", "운영 난이도": "보통" },
-    "works_when": [{ "if": "true", "why": "로그·이벤트를 몇 초 안에 집계해 보여줘야 할 때 맞습니다" }],
-    "alternatives": [{ "id": "bigquery", "better_for": ["운영 난이도"], "note": "서버 관리 없이" }],
+    "goals": {"지연시간": "좋음", "속도": "좋음", "운영 난이도": "보통"},
+    "works_when": [{"if": "true", "why": "로그·이벤트를 몇 초 안에 집계해 보여줘야 할 때 맞습니다"}],
+    "alternatives": [{"id": "bigquery", "better_for": ["운영 난이도"], "note": "서버 관리 없이"}],
     "billing": {"model": "provisioned", "products": {"instance": "db-2vcpu"}},
+    "storage": {
+      "layout": "columnar",
+      "row_overhead_bytes": 0,
+      "groups": {
+        "codec": {
+          "label": "기본 압축 코덱",
+          "one": true
+        }
+      },
+      "features": [
+        {
+          "id": "lz4",
+          "group": "codec",
+          "label": "LZ4 (직접 운영 기본)",
+          "recommended": true,
+          "effect": {
+            "compression": 0.25,
+            "compression_scope": "all"
+          },
+          "note": "압축률은 예시값 — 데이터에 따라 크게 다름, 실측으로 교체 필요",
+          "source": "https://clickhouse.com/docs/sql-reference/statements/create/table#column_compression_codec"
+        },
+        {
+          "id": "zstd",
+          "group": "codec",
+          "label": "ZSTD (ClickHouse Cloud 기본)",
+          "effect": {
+            "compression": 0.18,
+            "compression_scope": "all"
+          },
+          "note": "더 작고 CPU를 더 씀. 시각 컬럼은 Delta·DoubleDelta와 함께 쓰면 더 작아짐. 압축률은 예시값 — 데이터에 따라 크게 다름, 실측으로 교체 필요",
+          "source": "https://clickhouse.com/docs/sql-reference/statements/create/table#column_compression_codec"
+        }
+      ],
+      "note": "MergeTree 열 저장. 컬럼마다 코덱을 따로 줄 수 있음",
+      "sources": [
+        "https://clickhouse.com/docs/sql-reference/statements/create/table#column_compression_codec"
+      ]
+    },
     "sources": ["https://clickhouse.com/docs/intro", "https://clickhouse.com/blog/google-lakehouse-runtime"]
   },
   {

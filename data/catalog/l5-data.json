@@ -13,6 +13,55 @@
     "fails_when": [{"if": "db_connections > th.max_connections", "why": "동시 연결 {db_connections}개가 연결 한도 {th.max_connections}개를 넘습니다"}, {"if": "peak_rps > th.rps", "why": "피크 {peak_rps} RPS가 주 DB 서버 1대 처리량 {th.rps} RPS를 넘습니다"}],
     "thresholds": {"max_connections": {"value": 151, "unit": "개", "source": "MySQL max_connections 기본값"}, "rps": {"value": 3000, "unit": "RPS", "base_spec": {"vcpu": 2}, "bound_by": "vcpu", "source": "예시값 — 실측으로 교체 필요"}},
     "billing": {"model": "provisioned", "products": {"instance": "db-2vcpu"}},
+    "storage": {
+      "layout": "row",
+      "row_overhead_bytes": 18,
+      "per_column_overhead_bytes": 1,
+      "index_entry_overhead_bytes": 5,
+      "secondary_index_includes_pk": true,
+      "groups": {
+        "compression": {
+          "label": "페이지 압축",
+          "one": true
+        }
+      },
+      "features": [
+        {
+          "id": "no_compression",
+          "group": "compression",
+          "label": "압축 안 함 (기본)",
+          "recommended": true,
+          "source": "https://dev.mysql.com/doc/refman/8.4/en/innodb-page-compression.html"
+        },
+        {
+          "id": "page_zlib",
+          "group": "compression",
+          "label": "투명 페이지 압축 zlib",
+          "effect": {
+            "compression": 0.5,
+            "compression_scope": "all"
+          },
+          "note": "file-per-table과 hole punching을 지원하는 파일 시스템 필요. 압축률은 예시값 — 데이터에 따라 크게 다름, 실측으로 교체 필요",
+          "source": "https://dev.mysql.com/doc/refman/8.4/en/innodb-page-compression.html"
+        },
+        {
+          "id": "page_lz4",
+          "group": "compression",
+          "label": "투명 페이지 압축 LZ4",
+          "effect": {
+            "compression": 0.6,
+            "compression_scope": "all"
+          },
+          "note": "file-per-table과 hole punching 필요. 압축률은 예시값 — 데이터에 따라 크게 다름, 실측으로 교체 필요",
+          "source": "https://dev.mysql.com/doc/refman/8.4/en/innodb-page-compression.html"
+        }
+      ],
+      "note": "InnoDB DYNAMIC(기본): 행 헤더 5 + 트랜잭션 id 6 + 롤백 포인터 7. 기본 키가 없으면 행 id 6바이트가 더 붙음. 보조 인덱스는 기본 키 값을 함께 저장",
+      "sources": [
+        "https://dev.mysql.com/doc/refman/8.4/en/innodb-row-format.html",
+        "https://dev.mysql.com/doc/refman/8.4/en/innodb-page-compression.html"
+      ]
+    },
     "sources": ["https://dev.mysql.com/doc/refman/8.4/en/server-system-variables.html#sysvar_max_connections"]
   },
   {
@@ -29,19 +78,107 @@
     "fails_when": [{"if": "peak_rps > th.rps", "why": "피크 {peak_rps} RPS가 주 DB 서버 1대 처리량 {th.rps} RPS를 넘습니다"}],
     "thresholds": {"rps": {"value": 3000, "unit": "RPS", "base_spec": {"vcpu": 2}, "bound_by": "vcpu", "source": "예시값 — 실측으로 교체 필요"}},
     "billing": {"model": "provisioned", "products": {"instance": "db-2vcpu"}},
+    "storage": {
+      "layout": "document",
+      "row_overhead_bytes": 5,
+      "per_column_overhead_bytes": 2,
+      "index_entry_overhead_bytes": 8,
+      "stores_field_names": true,
+      "groups": {
+        "compression": {
+          "label": "컬렉션 블록 압축",
+          "one": true
+        }
+      },
+      "features": [
+        {
+          "id": "snappy",
+          "group": "compression",
+          "label": "snappy (기본)",
+          "recommended": true,
+          "effect": {
+            "compression": 0.6,
+            "compression_scope": "all"
+          },
+          "note": "압축률은 예시값 — 데이터에 따라 크게 다름, 실측으로 교체 필요",
+          "source": "https://www.mongodb.com/docs/manual/core/wiredtiger/"
+        },
+        {
+          "id": "zstd",
+          "group": "compression",
+          "label": "zstd",
+          "effect": {
+            "compression": 0.45,
+            "compression_scope": "all"
+          },
+          "note": "CPU를 더 쓰고 더 작게. 압축률은 예시값 — 데이터에 따라 크게 다름, 실측으로 교체 필요",
+          "source": "https://www.mongodb.com/docs/manual/core/wiredtiger/"
+        },
+        {
+          "id": "zlib",
+          "group": "compression",
+          "label": "zlib",
+          "effect": {
+            "compression": 0.45,
+            "compression_scope": "all"
+          },
+          "note": "압축률은 예시값 — 데이터에 따라 크게 다름, 실측으로 교체 필요",
+          "source": "https://www.mongodb.com/docs/manual/core/wiredtiger/"
+        },
+        {
+          "id": "none",
+          "group": "compression",
+          "label": "압축 안 함",
+          "source": "https://www.mongodb.com/docs/manual/core/wiredtiger/"
+        }
+      ],
+      "note": "BSON: 문서 길이 4 + 끝 1, 필드마다 타입 1 + 이름 + 끝 1. 인덱스는 접두어 압축이 기본. _id(ObjectId 12바이트)는 컬럼에 넣어야 계산됨",
+      "sources": [
+        "https://www.mongodb.com/docs/manual/core/wiredtiger/"
+      ]
+    },
     "sources": ["https://www.mongodb.com/docs/manual/introduction/"]
   },
   {
     "id": "dynamodb",
     "name": "Amazon DynamoDB",
-    "area": "서비스", "role": "주", "kind": "도구",
+    "area": "서비스",
+    "role": "주",
+    "kind": "도구",
     "attaches_to": ["db"],
     "summary": "서버 관리 없는 키-값·문서 DB로, 트래픽에 맞춰 처리량이 자동으로 늘고 줄며 한 자릿수 ms 응답을 목표로 합니다. 접근 패턴을 먼저 설계해야 합니다",
-    "goals": { "확장성": "좋음", "운영 난이도": "좋음", "지연시간": "좋음", "비용": "보통" },
-    "works_when": [{ "if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "트래픽이 크게 출렁여도 용량 계획 없이 버팁니다" }],
-    "fails_when": [{ "if": "offline_required == true", "why": "AWS에서만 동작하는 관리형 서비스입니다" }],
-    "alternatives": [{ "id": "postgresql", "better_for": ["오프라인", "안정성"], "note": "임의 조회·조인이 필요할 때" }],
+    "goals": {"확장성": "좋음", "운영 난이도": "좋음", "지연시간": "좋음", "비용": "보통"},
+    "works_when": [{"if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "트래픽이 크게 출렁여도 용량 계획 없이 버팁니다"}],
+    "fails_when": [{"if": "offline_required == true", "why": "AWS에서만 동작하는 관리형 서비스입니다"}],
+    "alternatives": [{"id": "postgresql", "better_for": ["오프라인", "안정성"], "note": "임의 조회·조인이 필요할 때"}],
     "billing": {"model": "usage", "products": {"million_requests": "dynamodb-requests"}},
+    "storage": {
+      "layout": "kv",
+      "row_overhead_bytes": 100,
+      "stores_field_names": true,
+      "groups": {
+        "replication": {
+          "label": "복제",
+          "one": false
+        }
+      },
+      "features": [
+        {
+          "id": "global_tables",
+          "group": "replication",
+          "label": "글로벌 테이블",
+          "effect": {
+            "row_overhead_delta": 48
+          },
+          "note": "항목마다 48바이트 추가",
+          "source": "https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/CapacityUnitCalculations.html"
+        }
+      ],
+      "note": "항목 크기 = 속성 이름 + 값(UTF-8), 숫자는 유효 숫자 2개당 1바이트 + 1. 저장 과금에는 항목마다 100바이트가 더해짐. 최대 400KB",
+      "sources": [
+        "https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/CapacityUnitCalculations.html"
+      ]
+    },
     "sources": ["https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Introduction.html"]
   },
   {
@@ -63,26 +200,32 @@
   {
     "id": "neon",
     "name": "Neon (서버리스 PostgreSQL)",
-    "area": "서비스", "role": "주", "kind": "도구",
+    "area": "서비스",
+    "role": "주",
+    "kind": "도구",
     "attaches_to": ["db"],
     "summary": "저장과 연산을 나눈 서버리스 PostgreSQL로, 쓰지 않으면 0까지 줄고 데이터베이스 브랜치를 바로 만들 수 있습니다. 2025년 Databricks가 인수를 발표했습니다",
-    "goals": { "비용": "좋음", "운영 난이도": "좋음", "지연시간": "보통" },
-    "works_when": [{ "if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "개발·테스트용 DB를 자주 만들거나 사용량이 들쭉날쭉할 때 비용이 줄어듭니다" }],
-    "fails_when": [{ "if": "offline_required == true", "why": "클라우드에서만 동작하는 관리형 서비스입니다" }],
-    "alternatives": [{ "id": "postgresql", "better_for": ["지연시간", "오프라인"], "note": "직접 운영·상시 부하" }],
+    "goals": {"비용": "좋음", "운영 난이도": "좋음", "지연시간": "보통"},
+    "works_when": [{"if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "개발·테스트용 DB를 자주 만들거나 사용량이 들쭉날쭉할 때 비용이 줄어듭니다"}],
+    "fails_when": [{"if": "offline_required == true", "why": "클라우드에서만 동작하는 관리형 서비스입니다"}],
+    "alternatives": [{"id": "postgresql", "better_for": ["지연시간", "오프라인"], "note": "직접 운영·상시 부하"}],
     "billing": {"model": "usage", "products": {"vcpu_second": "neon-compute"}},
+    "storage": {"same_as": "postgresql"},
     "sources": ["https://neon.com/docs/introduction", "https://www.theregister.com/2025/06/10/snowflake_and_databricks_bank_postgresql"]
   },
   {
     "id": "libsql_turso",
     "name": "libSQL / Turso (SQLite 계열)",
-    "area": "서비스", "role": "주", "kind": "도구",
+    "area": "서비스",
+    "role": "주",
+    "kind": "도구",
     "attaches_to": ["db"],
     "summary": "SQLite를 포크해 원격 접속과 복제를 더했습니다. 앱 안에 DB 사본을 두고 서버와 동기화해 로컬에서는 SQLite처럼 빠르게 읽습니다",
-    "goals": { "지연시간": "좋음", "오프라인": "좋음", "메모리": "좋음", "동시성": "보통" },
-    "works_when": [{ "if": "deploy_mode == 'local_exe' or deploy_mode == 'hybrid' or deploy_mode == 'mobile'", "why": "기기 안에서 바로 읽고, 연결될 때 서버와 동기화할 수 있습니다" }],
-    "alternatives": [{ "id": "postgresql", "better_for": ["동시성"], "note": "서버에서 동시 쓰기가 많을 때" }],
+    "goals": {"지연시간": "좋음", "오프라인": "좋음", "메모리": "좋음", "동시성": "보통"},
+    "works_when": [{"if": "deploy_mode == 'local_exe' or deploy_mode == 'hybrid' or deploy_mode == 'mobile'", "why": "기기 안에서 바로 읽고, 연결될 때 서버와 동기화할 수 있습니다"}],
+    "alternatives": [{"id": "postgresql", "better_for": ["동시성"], "note": "서버에서 동시 쓰기가 많을 때"}],
     "billing": {"model": "plan", "products": {"month": "turso-plan"}},
+    "storage": {"same_as": "sqlite"},
     "sources": ["https://docs.turso.tech/libsql"]
   },
   {
