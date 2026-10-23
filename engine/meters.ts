@@ -71,10 +71,15 @@ export function costLines(
   }
 
   // 테이블이 하나라도 있으면 저장량은 테이블 합계(노드 리전별). 없으면 페르소나 추정(쓰기 × 건당 KB)
+  // 디스크 저장 과금은 DB·분석 노드만 (캐시는 메모리 노드라 대수 과금에 들어 있다)
   if (p.cost.storage && tables.length) {
-    for (const n of p.nodes) {
-      const gb = tables.filter((x) => x.nodeId === n.id).reduce((s, x) => s + x.storedGb.value, 0);
-      if (!gb || n.region === 'local') continue;
+    for (const n of p.nodes.filter((x) => x.layer === 'db' || x.layer === 'analytics')) {
+      if (n.region === 'local') continue;
+      const mine = tables.filter((x) => x.nodeId === n.id);
+      if (!mine.length) { missing.push(`${n.name}: 테이블이 없어 저장량을 모름 (테이블을 넣거나 테이블을 모두 비우면 페르소나 추정을 씀)`); continue; }
+      if (mine.some((x) => !x.profiled)) { missing.push(`${n.name}: 주 항목에 저장 프로필이 없어 테이블 저장량을 모름`); continue; }
+      const gb = mine.reduce((s, x) => s + x.storedGb.value, 0);
+      if (!gb) continue;
       lines.push({ key: '저장', product: p.cost.storage, region: regionOf(n), quantities: { gb_month: gb }, how: { gb_month: `${n.id} 테이블 저장량 합계` } });
     }
   } else if (t && p.cost.storage) lines.push({ key: '저장', product: p.cost.storage, region: p.cost.region, quantities: { gb_month: t.storageGbWithOverhead.value * factor }, how: { gb_month: '보관 기간 저장량(여유분 포함)' } });

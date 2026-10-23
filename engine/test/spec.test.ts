@@ -47,6 +47,14 @@ describe('데이터 명세서 → 테이블', () => {
     expect(bad.tables[0].columns.map((x) => x.name)).toEqual(['c']);
   });
 
+  it('타입은 단어 단위로 읽음: INTERVAL은 모르는 타입, INT(11)·character varying(50)·DOUBLE PRECISION은 읽음', () => {
+    const r = parseSpec('테이블\t컬럼\t타입\nt\ta\tINTERVAL\nt\tb\tINT(11)\nt\tc\tcharacter varying(50)\nt\td\tDOUBLE PRECISION\nt\te\tdatetime2');
+    expect(r.errors).toEqual(['2번째 줄: 모르는 타입 INTERVAL']);
+    expect(r.tables[0].columns.map((x) => [x.name, x.type, x.max_length])).toEqual([
+      ['b', 'int', undefined], ['c', 'text', 50], ['d', 'float', undefined], ['e', 'timestamp', undefined],
+    ]);
+  });
+
   it('머리글이 없거나 키가 없는 컬럼을 가리키면 오류', () => {
     expect(parseSpec('a\tb\n1\t2').errors[0]).toMatch(/머리글이 필요함: 테이블, 컬럼, 타입/);
     const j = parseSpec(JSON.stringify([{ name: 't', columns: [{ name: 'a', type: 'int' }], primary_key: ['zz'] }]));

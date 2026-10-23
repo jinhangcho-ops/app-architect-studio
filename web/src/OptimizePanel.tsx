@@ -4,7 +4,7 @@ import type { Project } from '../../engine/schema';
 import { catalog } from './data';
 import { applyPlan, findPlans } from './edit';
 import { NumField, Section } from './fields';
-import { fmt } from './format';
+import { fmt, fmtShare } from './format';
 import { useStore } from './store';
 
 const GOALS = [...new Set(catalog.items.flatMap((i) => Object.keys(i.goals)))].sort();
@@ -90,7 +90,7 @@ function Plans({ result: r, project: p, onApply }: { result: OptimizeResult; pro
               ['월 비용', (x: Plan) => (x.metrics.cost === undefined ? '가격 없음' : fmt(x.metrics.cost))],
               ['한계 사용자', (x: Plan) => (x.metrics.limitUsers === undefined ? '미확인' : `${fmt(x.metrics.limitUsers)}명`)],
               ['최대 p99', (x: Plan) => (x.metrics.p99 === undefined ? '—' : `${fmt(x.metrics.p99)}ms`)],
-              ['최소 가용성', (x: Plan) => (x.metrics.availability === undefined ? '—' : `${(x.metrics.availability * 100).toFixed(2)}%`)],
+              ['최소 가용성', (x: Plan) => (x.metrics.availability === undefined ? '—' : fmtShare(x.metrics.availability))],
               ['우선순위 점수', (x: Plan) => String(x.score)],
             ] as const).map(([label, f]) => (
               <tr key={label} className="metric-row"><td>{label}</td>{cols.map(([l, x]) => <td key={l}>{metric(x, f)}</td>)}</tr>

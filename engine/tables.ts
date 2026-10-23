@@ -19,6 +19,8 @@ export type TableAnalysis = {
   peakRowsPerSec: number;
   /** 평균 길이 없음, 저장 프로필 없음 같은 가정 */
   assumptions: string[];
+  /** 주 항목에 저장 프로필이 있어 오버헤드·압축까지 계산했는지. 없으면 값 크기만이라 실제보다 작다 */
+  profiled: boolean;
   /** table 범위 구조 규칙의 변수 */
   vars: Vars;
 };
@@ -121,7 +123,7 @@ export function tableSize(
   const peak = (sim?.peakRowsPerSec.value ?? 0) * factor;
   return {
     key, nodeId, table: t.name, newRowsPerDay: m(newRows, '행/일', '하루 쓰기 행 × (1 − 갱신 비율)', { 쓰기행: written, 갱신비율: t.update_ratio }),
-    rowBytes, indexBytesPerRow, storedGb, partitions, peakRowsPerSec: peak, assumptions: [...new Set(assumptions)],
+    rowBytes, indexBytesPerRow, storedGb, partitions, peakRowsPerSec: peak, assumptions: [...new Set(assumptions)], profiled: !!sp,
     vars: {
       system: node.primary ?? '',
       layout: sp?.layout ?? 'unknown',

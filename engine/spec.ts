@@ -21,17 +21,18 @@ const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
 
 /** 선언 타입(VARCHAR(200), DECIMAL(10,2) …) → 엔진 타입과 길이 */
 const TYPE_RULES: [RegExp, Column['type']][] = [
-  [/^(bigint|int8|long)/, 'bigint'],
-  [/^(int|integer|int4|smallint|tinyint|serial)/, 'int'],
-  [/^(bool|boolean)/, 'bool'],
-  [/^(float|double|real)/, 'float'],
-  [/^(decimal|numeric|number|money)/, 'numeric'],
-  [/^uuid/, 'uuid'],
-  [/^(timestamp|datetime|timestamptz)/, 'timestamp'],
-  [/^date/, 'date'],
-  [/^(jsonb?)/, 'json'],
-  [/^(blob|bytea|binary|varbinary|bytes)/, 'bytes'],
-  [/^(varchar|char|text|string|nvarchar|character)/, 'text'],
+  // 단어 단위로 맞춘다 (interval이 int로, datetime2가 date로 읽히지 않게)
+  [/^(bigint|int8|long|bigserial)\b/, 'bigint'],
+  [/^(int|integer|int4|int2|smallint|tinyint|mediumint|serial)\b/, 'int'],
+  [/^(bool|boolean)\b/, 'bool'],
+  [/^(float|float4|float8|double|double precision|real)\b/, 'float'],
+  [/^(decimal|numeric|number|money)\b/, 'numeric'],
+  [/^uuid\b/, 'uuid'],
+  [/^(timestamp|timestamptz|datetime|datetime2)\b/, 'timestamp'],
+  [/^date\b/, 'date'],
+  [/^(json|jsonb)\b/, 'json'],
+  [/^(blob|bytea|binary|varbinary|bytes)\b/, 'bytes'],
+  [/^(varchar|char|text|string|nvarchar|nchar|character varying|character)\b/, 'text'],
 ];
 function parseType(raw: string): { type: Column['type']; length?: number } | undefined {
   const s = norm(raw);

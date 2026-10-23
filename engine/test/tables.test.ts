@@ -107,6 +107,27 @@ describe('table 범위 규칙·저장 비용·성장', () => {
     expect(a.storage!.personaGb.value).toBeGreaterThan(0);
   });
 
+  it('테이블이 일부 DB에만 있으면 나머지 DB 저장량은 "모름", 프로필 없는 DB(CockroachDB)도 "모름", 캐시는 저장 과금 없음', () => {
+    const p = Project.parse({
+      name: 'p', scale: { users: 1000 }, personas: [{ name: '일반', pattern: 'regular', share: 1 }],
+      cost: { region: 'aws:ap-northeast-2', storage: 'storage' },
+      nodes: [
+        { id: 'ui', name: '화면', layer: 'ui' },
+        { id: 'db', name: 'DB', layer: 'db', primary: 'postgresql', tables: [orders] },
+        { id: 'db2', name: '로그 DB', layer: 'db', primary: 'mysql' },
+        { id: 'cr', name: '분산 DB', layer: 'db', primary: 'cockroachdb', tables: [orders] },
+        { id: 'c', name: '캐시', layer: 'cache', primary: 'valkey', tables: [orders] },
+      ],
+    });
+    const c = analyze(p, data, '2026-10-24').cost!;
+    expect(c.missing).toEqual([
+      '로그 DB: 테이블이 없어 저장량을 모름 (테이블을 넣거나 테이블을 모두 비우면 페르소나 추정을 씀)',
+      '분산 DB: 주 항목에 저장 프로필이 없어 테이블 저장량을 모름',
+    ]);
+    // 저장 과금은 PostgreSQL DB 한 곳만
+    expect(c.parts['저장'].value).toBeCloseTo(tableSizes(p, undefined, catalog.byId).find((x) => x.nodeId === 'db')!.storedGb.value * 0.1);
+  });
+
   it('성장: 크기는 사용자 수에 비례 → 메모리에 닿는 달 (8GB, 지금 4GB, 월 10% → 8개월째)', () => {
     const t = { ...orders, measured: { rows_per_day: 4e9 / 365 / (78 + (2 * 28) / 0.9) } };
     const p = Project.parse({
