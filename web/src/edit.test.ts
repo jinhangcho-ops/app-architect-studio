@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { parseProject } from '../../engine/data';
 import { catalog, examples } from './data';
-import { addEdge, addNode, applyAlternative, removeNode, run, setVar, updateNode, worstVerdict } from './edit';
+import { parseSpec } from '../../engine/spec';
+import { addAction, addEdge, addNode, addTable, applyAlternative, importTables, removeAction, removeNode, removeTable, run, setActionRate, setVar, updateAction, updateNode, updateTable, worstVerdict } from './edit';
 import { autoLayout } from './layout';
 
 const today = '2026-10-23';
@@ -64,5 +65,44 @@ describe('편집 동작', () => {
     expect(pos.api.x).toBeGreaterThan(pos.lb.x);
     const xy = Object.values(pos).map((v) => `${v.x},${v.y}`);
     expect(new Set(xy).size).toBe(xy.length);
+  });
+});
+
+describe('테이블·행동 편집', () => {
+  const ax = examples.find((e) => e.name === 'actions.json')!;
+  const p0 = parseProject(ax.data, catalog.items, ax.name);
+  const valid = (p: typeof p0) => expect(run(p, today).error).toBeUndefined();
+
+  it('명세서로 가져온 테이블: 같은 이름은 바꾸고 새 이름은 뒤에 붙임', () => {
+    const spec = parseSpec('테이블\t컬럼\t타입\norders\tid\tbigint\nshipments\tid\tbigint');
+    const { project, replaced } = importTables(p0, 'db', spec.tables);
+    expect(replaced).toEqual(['orders']);
+    expect(project.nodes.find((n) => n.id === 'db')!.tables.map((t) => [t.name, t.columns.length])).toEqual([['orders', 1], ['order_items', 5], ['reviews', 4], ['shipments', 1]]);
+    valid(project);
+  });
+
+  it('테이블 이름을 바꾸면 행동이 따라가고, 지우면 그 쓰기와 빈 행동·페르소나 빈도가 사라짐', () => {
+    const renamed = updateTable(p0, 'db', 'reviews', { name: 'review' });
+    expect(renamed.actions.find((a) => a.name === '리뷰')!.writes[0].table).toBe('review');
+    valid(renamed);
+    const removed = removeTable(renamed, 'db', 'review');
+    expect(removed.actions.map((a) => a.name)).toEqual(['주문']);
+    expect(removed.personas.every((ps) => !('리뷰' in ps.action_rates))).toBe(true);
+    valid(removed);
+  });
+
+  it('행동 이름을 바꾸면 페르소나별 빈도도 따라가고, 빈 칸은 기본값으로 돌아감', () => {
+    const renamed = updateAction(p0, '주문', { name: '구매' });
+    expect(renamed.personas[0].action_rates).toEqual({ 구매: 0.6, 리뷰: 0.1 });
+    valid(renamed);
+    expect(setActionRate(renamed, 0, '구매', undefined).personas[0].action_rates).toEqual({ 리뷰: 0.1 });
+  });
+
+  it('새 테이블·새 행동은 바로 분석 가능한 기본값으로 생김', () => {
+    const p1 = addAction(addTable(p0, 'db'));
+    expect(p1.nodes.find((n) => n.id === 'db')!.tables.at(-1)!.name).toBe('table_1');
+    expect(p1.actions.at(-1)).toMatchObject({ name: '행동 1', per_session: 0.1 });
+    valid(p1);
+    valid(removeAction(p1, '행동 1'));
   });
 });

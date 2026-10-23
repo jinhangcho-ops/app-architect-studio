@@ -4,7 +4,7 @@ import { parseProject } from '../../engine/data';
 import type { NodeJudgement } from '../../engine/judge';
 import { LAYER_NAMES, type Layer, type Verdict } from '../../engine/model';
 import { optimize, type OptimizeResult } from '../../engine/optimize';
-import { EdgeSchema, NodeSchema, type Project, type ProjectEdge, type ProjectNode } from '../../engine/schema';
+import { EdgeSchema, NodeSchema, Table as TableSchema, type Project, type ProjectEdge, type ProjectNode } from '../../engine/schema';
 import { catalog, engineData } from './data';
 
 export type RunResult = { analysis?: Analysis; error?: string };
@@ -77,3 +77,88 @@ const RANK: Record<Verdict, number> = { ok: 0, unknown: 1, conditional: 2, fail:
 /** 노드 배지: 붙은 항목 중 가장 나쁜 판정 */
 export const worstVerdict = (j?: NodeJudgement): Verdict | undefined =>
   j?.items.reduce<Verdict | undefined>((w, i) => (!w || RANK[i.verdict] > RANK[w] ? i.verdict : w), undefined);
+
+// ── 테이블 ──
+type Table = ProjectNode['tables'][number];
+type Action = Project['actions'][number];
+
+const mapTables = (p: Project, nodeId: string, fn: (ts: Table[]) => Table[]): Project =>
+  ({ ...p, nodes: p.nodes.map((n) => (n.id === nodeId ? { ...n, tables: fn(n.tables) } : n)) });
+
+/** 명세서로 읽은 테이블을 노드에 넣는다. 이름이 같은 테이블은 바꾸고 나머지는 뒤에 붙인다 */
+export function importTables(p: Project, nodeId: string, tables: Table[]): { project: Project; replaced: string[] } {
+  const n = p.nodes.find((x) => x.id === nodeId)!;
+  const replaced = tables.filter((t) => n.tables.some((x) => x.name === t.name)).map((t) => t.name);
+  const project = mapTables(p, nodeId, (ts) => [
+    ...ts.map((x) => tables.find((t) => t.name === x.name) ?? x),
+    ...tables.filter((t) => !ts.some((x) => x.name === t.name)),
+  ]);
+  return { project, replaced };
+}
+
+/** 테이블 고치기. 이름이 바뀌면 그 테이블을 가리키는 행동도 같이 고친다 */
+export function updateTable(p: Project, nodeId: string, name: string, patch: Partial<Table>): Project {
+  const next = mapTables(p, nodeId, (ts) => ts.map((t) => (t.name === name ? { ...t, ...patch } : t)));
+  if (patch.name === undefined || patch.name === name) return next;
+  return { ...next, actions: next.actions.map((a) => ({ ...a, writes: a.writes.map((w) => (w.node === nodeId && w.table === name ? { ...w, table: patch.name! } : w)) })) };
+}
+
+/** 테이블을 지우면 그 테이블에 쓰는 행동 줄도 지우고, 쓸 곳이 없어진 행동은 없앤다 */
+export function removeTable(p: Project, nodeId: string, name: string): Project {
+  const next = mapTables(p, nodeId, (ts) => ts.filter((t) => t.name !== name));
+  const actions = next.actions
+    .map((a) => ({ ...a, writes: a.writes.filter((w) => !(w.node === nodeId && w.table === name)) }))
+    .filter((a) => a.writes.length > 0);
+  const gone = next.actions.filter((a) => !actions.some((x) => x.name === a.name)).map((a) => a.name);
+  return dropRates({ ...next, actions }, gone);
+}
+
+export function addTable(p: Project, nodeId: string): Project {
+  const n = p.nodes.find((x) => x.id === nodeId)!;
+  let k = 1;
+  while (n.tables.some((t) => t.name === `table_${k}`)) k++;
+  return mapTables(p, nodeId, (ts) => [...ts, TableSchema.parse({ name: `table_${k}`, columns: [{ name: 'id', type: 'bigint' }], primary_key: ['id'] })]);
+}
+
+// ── 행동 ──
+const dropRates = (p: Project, names: string[]): Project => (!names.length ? p : {
+  ...p,
+  personas: p.personas.map((ps) => ({ ...ps, action_rates: Object.fromEntries(Object.entries(ps.action_rates).filter(([k]) => !names.includes(k))) })),
+});
+
+export function addAction(p: Project): Project {
+  const first = p.nodes.flatMap((n) => n.tables.map((t) => ({ node: n.id, table: t.name, rows: 1 })))[0];
+  if (!first) return p;
+  let k = 1;
+  while (p.actions.some((a) => a.name === `행동 ${k}`)) k++;
+  return { ...p, actions: [...p.actions, { name: `행동 ${k}`, per_session: 0.1, writes: [first] }] };
+}
+
+/** 행동 고치기. 이름이 바뀌면 페르소나별 빈도의 이름도 바꾼다 */
+export function updateAction(p: Project, name: string, patch: Partial<Action>): Project {
+  const next = { ...p, actions: p.actions.map((a) => (a.name === name ? { ...a, ...patch } : a)) };
+  if (patch.name === undefined || patch.name === name) return next;
+  return {
+    ...next,
+    personas: next.personas.map((ps) => ({
+      ...ps, action_rates: Object.fromEntries(Object.entries(ps.action_rates).map(([k, v]) => [k === name ? patch.name! : k, v])),
+    })),
+  };
+}
+
+export const removeAction = (p: Project, name: string): Project =>
+  dropRates({ ...p, actions: p.actions.filter((a) => a.name !== name) }, [name]);
+
+/** 페르소나 하나의 행동 빈도. undefined면 행동의 기본 빈도를 쓴다 */
+export function setActionRate(p: Project, persona: number, action: string, value: number | undefined): Project {
+  return {
+    ...p,
+    personas: p.personas.map((ps, i) => {
+      if (i !== persona) return ps;
+      const rates = { ...ps.action_rates };
+      if (value === undefined) delete rates[action];
+      else rates[action] = value;
+      return { ...ps, action_rates: rates };
+    }),
+  };
+}

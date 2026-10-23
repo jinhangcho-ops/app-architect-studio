@@ -81,3 +81,17 @@ button:disabled { opacity: 0.4; cursor: default; }
 .tag { margin-left: 6px; font-size: 11px; color: var(--cond); border: 1px solid var(--cond); border-radius: 4px; padding: 0 4px; }
 .regions { padding-left: 16px; margin: 4px 0; }
 .regions code, .alt code { font-size: 11px; }
+
+/* 테이블·행동 편집 */
+.grid input, .grid select { width: 100%; min-width: 56px; box-sizing: border-box; }
+.grid input[type='checkbox'] { width: auto; min-width: 0; }
+.grid td { padding: 2px 3px; }
+textarea.spec { width: 100%; min-height: 90px; font-family: ui-monospace, monospace; font-size: 12px; box-sizing: border-box; }
+.table-editor { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin: 6px 0; }
+.table-editor > summary { cursor: pointer; }
+.feature-group { margin: 6px 0; }
+.feature-group label { display: flex; align-items: center; gap: 6px; }
+.action { border-bottom: 1px dotted var(--line); padding: 4px 0; }
+.action input[type='number'] { width: 64px; }
+.action .write { padding-left: 12px; }
+.lab button { margin-left: 4px; }

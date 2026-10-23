@@ -2,13 +2,14 @@ import { useState } from 'react';
 import type { Analysis } from '../../engine/analyze';
 import { judgeItem } from '../../engine/judge';
 import { LAYERS, LAYER_NAMES, VERDICT_NAMES, type Layer } from '../../engine/model';
-import { REGIONS } from '../../engine/schema';
+import { REGIONS, TABLE_LAYERS } from '../../engine/schema';
 import { catalog, prices } from './data';
 import { parseHtml, type ApiCall } from './htmlImport';
 import { addEdge, applyAlternative, removeEdge, removeNode, setVar, updateEdge, updateNode } from './edit';
 import { NumField, Row, Section, TextField } from './fields';
 import { fmtMetric, howMetric } from './format';
 import { useStore } from './store';
+import { StorageSection, TablesSection } from './TablesPanel';
 
 const itemName = (id: string) => catalog.byId.get(id)?.name ?? id;
 
@@ -102,6 +103,11 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
           ))}
         </tbody></table>
       </Section>
+
+      {(TABLE_LAYERS as readonly string[]).includes(n.layer) && <>
+        <StorageSection node={n} />
+        <TablesSection node={n} />
+      </>}
 
       <Section title="목표로 찾기">
         <select value={goal} onChange={(e) => setGoal(e.target.value)}>

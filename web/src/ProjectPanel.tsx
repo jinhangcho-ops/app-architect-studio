@@ -3,6 +3,7 @@ import { prices } from './data';
 import { PATTERNS } from '../../engine/traffic';
 import { STANDARD_OFFSET } from '../../engine/timezones';
 import { NumField, Row, Section, TextField } from './fields';
+import { addAction, removeAction, setActionRate, updateAction } from './edit';
 import { useStore } from './store';
 
 const MODES: [Project['deploy']['mode'], string][] = [
@@ -71,6 +72,8 @@ export function ProjectPanel() {
         {p.personas.length > 0 && Math.abs(shareSum - 1) > 1e-6 && <p className="warn">비율 합이 100%여야 계산합니다.</p>}
       </Section>
 
+      <ActionsSection />
+
       <Section title="비용 기준">
         <Row label="기본 리전">
           <select value={p.cost.region ?? ''} onChange={(e) => set({ cost: { ...p.cost, region: (e.target.value || undefined) as typeof p.cost.region } })}>
@@ -103,3 +106,60 @@ export function ProjectPanel() {
 
 /** 가격표에서 이 단위로 파는 상품 키 목록 */
 const productsOf = (unit: PriceRow['unit']) => [...new Set(prices.filter((r) => r.unit === unit).map((r) => r.product ?? r.id))];
+
+/** 행동: 한 번 일어나면 어느 테이블에 몇 행을 쓰는지, 접속당 빈도. 아래 표는 페르소나별 빈도(비우면 기본값) */
+function ActionsSection() {
+  const { project: p, edit } = useStore();
+  const targets = p.nodes.flatMap((n) => n.tables.map((t) => ({ key: `${n.id}.${t.name}`, node: n.id, table: t.name, label: `${n.name}.${t.name}` })));
+  if (!targets.length && !p.actions.length) {
+    return <Section title="행동"><p className="muted">DB·캐시·분석 노드에 테이블을 넣으면 행동(주문, 리뷰 …)으로 테이블에 쓰는 양을 정할 수 있습니다.</p></Section>;
+  }
+  return (
+    <Section title={`행동 (${p.actions.length})`}>
+      {p.actions.map((a) => {
+        const upd = (patch: Parameters<typeof updateAction>[2]) => edit((x) => updateAction(x, a.name, patch));
+        const setWrite = (i: number, patch: Partial<(typeof a.writes)[number]>) => upd({ writes: a.writes.map((w, k) => (k === i ? { ...w, ...patch } : w)) });
+        return (
+          <div key={a.name} className="action">
+            <div className="inline">
+              <input aria-label="행동 이름" defaultValue={a.name} onBlur={(e) => e.target.value && e.target.value !== a.name && upd({ name: e.target.value })} />
+              <label className="muted">접속당 <input type="number" step={0.01} value={a.per_session} onChange={(e) => upd({ per_session: Number(e.target.value) || 0 })} />회</label>
+              <button aria-label="행동 삭제" onClick={() => edit((x) => removeAction(x, a.name))}>×</button>
+            </div>
+            {a.writes.map((w, i) => (
+              <div key={i} className="inline write">
+                <span className="muted">→</span>
+                <select aria-label="쓰는 테이블" value={`${w.node}.${w.table}`} onChange={(e) => {
+                  const t = targets.find((x) => x.key === e.target.value)!;
+                  setWrite(i, { node: t.node, table: t.table });
+                }}>
+                  {targets.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+                </select>
+                <input aria-label="행 수" type="number" value={w.rows} onChange={(e) => setWrite(i, { rows: Number(e.target.value) || 1 })} />행
+                {a.writes.length > 1 && <button aria-label="쓰기 삭제" onClick={() => upd({ writes: a.writes.filter((_, k) => k !== i) })}>×</button>}
+              </div>
+            ))}
+            <button onClick={() => upd({ writes: [...a.writes, { node: targets[0].node, table: targets[0].table, rows: 1 }] })}>테이블 추가</button>
+          </div>
+        );
+      })}
+      {targets.length > 0 && <button onClick={() => edit(addAction)}>행동 추가</button>}
+
+      {p.actions.length > 0 && p.personas.length > 0 && <>
+        <p className="muted">페르소나별 접속당 빈도 — 비우면 위의 기본값</p>
+        <div className="plans"><table className="grid">
+          <thead><tr><th>페르소나</th>{p.actions.map((a) => <th key={a.name}>{a.name}</th>)}</tr></thead>
+          <tbody>{p.personas.map((ps, i) => (
+            <tr key={i}>
+              <td>{ps.name}</td>
+              {p.actions.map((a) => (
+                <td key={a.name}><input type="number" step={0.01} placeholder={String(a.per_session)} value={ps.action_rates[a.name] ?? ''}
+                  onChange={(e) => edit((x) => setActionRate(x, i, a.name, e.target.value === '' ? undefined : Number(e.target.value)))} /></td>
+              ))}
+            </tr>
+          ))}</tbody>
+        </table></div>
+      </>}
+    </Section>
+  );
+}
