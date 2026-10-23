@@ -1,4 +1,5 @@
-import { Background, Controls, Handle, MarkerType, Position, ReactFlow, type Edge, type Node, type NodeProps } from '@xyflow/react';
+import { Background, Controls, Handle, MarkerType, Position, ReactFlow, type Edge, type Node, type NodeProps, type ReactFlowInstance } from '@xyflow/react';
+import { useEffect, useRef } from 'react';
 import type { Analysis } from '../../engine/analyze';
 import { LAYER_NAMES, VERDICT_NAMES, type Verdict } from '../../engine/model';
 import type { ProjectNode } from '../../engine/schema';
@@ -32,7 +33,14 @@ function Card({ data, selected }: NodeProps<Node<CardData>>) {
 const nodeTypes = { card: Card };
 
 export function Canvas({ analysis, onSelect }: { analysis?: Analysis; onSelect: () => void }) {
-  const { project, positions, selected, edit, move, select, setFocus } = useStore();
+  const { project, positions, selected, edit, move, select, setFocus, flyTo, set } = useStore();
+  const flow = useRef<ReactFlowInstance<Node<CardData>> | null>(null);
+  // 찾기에서 고른 노드로 화면을 옮긴다
+  useEffect(() => {
+    if (!flyTo || !flow.current) return;
+    flow.current.fitView({ nodes: [{ id: flyTo }], duration: 300, maxZoom: 1.2 });
+    set({ flyTo: undefined });
+  }, [flyTo, set]);
 
   const nodes: Node<CardData>[] = project.nodes.map((n) => {
     const na = analysis?.nodes[n.id];
@@ -72,6 +80,7 @@ export function Canvas({ analysis, onSelect }: { analysis?: Analysis; onSelect: 
       edges={edges}
       nodeTypes={nodeTypes}
       fitView
+      onInit={(f) => { flow.current = f; }}
       onNodesChange={(changes) => {
         for (const c of changes) if (c.type === 'position' && c.position) move(c.id, c.position);
       }}

@@ -25,6 +25,11 @@ type State = {
   future: Project[];
   undo: () => void;
   redo: () => void;
+  /** Ctrl+C로 복사한 노드 */
+  clipboard?: Project['nodes'][number];
+  /** 찾기에서 고른 노드로 캔버스를 옮기라는 요청 (캔버스가 처리하고 지운다) */
+  flyTo?: string;
+  set: (patch: Partial<Pick<State, 'clipboard' | 'flyTo'>>) => void;
 };
 
 const HISTORY = 100;
@@ -64,6 +69,7 @@ export const useStore = create<State>((set) => ({
   relayout: () => set((s) => ({ positions: autoLayout(s.project) })),
   select: (selected) => set({ selected }),
   setFocus: (focus) => set({ focus, selected: null }),
+  set: (patch) => set(patch),
   undo: () => set((s) => {
     if (!s.past.length) return {};
     lastEdit = 0;

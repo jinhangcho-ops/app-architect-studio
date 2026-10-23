@@ -182,3 +182,11 @@ export function removeWrite(p: Project, action: string, node: string, table: str
   const writes = a.writes.filter((w) => !(w.node === node && w.table === table));
   return writes.length ? updateAction(p, action, { writes }) : removeAction(p, action);
 }
+
+/** 붙여넣기(Ctrl+V): 복사한 노드를 새 id·"(복사)" 이름으로 넣는다. 연결선과 행동은 따라오지 않는다 */
+export function pasteNode(p: Project, node: ProjectNode): { project: Project; id: string } {
+  let k = 2;
+  while (p.nodes.some((n) => n.id === `${node.id}-${k}`)) k++;
+  const id = `${node.id}-${k}`;
+  return { project: { ...p, nodes: [...p.nodes, { ...node, id, name: `${node.name} (복사)` }] }, id };
+}

@@ -158,3 +158,11 @@ textarea.spec { width: 100%; min-height: 90px; font-family: ui-monospace, monosp
 .altblock.v-ok { border-color: var(--ok); } .altblock.v-conditional { border-color: var(--cond); } .altblock.v-unknown { border-color: var(--unknown); }
 .altblock button { margin-top: 3px; }
 .peerblock { background: #f1f3f6; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; font-size: 11px; min-width: 130px; }
+
+/* 임시 저장 복구 · 찾기 */
+.recovery { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: #fffbea; border: 1px solid var(--cond); border-radius: 8px; box-shadow: 0 2px 8px #0002; max-width: 92%; }
+.find { position: absolute; top: 10px; right: 10px; z-index: 21; width: min(420px, 92%); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 2px 8px #0002; padding: 6px; }
+.find input { width: 100%; }
+.find-results { max-height: 320px; overflow: auto; margin-top: 4px; }
+.find-results button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 4px 6px; border-radius: 4px; cursor: pointer; }
+.find-results button:hover, .find-results button.on { background: #eef3ff; }

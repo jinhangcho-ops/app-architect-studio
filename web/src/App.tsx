@@ -4,7 +4,9 @@ import { LAYERS, LAYER_NAMES, type Layer } from '../../engine/model';
 import { Canvas } from './Canvas';
 import { catalog, examples } from './data';
 import { mergeCodeAnalysis } from './codeImport';
-import { addNode, findPlans, run } from './edit';
+import { addNode, findPlans, pasteNode, run } from './edit';
+import { clearAutosave, readAutosave, scheduleAutosave } from './autosave';
+import { searchProject, type Hit } from './search';
 import type { OptimizeResult } from '../../engine/optimize';
 import { Report } from './Report';
 import { NodeInside, TableSidePanel } from './NodeInside';
@@ -19,7 +21,7 @@ import { exportProject, useStore } from './store';
 const today = new Date().toLocaleDateString('sv-SE');
 
 export function App() {
-  const { project, positions, selected, load, edit, relayout, select, focus, setFocus, undo, redo, past, future } = useStore();
+  const { project, positions, selected, load, edit, relayout, select, focus, setFocus, undo, redo, past, future, clipboard, set, move } = useStore();
   // 위치를 끌어도 다시 계산하지 않도록 프로젝트가 바뀔 때만 분석한다
   const result = useMemo(() => run(project, today), [project]);
   const [tab, setTab] = useState<'selected' | 'results' | 'optimize'>('results');
@@ -27,6 +29,26 @@ export function App() {
   const codeRef = useRef<HTMLInputElement>(null);
   const [view, setView] = useState<'2d' | '3d'>('2d');
   const [report, setReport] = useState<{ plans?: OptimizeResult }>();
+  const [find, setFind] = useState<{ q: string; at: number }>();
+  // 앱을 열 때 남아 있던 임시 저장. 복구할지 정하기 전에는 임시 저장을 덮어쓰지 않는다
+  const [recovery, setRecovery] = useState(() => readAutosave());
+  useEffect(() => { if (!recovery) scheduleAutosave(project, positions); }, [project, positions, recovery]);
+
+  const hits = find ? searchProject(project, catalog.byId, find.q) : [];
+  const go = (h: Hit) => {
+    setTab('selected');
+    if (h.kind === 'node') { setFocus(undefined); select({ kind: 'node', id: h.node }); set({ flyTo: h.node }); }
+    else { setFocus(h.node); select({ kind: 'table', node: h.node, table: h.table }); }
+  };
+  const paste = () => {
+    if (!clipboard) return;
+    let id = '';
+    edit((p) => { const r = pasteNode(p, clipboard); id = r.id; return r.project; });
+    const from = positions[clipboard.id];
+    if (from) move(id, { x: from.x + 40, y: from.y + 40 });
+    select({ kind: 'node', id });
+    setTab('selected');
+  };
 
   const add = (layer: Layer) => {
     let id = '';
@@ -47,21 +69,30 @@ export function App() {
   };
 
   // 윈도우 단축키. 글자 칸에서 치는 중이면 Ctrl+Z·Y는 브라우저의 글자 되돌리기에 맡긴다.
-  // e.code(자판 위치)를 써서 한글 입력 상태에서도 같은 키로 동작한다
+  // e.code(자판 위치)를 써서 한글 입력 상태에서도 같은 키로 동작한다. e.code가 비어 오는 환경(자동화 도구 등)은 e.key로 본다
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLElement && !!e.target.closest('input, textarea, select, [contenteditable="true"]');
       if (e.key === 'Escape') {
         if (report) setReport(undefined);
+        else if (find) setFind(undefined);
         else if (!typing) (focus ? setFocus(undefined) : select(null));
         return;
       }
       if (!(e.ctrlKey || e.metaKey)) return;
-      if (e.code === 'KeyS') { e.preventDefault(); save(); return; }
-      if (e.code === 'KeyO') { e.preventDefault(); fileRef.current?.click(); return; }
+      const k = e.code.startsWith('Key') ? e.code.slice(3).toLowerCase() : e.key.toLowerCase();
+      if (k === 's') { e.preventDefault(); save(); return; }
+      if (k === 'f') { e.preventDefault(); setFind({ q: find?.q ?? '', at: 0 }); return; }
+      if (k === 'o') { e.preventDefault(); fileRef.current?.click(); return; }
       if (typing) return;
-      if (e.code === 'KeyZ' && !e.shiftKey) { e.preventDefault(); undo(); }
-      else if (e.code === 'KeyY' || (e.code === 'KeyZ' && e.shiftKey)) { e.preventDefault(); redo(); }
+      // 페이지 글자를 드래그해 골라 둔 경우에는 브라우저의 복사를 그대로 둔다
+      if (k === 'c' && selected?.kind === 'node' && !window.getSelection()?.toString()) {
+        set({ clipboard: project.nodes.find((n) => n.id === selected.id) });
+        return;
+      }
+      if (k === 'v' && clipboard) { e.preventDefault(); paste(); return; }
+      if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+      else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -124,6 +155,31 @@ export function App() {
           ? <Canvas analysis={result.analysis} onSelect={() => setTab('selected')} />
           : <View3D analysis={result.analysis} onSelect={() => setTab('selected')} />}
         {result.error && <pre className="error-banner">{result.error}</pre>}
+        {recovery && (
+          <div className="recovery">
+            저장하지 않고 닫힌 작업이 있습니다: <b>{recovery.project.name}</b> ({new Date(recovery.savedAt).toLocaleString('ko-KR')})
+            <button className="primary" onClick={() => { load(recovery.project, recovery.positions); setRecovery(undefined); }}>복구</button>
+            <button onClick={() => { clearAutosave(); setRecovery(undefined); }}>버리기</button>
+          </div>
+        )}
+        {find && (
+          <div className="find" role="search">
+            <input autoFocus value={find.q} placeholder="노드·항목·테이블·컬럼 찾기 (Enter 다음, Esc 닫기)" aria-label="찾기"
+              onChange={(e) => setFind({ q: e.target.value, at: 0 })}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') { e.stopPropagation(); setFind(undefined); }
+                if (e.key === 'Enter' && hits.length) { go(hits[find.at % hits.length]); setFind({ ...find, at: find.at + 1 }); }
+              }} />
+            {find.q && <div className="find-results">
+              {!hits.length && <div className="muted">찾은 것이 없습니다</div>}
+              {hits.map((h, i) => (
+                <button key={`${h.kind}:${h.label}`} className={i === (find.at - 1 + hits.length) % hits.length ? 'on' : ''} onClick={() => go(h)}>
+                  <b>{h.label}</b> <span className="muted">{h.detail}</span>
+                </button>
+              ))}
+            </div>}
+          </div>
+        )}
       </main>
       <aside className="right">
         <nav className="tabs">
