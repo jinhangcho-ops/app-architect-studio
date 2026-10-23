@@ -122,7 +122,10 @@
     "goals": { "비용": "좋음", "확장성": "나쁨", "가용성": "나쁨" },
     "fails_when": [{ "if": "peak_rps > th.rps", "why": "피크 {peak_rps} RPS가 서버 1대 기준 {th.rps} RPS를 넘습니다" }],
     "alternatives": [{ "id": "api_autoscale", "better_for": ["확장성", "가용성"] }],
-    "thresholds": { "rps": { "value": 500, "unit": "RPS", "base_spec": { "vcpu": 2 }, "bound_by": "vcpu", "source": "예시값(설계서 8절) — 실측으로 교체 필요" } },
+    "thresholds": {
+      "rps": { "value": 500, "unit": "RPS", "base_spec": { "vcpu": 2 }, "bound_by": "vcpu", "source": "예시값(설계서 8절) — 실측으로 교체 필요" },
+      "max_instances": { "value": 1, "unit": "대", "source": "이 패턴의 정의(서버 1대)" }
+    },
     "sources": ["설계서 8절"]
   },
   {

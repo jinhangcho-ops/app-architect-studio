@@ -38,6 +38,8 @@ export type Analysis = {
   growth?: { milestones: Milestone[]; monthlyCost: (Metric | undefined)[] };
   judgements: NodeJudgement[];
   rules: RuleHit[];
+  /** 노드별 판정 변수(계산값 + 직접 넣은 값). 화면이 후보 항목을 다시 계산 없이 판정하는 데 쓴다 */
+  scenarios: Record<string, Scenario>;
 };
 
 export type Data = { catalog: Map<string, CatalogItem>; rules: Rule[]; prices: PriceRow[] };
@@ -168,5 +170,6 @@ export function analyze(p: Project, d: Data, today: string): Analysis {
     growth,
     judgements: p.nodes.map((n) => judgeNode(n, d.catalog, judged.get(n.id))),
     rules: checkRules(p, d.rules),
+    scenarios: Object.fromEntries(judged),
   };
 }

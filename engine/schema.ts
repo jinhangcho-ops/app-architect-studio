@@ -196,6 +196,10 @@ export type Threshold = z.infer<typeof Threshold>;
 export type CatalogItem = z.infer<typeof CatalogItem>;
 export type Rule = z.infer<typeof Rule>;
 export type Project = z.infer<typeof Project>;
+/** 화면에서 노드·연결선을 새로 만들 때 기본값을 채우는 데 쓴다 */
+export const NodeSchema = Project.shape.nodes.element;
+export const EdgeSchema = Project.shape.edges.unwrap().element;
+export type ProjectEdge = Project['edges'][number];
 export type ProjectNode = Project['nodes'][number];
 export type Deploy = z.infer<typeof Deploy>;
 export type PriceRow = z.infer<typeof PriceRow>;
