@@ -13,6 +13,7 @@
   { "id": "aws-seoul-neon-compute", "product": "neon-compute", "region": "aws:ap-northeast-2", "unit": "vcpu_second", "price": 0.00004, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
   { "id": "gcp-seoul-bq-tb-scanned", "product": "bq-tb-scanned", "region": "gcp:asia-northeast3", "unit": "tb_scanned", "price": 6.25, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
   { "id": "aws-seoul-storage", "product": "storage", "region": "aws:ap-northeast-2", "unit": "gb_month", "price": 0.1, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-tokyo-storage", "product": "storage", "region": "aws:ap-northeast-1", "unit": "gb_month", "price": 0.11, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
   { "id": "aws-seoul-egress", "product": "egress", "region": "aws:ap-northeast-2", "unit": "gb", "price": 0.1, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
   { "id": "aws-seoul-transfer", "product": "transfer-interregion", "region": "aws:ap-northeast-2", "unit": "gb_interregion", "price": 0.08, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
   { "id": "aws-tokyo-transfer", "product": "transfer-interregion", "region": "aws:ap-northeast-1", "unit": "gb_interregion", "price": 0.09, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },

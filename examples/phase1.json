@@ -1,5 +1,6 @@
 {
   "name": "1단계 예시 — 설계서 4절 규모(DAU 10만, 프로모션 3배)",
+  "cost": { "region": "aws:ap-northeast-2" },
   "nodes": [
     { "id": "web", "name": "웹 화면", "layer": "ui" },
     {

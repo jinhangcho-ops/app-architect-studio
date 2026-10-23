@@ -20,6 +20,7 @@
     { "name": "드물게", "pattern": "rare", "share": 0.1 },
     { "name": "휴면 직전", "pattern": "dormant", "share": 0.05 }
   ],
+  "cost": { "region": "aws:ap-northeast-2" },
   "nodes": [
     { "id": "web", "name": "웹 화면", "layer": "ui" },
     {

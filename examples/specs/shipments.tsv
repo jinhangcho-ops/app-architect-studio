@@ -1,0 +1,12 @@
+테이블	컬럼	타입	크기	평균 길이	저장 형식	NULL	키·인덱스	설명
+shipments	id	UUID	16		BLOB	N	PK	배송 번호
+shipments	order_id	UUID	16		BLOB	N	idx_order	주문 번호
+shipments	carrier	VARCHAR(40)		12	TEXT(UTF-8)	N		택배사 코드
+shipments	tracking_no	VARCHAR(32)		14	TEXT(UTF-8)	Y	UQ:uq_tracking	송장 번호
+shipments	shipped_at	TIMESTAMP			정수(epoch ms)	Y	idx_shipped:1	출고 시각
+shipments	delivered_at	TIMESTAMP			정수(epoch ms)	Y		배송 완료 시각
+shipment_events	shipment_id	UUID	16		BLOB	N	PK:1	
+shipment_events	seq	INT				N	PK:2	이벤트 순번
+shipment_events	status	VARCHAR(20)		8		N		
+shipment_events	location	VARCHAR(100)		24		Y		
+shipment_events	at	TIMESTAMP			TEXT(ISO)	N		ISO 문자열로 저장

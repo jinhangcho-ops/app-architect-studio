@@ -80,7 +80,7 @@ ${howMetric(a.storage.personaGb)}`}>
 
       <Section title="확장 한계">
         {a.bottleneck
-          ? <p title={howMetric(a.bottleneck.limitUsers)}>첫 병목: <b>{name(a.bottleneck.nodeId)}</b> — 활성 사용자 약 {fmt(a.bottleneck.limitUsers.value)}명에서 안 됨</p>
+          ? <p title={howMetric(a.bottleneck.limitUsers)}>첫 병목: <b>{name(a.bottleneck.nodeId)}</b> — {a.bottleneck.limitUsers.value === 0 ? '지금 구조에서 이미 안 됨' : `활성 사용자 약 ${fmt(a.bottleneck.limitUsers.value)}명에서 안 됨`}</p>
           : <p className="muted">한계를 계산할 노드가 없습니다.</p>}
         {a.growth && <ul>{a.growth.milestones.map((ms) => (
           <li key={ms.nodeId}>{name(ms.nodeId)}: {ms.month === undefined ? '성장해도 닿지 않음' : `${ms.month}개월째 한계, ${ms.startMonth}개월째 착수`}</li>
@@ -106,7 +106,10 @@ ${howMetric(a.storage.personaGb)}`}>
           <table className="metrics"><tbody>
             {Object.entries(a.cost.parts).map(([k, m]) => <Line key={k} label={project.nodes.some((n) => n.id === k) ? name(k) : k} m={m} />)}
           </tbody></table>
-          {a.cost.missing.length > 0 && <p className="warn">가격표에 없음: {a.cost.missing.join(', ')}</p>}
+          {a.cost.missing.length > 0 && <>
+            <p className="warn">계산하지 못한 항목이 있어 합계가 실제보다 작습니다:</p>
+            <ul className="warn">{a.cost.missing.map((x) => <li key={x}>{x}</li>)}</ul>
+          </>}
           {a.cost.stale.length > 0 && <p className="warn">오래된 가격: {a.cost.stale.join(', ')}</p>}
         </>}
       </Section>

@@ -8,7 +8,7 @@
   },
   "personas": [
     { "name": "한국 일반", "pattern": "regular", "share": 0.4, "country": "KR" },
-    { "name": "일본 적극", "pattern": "active", "share": 0.2, "country": "JP" },
+    { "name": "일본 적극", "pattern": "active", "share": 0.2, "country": "JP", "action_rates": { "주문": 0.15 } },
     { "name": "미국 일반", "pattern": "regular", "share": 0.25, "country": "US" },
     { "name": "유럽 가끔", "pattern": "occasional", "share": 0.15, "country": "DE" }
   ],
@@ -34,14 +34,46 @@
     { "id": "N-06", "name": "정산·원장 DB (N-06)", "layer": "db", "primary": "postgresql",
       "extras": ["range_partitioning", "read_replica", "uuidv7_keys"], "replicas": 2, "region": "aws:ap-northeast-1",
       "privacy": { "personal": true, "subjects": ["KR", "JP"] },
-      "vars": { "normal": { "db_connections": 60, "read_ratio": 0.8 }, "event": { "db_connections": 60, "read_ratio": 0.8 } } },
+      "vars": { "normal": { "db_connections": 60, "read_ratio": 0.8 }, "event": { "db_connections": 60, "read_ratio": 0.8 } },
+      "spec": { "vcpu": 2, "memGb": 16 },
+      "tables": [
+        { "name": "orders", "primary_key": ["id"],
+          "columns": [
+            { "name": "id", "type": "uuid" }, { "name": "tenant_id", "type": "int" }, { "name": "user_id", "type": "bigint" },
+            { "name": "currency", "type": "text", "max_length": 3, "avg_bytes": 3 }, { "name": "amount", "type": "numeric" },
+            { "name": "status", "type": "text", "max_length": 20, "avg_bytes": 8 }, { "name": "created_at", "type": "timestamp" }
+          ],
+          "indexes": [{ "name": "idx_tenant_user_time", "columns": ["tenant_id", "user_id", "created_at"] }],
+          "partition": { "column": "created_at", "interval": "month" } },
+        { "name": "ledger_entries", "primary_key": ["id"], "retention_days": 1825,
+          "columns": [
+            { "name": "id", "type": "bigint" }, { "name": "order_id", "type": "uuid" }, { "name": "account", "type": "text", "max_length": 32, "avg_bytes": 12 },
+            { "name": "debit", "type": "numeric" }, { "name": "credit", "type": "numeric" }, { "name": "fx_rate", "type": "float" },
+            { "name": "memo", "type": "text", "max_length": 200, "nullable": true }, { "name": "posted_at", "type": "timestamp" }
+          ],
+          "indexes": [{ "name": "idx_order", "columns": ["order_id"] }, { "name": "idx_account_time", "columns": ["account", "posted_at"] }] }
+      ] },
     { "id": "N-07", "name": "PG·은행 어댑터 허브 (N-07)", "layer": "external", "primary": "async_retry_dlq",
       "extras": ["idempotency_key"], "region": "aws:ap-northeast-2",
       "privacy": { "personal": true, "subjects": ["KR", "JP"], "sends_external": true },
       "vars": { "normal": { "needs_sync_response": false }, "event": { "needs_sync_response": false } } },
     { "id": "N-10", "name": "데이터 레이크하우스 (N-10)", "layer": "analytics", "primary": "databricks",
       "extras": ["iceberg"], "region": "aws:ap-northeast-2",
-      "privacy": { "personal": true, "subjects": ["JP"] } }
+      "privacy": { "personal": true, "subjects": ["JP"] },
+      "tables": [
+        { "name": "events", "retention_days": 730,
+          "columns": [
+            { "name": "event_id", "type": "uuid" }, { "name": "tenant_id", "type": "int" }, { "name": "user_id", "type": "bigint" },
+            { "name": "name", "type": "text", "max_length": 64, "avg_bytes": 16 }, { "name": "props", "type": "json", "avg_bytes": 180 },
+            { "name": "ts", "type": "timestamp" }
+          ],
+          "partition": { "column": "ts", "interval": "day" } }
+      ] }
+  ],
+  "actions": [
+    { "name": "주문", "per_session": 0.08,
+      "writes": [{ "node": "N-06", "table": "orders" }, { "node": "N-06", "table": "ledger_entries", "rows": 2 }, { "node": "N-10", "table": "events", "rows": 3 }] },
+    { "name": "상품 조회 기록", "per_session": 6, "writes": [{ "node": "N-10", "table": "events" }] }
   ],
   "edges": [
     { "from": "N-02", "to": "N-08" },
