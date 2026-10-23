@@ -151,6 +151,13 @@ describe('구동 방식 (16절)', () => {
     expect(a.localMemory!.share!.value).toBeCloseTo(330 / 8000);
     expect(analyze(Project.parse({ name: 'p', deploy: { ...deploy, mode: 'web' }, nodes: [] }), data, '2026-10-24').localMemory).toBeUndefined();
   });
+
+  it('로컬 exe면 서버 계산(트래픽·경로·단일 장애점·비용)이 모두 빠짐', () => {
+    const data = { catalog: catalog.byId, rules: catalog.rules, prices: [] };
+    const a = analyze({ ...example, deploy: { ...example.deploy, mode: 'local_exe' } }, data, '2026-10-24');
+    expect([a.traffic, a.cost, a.bottleneck]).toEqual([undefined, undefined, undefined]);
+    expect([a.paths, a.spof]).toEqual([[], []]);
+  });
 });
 
 describe('노드별 부하 전파', () => {

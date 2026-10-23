@@ -105,7 +105,8 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
   }
 
   // 경로별 p99·가용성, 단일 장애점
-  const paths = syncPaths(p);
+  // 로컬 exe처럼 서버 가용성을 따지지 않는 방식이면 경로·단일 장애점도 만들지 않는다
+  const paths = enabled(p.deploy, 'availability') ? syncPaths(p) : [];
   const p99Normal = new Map(Object.entries(nodes).flatMap(([id, x]) => (x.p99 ? [[id, x.p99.normal] as const] : [])));
   const pathResults: PathAnalysis[] = paths.map((path) => {
     // 화면 노드는 사용자 기기라 서버 가용성 계산에서 뺀다

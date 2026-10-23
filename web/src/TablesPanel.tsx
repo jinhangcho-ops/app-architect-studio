@@ -63,7 +63,7 @@ function TableEditor({ node, t }: { node: ProjectNode; t: Table }) {
       <NumField label="보관 일수" value={t.retention_days} hint="비우면 프로젝트 보관 기간" onChange={(v) => upd({ retention_days: v })} />
       <NumField label="갱신 비율" value={t.update_ratio} step={0.05} hint="쓰기 중 새 행이 아니라 기존 행을 고치는 비율" onChange={(v) => upd({ update_ratio: v ?? 0 })} />
       <Row label="기본 키" hint="쉼표로 구분, 순서대로">
-        <input defaultValue={csv(t.primary_key)} onBlur={(e) => upd({ primary_key: list(e.target.value) })} />
+        <input key={t.primary_key.join()} defaultValue={csv(t.primary_key)} onBlur={(e) => upd({ primary_key: list(e.target.value) })} />
       </Row>
       <Row label="파티션">
         <span className="inline">

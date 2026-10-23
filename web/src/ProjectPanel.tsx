@@ -175,10 +175,11 @@ function LocalMemory() {
     <NumField label="기기 메모리(GB)" value={p.deploy.device_spec?.memGb} onChange={(v) => edit((x) => ({ ...x, deploy: { ...x.deploy, device_spec: { ...x.deploy.device_spec, memGb: v } } }))} />
     <NumField label="런타임(MB)" value={p.deploy.memory?.runtime_mb} hint="Electron·JVM·Python 등 실행 환경 자체" onChange={(v) => setMem({ runtime_mb: v ?? 0 })} />
     <Row label="상시 로드(MB)" hint="시작할 때 올리는 라이브러리, 쉼표로 구분">
-      <input defaultValue={mem.eager_mb.join(', ')} onBlur={(e) => setMem({ eager_mb: nums(e.target.value) })} />
+      {/* 다른 프로젝트를 열면 값이 바뀌므로 key로 칸을 새로 그린다 */}
+      <input key={mem.eager_mb.join()} defaultValue={mem.eager_mb.join(', ')} onBlur={(e) => setMem({ eager_mb: nums(e.target.value) })} />
     </Row>
     <Row label="지연 로드(MB)" hint="필요할 때 올리는 라이브러리, 쉼표로 구분 (가장 큰 하나만 더함)">
-      <input defaultValue={mem.lazy_mb.join(', ')} onBlur={(e) => setMem({ lazy_mb: nums(e.target.value) })} />
+      <input key={mem.lazy_mb.join()} defaultValue={mem.lazy_mb.join(', ')} onBlur={(e) => setMem({ lazy_mb: nums(e.target.value) })} />
     </Row>
     <NumField label="데이터 캐시(MB)" value={p.deploy.memory?.cache_mb} onChange={(v) => setMem({ cache_mb: v })} />
   </>;
