@@ -181,3 +181,45 @@ describe('계산값이 판정으로 연결됨', () => {
     expect(verdict('api').verdict).toBe(t.peakRpsEvent.value > 500 ? 'conditional' : 'ok');
   });
 });
+
+describe('페르소나별 트래픽: 각자의 패턴·비율로 계산하고 더함', () => {
+  it('페르소나 합계가 전체 값과 같고, 1인당 요청은 하루 접속 × 접속당 요청 근처', () => {
+    expect(t.personas.reduce((s, x) => s + x.requests, 0)).toBeCloseTo(t.dailyRequests.value, 0);
+    expect(t.personas.reduce((s, x) => s + x.dau, 0)).toBeCloseTo(t.dau.value, 0);
+    for (const [i, x] of t.personas.entries()) {
+      const pt = patternOf(example.personas[i]);
+      const perPerson = pt.sessions_per_day * (pt.reads_per_session + pt.writes_per_session);
+      // 접속 수는 포아송이라 표준편차 = √기대값. 4σ 안이면 정상 (인원이 적은 페르소나일수록 넓다)
+      const tol = 4 / Math.sqrt(x.people * pt.sessions_per_day);
+      expect(Math.abs(x.requests / x.people / perPerson - 1)).toBeLessThan(tol);
+    }
+  });
+});
+
+describe('행동 → 테이블 행', () => {
+  const table = (name: string) => ({ name, columns: [{ name: 'id', type: 'bigint' }] });
+  const p = Project.parse({
+    name: 'p',
+    scale: { users: 100_000 },
+    personas: [
+      { name: '열성', pattern: 'power', share: 0.2, action_rates: { 주문: 0.5 } },
+      { name: '일반', pattern: 'regular', share: 0.8 },
+    ],
+    nodes: [{ id: 'ui', name: '화면', layer: 'ui' }, { id: 'db', name: 'DB', layer: 'db', tables: [table('orders'), table('items')] }],
+    actions: [{ name: '주문', per_session: 0.1, writes: [{ node: 'db', table: 'orders' }, { node: 'db', table: 'items', rows: 3 }] }],
+  });
+  const tr = traffic(p)!;
+  const near = (v: number, want: number) => { expect(v).toBeGreaterThan(want * 0.97); expect(v).toBeLessThan(want * 1.03); };
+
+  it('열성 2만 명 × 하루 8접속 × 주문 0.5 = 8만 주문, 일반 8만 명 × 1.5 × 0.1 = 1.2만', () => {
+    near(tr.personas[0].rows['db.orders'], 20_000 * 8 * 0.5);
+    near(tr.personas[1].rows['db.orders'], 80_000 * 1.5 * 0.1);
+    near(tr.tables['db.items'].rowsPerDay.value, 3 * (80_000 + 12_000));
+    expect(tr.tables['db.orders'].peakRowsPerSec.value).toBeGreaterThan(tr.tables['db.orders'].rowsPerDay.value / 86_400);
+  });
+
+  it('행동이 있으면 쓰기 요청 = 행동 횟수 (패턴의 접속당 쓰기는 쓰지 않음)', () => {
+    near(tr.personas[0].writes, 20_000 * 8 * 0.5);
+    near(tr.personas[0].requests, 20_000 * 8 * (35 + 0.5));
+  });
+});

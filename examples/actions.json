@@ -1,0 +1,309 @@
+{
+  "name": "행동·테이블 예시 — 3단계 예시 + 주문·리뷰 행동이 orders·order_items·reviews에 쓰기",
+  "deploy": {
+    "mode": "web"
+  },
+  "scale": {
+    "users": 100000,
+    "seed": 1,
+    "report_country": "KR",
+    "window_share": 0.8,
+    "retention_days": 365,
+    "event_multiplier": 3,
+    "overhead_k": 2,
+    "burst": {
+      "share": 0.1,
+      "window_s": 300,
+      "requests": 10
+    }
+  },
+  "personas": [
+    {
+      "name": "핵심 열성",
+      "pattern": "power",
+      "share": 0.05,
+      "action_rates": {
+        "주문": 0.6,
+        "리뷰": 0.1
+      }
+    },
+    {
+      "name": "열성",
+      "pattern": "enthusiast",
+      "share": 0.1,
+      "action_rates": {
+        "주문": 0.4,
+        "리뷰": 0.06
+      }
+    },
+    {
+      "name": "적극",
+      "pattern": "active",
+      "share": 0.2,
+      "action_rates": {
+        "주문": 0.2
+      }
+    },
+    {
+      "name": "일반",
+      "pattern": "regular",
+      "share": 0.3
+    },
+    {
+      "name": "가끔",
+      "pattern": "occasional",
+      "share": 0.2
+    },
+    {
+      "name": "드물게",
+      "pattern": "rare",
+      "share": 0.1
+    },
+    {
+      "name": "휴면 직전",
+      "pattern": "dormant",
+      "share": 0.05
+    }
+  ],
+  "target_utilization": 0.7,
+  "default_availability": 0.999,
+  "cost": {
+    "region": "aws:ap-northeast-2",
+    "storage": "storage",
+    "egress": "egress",
+    "transfer": "transfer-interregion"
+  },
+  "growth": {
+    "monthly_rate": 0.1,
+    "months": 24,
+    "lead_months": 3
+  },
+  "nodes": [
+    {
+      "id": "web",
+      "name": "웹 화면",
+      "layer": "ui"
+    },
+    {
+      "id": "lb",
+      "name": "게이트웨이",
+      "layer": "gateway",
+      "primary": "least_connections",
+      "extras": [
+        "token_bucket"
+      ],
+      "replicas": 2,
+      "vars": {
+        "normal": {
+          "service_time_cv": 1.8
+        },
+        "event": {
+          "service_time_cv": 1.8
+        }
+      }
+    },
+    {
+      "id": "api",
+      "name": "주문 API",
+      "layer": "backend",
+      "primary": "api_autoscale",
+      "perf": {
+        "service_ms": 20,
+        "workers": 8
+      },
+      "spec": {
+        "vcpu": 2,
+        "memGb": 1
+      }
+    },
+    {
+      "id": "db",
+      "name": "주문 DB",
+      "layer": "db",
+      "primary": "postgresql",
+      "replicas": 2,
+      "vars": {
+        "normal": {
+          "db_connections": 60
+        },
+        "event": {
+          "db_connections": 60
+        }
+      },
+      "tables": [
+        {
+          "name": "orders",
+          "columns": [
+            {
+              "name": "id",
+              "type": "uuid"
+            },
+            {
+              "name": "user_id",
+              "type": "bigint"
+            },
+            {
+              "name": "status",
+              "type": "text",
+              "avg_bytes": 8
+            },
+            {
+              "name": "amount",
+              "type": "numeric"
+            },
+            {
+              "name": "created_at",
+              "type": "timestamp"
+            }
+          ],
+          "primary_key": [
+            "id"
+          ],
+          "indexes": [
+            {
+              "name": "idx_user_time",
+              "columns": [
+                "user_id",
+                "created_at"
+              ]
+            }
+          ],
+          "partition": {
+            "column": "created_at",
+            "interval": "month"
+          }
+        },
+        {
+          "name": "order_items",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "uuid"
+            },
+            {
+              "name": "line_no",
+              "type": "int"
+            },
+            {
+              "name": "sku",
+              "type": "text",
+              "avg_bytes": 12
+            },
+            {
+              "name": "qty",
+              "type": "int"
+            },
+            {
+              "name": "price",
+              "type": "numeric"
+            }
+          ],
+          "primary_key": [
+            "order_id",
+            "line_no"
+          ]
+        },
+        {
+          "name": "reviews",
+          "columns": [
+            {
+              "name": "id",
+              "type": "bigint"
+            },
+            {
+              "name": "order_id",
+              "type": "uuid"
+            },
+            {
+              "name": "body",
+              "type": "text",
+              "max_length": 2000,
+              "avg_bytes": 300
+            },
+            {
+              "name": "created_at",
+              "type": "timestamp"
+            }
+          ],
+          "primary_key": [
+            "id"
+          ],
+          "indexes": [
+            {
+              "name": "idx_order",
+              "columns": [
+                "order_id"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "worker",
+      "name": "정산 워커",
+      "layer": "batch",
+      "primary": "on_demand_worker",
+      "min_instances": 0,
+      "vars": {
+        "normal": {
+          "cold_start_s": 20,
+          "max_start_delay_s": 300
+        },
+        "event": {
+          "cold_start_s": 20,
+          "max_start_delay_s": 300
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "web",
+      "to": "lb"
+    },
+    {
+      "from": "lb",
+      "to": "api",
+      "rtt_ms": 1
+    },
+    {
+      "from": "api",
+      "to": "db",
+      "rtt_ms": 1
+    },
+    {
+      "from": "worker",
+      "to": "db",
+      "carries": "write",
+      "sync": false
+    }
+  ],
+  "actions": [
+    {
+      "name": "주문",
+      "per_session": 0.1,
+      "writes": [
+        {
+          "node": "db",
+          "table": "orders"
+        },
+        {
+          "node": "db",
+          "table": "order_items",
+          "rows": 3
+        }
+      ]
+    },
+    {
+      "name": "리뷰",
+      "per_session": 0.02,
+      "writes": [
+        {
+          "node": "db",
+          "table": "reviews"
+        }
+      ]
+    }
+  ]
+}

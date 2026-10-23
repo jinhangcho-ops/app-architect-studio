@@ -356,6 +356,7 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
   const actionNames = new Set(p.actions.map((a) => a.name));
   for (const ps of p.personas) {
     for (const k of Object.keys(ps.action_rates)) if (!actionNames.has(k)) errors.push(`페르소나 ${ps.name}: 없는 행동 ${k}`);
+    if (p.actions.length && ps.writes_per_session !== undefined) errors.push(`페르소나 ${ps.name}: 행동이 있으면 쓰기 수는 행동 빈도로 정해짐 (writes_per_session 대신 action_rates)`);
   }
   return errors;
 }

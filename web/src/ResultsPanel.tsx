@@ -1,4 +1,5 @@
 import type { Analysis } from '../../engine/analyze';
+import type { Traffic } from '../../engine/traffic';
 import type { Metric } from '../../engine/model';
 import { catalog } from './data';
 import { Section } from './fields';
@@ -30,6 +31,20 @@ export function ResultsPanel({ analysis: a }: { analysis?: Analysis }) {
           <Line label="하루 송신" m={t.egressGbPerDay} />
         </tbody></table>}
       </Section>
+
+      {t && t.personas.length > 0 && <Section title="페르소나별 하루 트래픽">
+        <PersonaTable t={t} />
+        <p className="muted">페르소나마다 자기 패턴·비율로 무작위 하루를 계산해 더합니다. 1인당 = 합계 ÷ 인원(그날 안 들어온 사람 포함).</p>
+        {Object.keys(t.tables).length > 0 && <table className="metrics"><tbody>
+          {Object.entries(t.tables).map(([k, x]) => (
+            <tr key={k} title={`${howMetric(x.rowsPerDay)}
+
+${howMetric(x.peakRowsPerSec)}`}>
+              <td>{k}</td><td>{fmtMetric(x.rowsPerDay)} · 피크 {fmtMetric(x.peakRowsPerSec)}</td>
+            </tr>
+          ))}
+        </tbody></table>}
+      </Section>}
 
       <Section title="확장 한계">
         {a.bottleneck
@@ -93,5 +108,38 @@ export function ResultsPanel({ analysis: a }: { analysis?: Analysis }) {
         )))}
       </Section>
     </div>
+  );
+}
+
+/** 페르소나별 1인당·합계, 마지막 줄은 전체 합 */
+function PersonaTable({ t }: { t: Traffic }) {
+  const rows = (x: Traffic['personas'][number]) => Object.values(x.rows).reduce((s, v) => s + v, 0);
+  const total = t.personas.reduce((s, x) => ({ people: s.people + x.people, requests: s.requests + x.requests, rows: s.rows + rows(x), mb: s.mb + x.responseKb / 1000 }),
+    { people: 0, requests: 0, rows: 0, mb: 0 });
+  const hasRows = total.rows > 0;
+  return (
+    <div className="plans"><table>
+      <thead><tr>
+        <th>페르소나</th><th>비율</th><th>인원</th><th>1인당 요청</th><th>요청 합계</th>
+        {hasRows && <><th>1인당 쓰기 행</th><th>쓰기 행 합계</th></>}
+        <th>1인당 응답</th>
+      </tr></thead>
+      <tbody>
+        {t.personas.map((x) => (
+          <tr key={x.name}>
+            <td>{x.name}</td><td>{Math.round(x.share * 100)}%</td><td>{fmt(x.people)}</td>
+            <td>{fmt(x.requests / x.people)}</td><td>{fmt(x.requests)}</td>
+            {hasRows && <><td>{fmt(rows(x) / x.people)}</td><td>{fmt(rows(x))}</td></>}
+            <td>{fmt(x.responseKb / x.people)} KB</td>
+          </tr>
+        ))}
+        <tr className="metric-row">
+          <td>합계</td><td>100%</td><td>{fmt(total.people)}</td>
+          <td>{fmt(total.requests / total.people)}</td><td>{fmt(total.requests)}</td>
+          {hasRows && <><td>{fmt(total.rows / total.people)}</td><td>{fmt(total.rows)}</td></>}
+          <td>{fmt((total.mb * 1000) / total.people)} KB</td>
+        </tr>
+      </tbody>
+    </table></div>
   );
 }

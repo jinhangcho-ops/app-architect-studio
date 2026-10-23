@@ -52,7 +52,35 @@ export type Traffic = {
   inWindowShare: Metric;
   /** 기준 나라 표준시 0~23시별 RPS (평소) */
   hourlyRps: number[];
+  /** 페르소나별 하루 합계 (무작위 하루). 1인당 값 = 합계 / people */
+  personas: PersonaTraffic[];
+  /** 행동이 쓰는 테이블('노드.테이블')별 하루 행 수와 피크 1시간의 초당 행 */
+  tables: Record<string, { rowsPerDay: Metric; peakRowsPerSec: Metric }>;
 };
+
+export type PersonaTraffic = {
+  name: string;
+  share: number;
+  /** 활성 사용자 × 비율 */
+  people: number;
+  dau: number;
+  sessions: number;
+  requests: number;
+  writes: number;
+  responseKb: number;
+  /** 테이블('노드.테이블')별 하루 쓰기 행 */
+  rows: Record<string, number>;
+};
+
+/** 접속 1회당 테이블별 쓰기 행: Σ 행동 빈도(페르소나 값 우선) × 행동 1회의 행 수 */
+export function rowsPerSession(p: Project, ps: Persona): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const a of p.actions) {
+    const rate = ps.action_rates[a.name] ?? a.per_session;
+    for (const w of a.writes) out.set(`${w.node}.${w.table}`, (out.get(`${w.node}.${w.table}`) ?? 0) + rate * w.rows);
+  }
+  return out;
+}
 
 /** mulberry32: 작고 빠른 시드 고정 난수 */
 function rng(seed: number) {
@@ -103,6 +131,8 @@ export function traffic(p: Project): Traffic | undefined {
   const hourWrite = Array<number>(24).fill(0);
   const hourUserSec = Array<number>(24).fill(0);
   let dau = 0, sessions = 0, inWindow = 0, writeKb = 0, respKb = 0;
+  const personas: PersonaTraffic[] = [];
+  const tableHour = new Map<string, number[]>();
 
   for (const ps of p.personas) {
     const pt = patternOf(ps);
@@ -115,12 +145,18 @@ export function traffic(p: Project): Traffic | undefined {
     const mu = a + span / 2, sigma = span / (2 * ps.window_sigma);
     const shift = reportOffset - utcOffset(ps.country, ps.utc_offset); // 현지 시각 + shift = 기준 나라 시각
     const share = ps.window_share ?? p.scale.window_share;
-    const reqPer = hybrid ? pt.sync_per_session : pt.reads_per_session + pt.writes_per_session;
-    const writePer = hybrid ? pt.sync_per_session : pt.writes_per_session;
+    // 행동이 있으면 쓰기 요청 = 행동 횟수(행동 1회 = 쓰기 요청 1건). 패턴의 writes_per_session은 쓰지 않는다
+    const actionWrites = p.actions.reduce((s, a) => s + (ps.action_rates[a.name] ?? a.per_session), 0);
+    const writes = p.actions.length ? actionWrites : pt.writes_per_session;
+    const reqPer = hybrid ? pt.sync_per_session : pt.reads_per_session + writes;
+    const writePer = hybrid ? pt.sync_per_session : writes;
+    const rowsPer = [...rowsPerSession(p, ps)];
+    for (const [k] of rowsPer) if (!tableHour.has(k)) tableHour.set(k, Array<number>(24).fill(0));
+    const me: PersonaTraffic = { name: ps.name, share: ps.share, people: n, dau: 0, sessions: 0, requests: 0, writes: 0, responseKb: 0, rows: {} };
 
     for (let i = 0; i < sim; i++) {
       const kk = poisson(r, pt.sessions_per_day);
-      if (kk) dau += scale;
+      if (kk) { dau += scale; me.dau += scale; }
       for (let j = 0; j < kk; j++) {
         let local: number;
         if (span === 24 || r() < share) {
@@ -140,8 +176,15 @@ export function traffic(p: Project): Traffic | undefined {
         sessions += scale;
         writeKb += writePer * pt.write_kb * scale;
         respKb += reqPer * pt.response_kb * scale;
+        me.sessions += scale;
+        for (const [k, rows] of rowsPer) tableHour.get(k)![h] += rows * scale;
       }
     }
+    me.requests = me.sessions * reqPer;
+    me.writes = me.sessions * writePer;
+    me.responseKb = me.requests * pt.response_kb;
+    me.rows = Object.fromEntries(rowsPer.map(([k, rows]) => [k, me.sessions * rows]));
+    personas.push(me);
   }
 
   const sum = (xs: number[]) => xs.reduce((s, x) => s + x, 0);
@@ -177,5 +220,13 @@ export function traffic(p: Project): Traffic | undefined {
       { 피크RPS: peakRps * ev, 평균응답KB: avgRespKb }),
     inWindowShare: m(sessions ? inWindow / sessions : 0, '비율', '현지 시간대 창 안에 들어온 접속 비율', { 접속: sessions }),
     hourlyRps: hourReq.map((x) => x / 3600),
+    personas,
+    tables: Object.fromEntries([...tableHour].map(([k, hours]) => {
+      const day = sum(hours), peak = Math.max(...hours) / 3600;
+      return [k, {
+        rowsPerDay: m(day, '행/일', 'Σ 페르소나 접속 × 접속당 행동 빈도 × 행동 1회 행 수 (무작위 하루)', { 페르소나: personas.length }),
+        peakRowsPerSec: m(peak, '행/초', '피크 1시간 행 / 3,600', { 피크1시간행: peak * 3600 }),
+      }];
+    })),
   };
 }

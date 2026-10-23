@@ -34,9 +34,10 @@ try {
       ['이벤트 피크 대역폭', 'bandwidthMbpsEvent'],
     ];
     for (const [label, key] of rows) {
-      const mt = t[key];
-      if (mt && !Array.isArray(mt)) console.log(`  ${label}: ${show(mt)}`);
+      const mt = t[key] as Metric | undefined;
+      if (mt) console.log(`  ${label}: ${show(mt)}`);
     }
+    for (const [k, x] of Object.entries(t.tables)) console.log(`  테이블 ${k}: ${show(x.rowsPerDay)}, 피크 ${show(x.peakRowsPerSec)}`);
   } else {
     const why = project.deploy.mode === 'local_exe' ? '로컬 exe라 서버 트래픽 없음' : '규모(scale)·페르소나가 없어 계산하지 않음';
     console.log(`(트래픽: ${why})`);
