@@ -12,6 +12,7 @@
       { "id": "nats_jetstream", "better_for": ["운영 난이도"], "note": "단일 바이너리" },
       { "id": "redpanda", "better_for": ["운영 난이도", "지연시간"], "note": "Kafka API 호환" }
     ],
+    "billing": {"model": "provisioned", "products": {"instance": "broker-node"}},
     "sources": ["https://kafka.apache.org/41/getting-started/upgrade/", "https://www.infoq.com/news/2025/04/kafka-4-kraft-architecture"]
   },
   {
@@ -23,6 +24,7 @@
     "goals": { "지연시간": "좋음", "운영 난이도": "좋음", "비용": "보통" },
     "works_when": [{ "if": "true", "why": "Kafka 클라이언트·도구를 그대로 쓰면서 운영 부담을 줄일 수 있습니다" }],
     "alternatives": [{ "id": "kafka", "better_for": ["안정성"], "note": "커뮤니티·생태계가 가장 큼" }],
+    "billing": {"model": "provisioned", "products": {"instance": "broker-node"}},
     "sources": ["https://docs.redpanda.com/current/get-started/architecture/"]
   },
   {
@@ -34,6 +36,7 @@
     "goals": { "운영 난이도": "보통", "지연시간": "좋음", "확장성": "보통" },
     "works_when": [{ "if": "true", "why": "작업 큐·우선순위·라우팅 규칙이 처리량보다 중요할 때 잘 맞습니다" }],
     "alternatives": [{ "id": "kafka", "better_for": ["확장성"], "note": "대량 이벤트 보관·재처리" }],
+    "billing": {"model": "provisioned", "products": {"instance": "broker-node"}},
     "sources": ["https://www.rabbitmq.com/docs/streams"]
   },
   {
@@ -45,6 +48,7 @@
     "goals": { "운영 난이도": "좋음", "지연시간": "좋음", "확장성": "보통" },
     "works_when": [{ "if": "true", "why": "여러 메시징 요구를 부품 하나로 해결하고 운영을 가볍게 하고 싶을 때 좋습니다" }],
     "alternatives": [{ "id": "kafka", "better_for": ["확장성"], "note": "지속적인 대량 처리량" }],
+    "billing": {"model": "provisioned", "products": {"instance": "broker-node"}},
     "sources": ["https://docs.nats.io/compare-nats", "https://docs.nats.io/nats-concepts/jetstream"]
   },
   {
@@ -57,6 +61,7 @@
     "works_when": [{ "if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "브로커를 운영하지 않고 작업 큐를 바로 쓸 수 있습니다" }],
     "fails_when": [{ "if": "offline_required == true", "why": "AWS에서만 동작하는 관리형 서비스입니다" }],
     "alternatives": [{ "id": "rabbitmq", "better_for": ["오프라인"], "note": "직접 운영 가능" }],
+    "billing": {"model": "usage", "products": {"million_requests": "sqs-requests"}},
     "sources": ["https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/welcome.html"]
   },
   {
@@ -68,6 +73,7 @@
     "goals": { "안정성": "좋음", "운영 난이도": "보통", "비용": "보통" },
     "works_when": [{ "if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "결제·정산처럼 며칠에 걸친 여러 단계를 실패 없이 끝내야 할 때 맞습니다" }],
     "alternatives": [{ "id": "k8s_cronjob", "better_for": ["운영 난이도"], "note": "단순 주기 작업" }],
+    "billing": {"model": "provisioned", "products": {"instance": "vm-2vcpu"}},
     "sources": ["https://docs.temporal.io/temporal"]
   },
   {
@@ -79,6 +85,7 @@
     "goals": { "운영 난이도": "좋음", "비용": "좋음", "안정성": "보통" },
     "works_when": [{ "if": "idle_ratio > 0.5", "why": "하루 대부분 쉬는 작업이라 필요할 때만 띄우면 자원을 아낍니다" }],
     "alternatives": [{ "id": "temporal", "better_for": ["안정성"], "note": "여러 단계·재시도가 복잡할 때" }],
+    "billing": {"model": "provisioned", "products": {"instance": "vm-2vcpu"}},
     "sources": ["https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/"]
   },
   {
@@ -90,6 +97,7 @@
     "goals": { "지연시간": "좋음", "확장성": "좋음", "운영 난이도": "나쁨" },
     "works_when": [{ "if": "required_freshness_s < 60", "why": "결과를 {required_freshness_s}초 안에 반영해야 해 배치보다 스트림 처리가 맞습니다" }],
     "alternatives": [{ "id": "kafka_micro_batch", "better_for": ["비용", "운영 난이도"], "note": "분 단위 지연이 괜찮을 때" }],
+    "billing": {"model": "provisioned", "products": {"instance": "vm-2vcpu"}},
     "sources": ["https://nightlies.apache.org/flink/flink-docs-stable/docs/concepts/overview/"]
   }
 ]

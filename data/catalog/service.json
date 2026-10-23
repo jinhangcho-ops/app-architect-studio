@@ -49,6 +49,7 @@
       "write_rps": { "value": 2000, "unit": "건/초", "base_spec": { "vcpu": 2 }, "bound_by": "vcpu", "source": "예시값(설계서 8절) — 실측·공식 자료로 교체 필요" },
       "max_connections": { "value": 100, "unit": "개", "source": "PostgreSQL max_connections 기본값" }
     },
+    "billing": {"model": "provisioned", "products": {"instance": "db-2vcpu"}},
     "sources": ["https://www.postgresql.org/docs/current/runtime-config-connection.html"]
   },
   {
@@ -82,6 +83,7 @@
       { "name": "서버리스 환경에서는 연결 풀러 사용", "goal": "동시성" }
     ],
     "thresholds": { "connections": { "value": null, "unit": "개", "source": "컴퓨트 크기별 값 — Supabase 문서에서 기준일과 함께 입력 필요" } },
+    "billing": {"model": "plan", "products": {"month": "supabase-pro"}},
     "sources": ["https://supabase.com/docs"]
   },
   {
@@ -126,6 +128,7 @@
       "rps": { "value": 500, "unit": "RPS", "base_spec": { "vcpu": 2 }, "bound_by": "vcpu", "source": "예시값(설계서 8절) — 실측으로 교체 필요" },
       "max_instances": { "value": 1, "unit": "대", "source": "이 패턴의 정의(서버 1대)" }
     },
+    "billing": {"model": "provisioned", "products": {"instance": "vm-2vcpu"}},
     "sources": ["설계서 8절"]
   },
   {
@@ -139,6 +142,7 @@
       "rps": { "value": 500, "unit": "RPS", "base_spec": { "vcpu": 2 }, "bound_by": "vcpu", "source": "예시값(설계서 8절) — 실측으로 교체 필요" },
       "max_instances": { "value": 20, "unit": "대", "source": "예시값 — 예산·할당량에 맞게 입력" }
     },
+    "billing": {"model": "provisioned", "products": {"instance": "vm-2vcpu"}},
     "sources": ["설계서 8절"]
   },
   {
@@ -150,6 +154,7 @@
     "works_when": [{ "if": "read_ratio >= th.min_read_ratio", "why": "읽기 비율 {read_ratio}로 같은 데이터를 반복 조회해 캐시 효과가 큽니다" }],
     "fails_when": [{ "if": "read_ratio < th.min_read_ratio", "why": "읽기 비율 {read_ratio}가 낮아 캐시에 맞는 요청이 적고 데이터 불일치만 늘어납니다" }],
     "thresholds": { "min_read_ratio": { "value": 0.5, "unit": "비율", "source": "예시값 — 실측 적중률로 교체 필요" } },
+    "billing": {"model": "provisioned", "products": {"instance": "cache-node"}},
     "sources": ["설계서 v2 규칙 3(DB 구간)"]
   },
   {
@@ -203,6 +208,7 @@
     "fails_when": [{ "if": "idle_ratio > th.idle_ratio_max", "why": "하루의 {idle_ratio} 비율을 놀고 있어 상시 켜두면 자원과 비용을 낭비합니다" }],
     "alternatives": [{ "id": "on_demand_worker", "better_for": ["비용", "메모리"] }],
     "thresholds": { "idle_ratio_max": { "value": 0.8, "unit": "비율", "source": "예시값 — 설계에 맞게 입력" } },
+    "billing": {"model": "provisioned", "products": {"instance": "vm-2vcpu"}},
     "sources": ["설계서 v2 규칙 7"]
   },
   {
@@ -213,6 +219,7 @@
     "goals": { "비용": "좋음", "메모리": "좋음", "지연시간": "나쁨" },
     "fails_when": [{ "if": "cold_start_s > max_start_delay_s", "why": "켜지는 데 {cold_start_s}초가 걸려 허용 지연 {max_start_delay_s}초를 넘습니다" }],
     "alternatives": [{ "id": "always_on_worker", "better_for": ["지연시간"] }],
+    "billing": {"model": "provisioned", "products": {"instance": "vm-2vcpu"}},
     "sources": ["설계서 v2 규칙 7"]
   }
 ]

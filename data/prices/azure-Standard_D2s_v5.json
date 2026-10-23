@@ -6,7 +6,8 @@
     "price": 0.118,
     "currency": "USD",
     "as_of": "2026-10-23",
-    "source": "https://prices.azure.com/api/retail/prices?%24filter=serviceName+eq+%27Virtual+Machines%27+and+armRegionName+eq+%27koreacentral%27+and+armSkuName+eq+%27Standard_D2s_v5%27+and+priceType+eq+%27Consumption%27"
+    "source": "https://prices.azure.com/api/retail/prices?%24filter=serviceName+eq+%27Virtual+Machines%27+and+armRegionName+eq+%27koreacentral%27+and+armSkuName+eq+%27Standard_D2s_v5%27+and+priceType+eq+%27Consumption%27",
+    "product": "vm-2vcpu"
   },
   {
     "id": "azure-japaneast-Standard_D2s_v5",
@@ -15,6 +16,7 @@
     "price": 0.124,
     "currency": "USD",
     "as_of": "2026-10-23",
-    "source": "https://prices.azure.com/api/retail/prices?%24filter=serviceName+eq+%27Virtual+Machines%27+and+armRegionName+eq+%27japaneast%27+and+armSkuName+eq+%27Standard_D2s_v5%27+and+priceType+eq+%27Consumption%27"
+    "source": "https://prices.azure.com/api/retail/prices?%24filter=serviceName+eq+%27Virtual+Machines%27+and+armRegionName+eq+%27japaneast%27+and+armSkuName+eq+%27Standard_D2s_v5%27+and+priceType+eq+%27Consumption%27",
+    "product": "vm-2vcpu"
   }
 ]

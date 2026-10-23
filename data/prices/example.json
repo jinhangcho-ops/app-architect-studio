@@ -1,7 +1,21 @@
 [
-  { "id": "aws-seoul-api-2vcpu", "region": "aws:ap-northeast-2", "unit": "hour", "price": 0.1, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
-  { "id": "aws-seoul-db-2vcpu", "region": "aws:ap-northeast-2", "unit": "hour", "price": 0.2, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
-  { "id": "aws-seoul-storage", "region": "aws:ap-northeast-2", "unit": "gb_month", "price": 0.1, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
-  { "id": "aws-seoul-egress", "region": "aws:ap-northeast-2", "unit": "gb", "price": 0.1, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
-  { "id": "supabase-tokyo-pro", "region": "supabase:ap-northeast-1", "unit": "month", "price": 25, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" }
+  { "id": "aws-seoul-api-2vcpu", "product": "vm-2vcpu", "region": "aws:ap-northeast-2", "unit": "hour", "price": 0.1, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-tokyo-vm-2vcpu", "product": "vm-2vcpu", "region": "aws:ap-northeast-1", "unit": "hour", "price": 0.105, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-seoul-db-2vcpu", "product": "db-2vcpu", "region": "aws:ap-northeast-2", "unit": "hour", "price": 0.2, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-tokyo-db-2vcpu", "product": "db-2vcpu", "region": "aws:ap-northeast-1", "unit": "hour", "price": 0.21, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-seoul-cache-node", "product": "cache-node", "region": "aws:ap-northeast-2", "unit": "hour", "price": 0.05, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-seoul-broker-node", "product": "broker-node", "region": "aws:ap-northeast-2", "unit": "hour", "price": 0.12, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-seoul-fn-gb-second", "product": "fn-gb-second", "region": "aws:ap-northeast-2", "unit": "gb_second", "price": 0.0000167, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-seoul-fn-requests", "product": "fn-requests", "region": "aws:ap-northeast-2", "unit": "million_requests", "price": 0.2, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-seoul-sqs-requests", "product": "sqs-requests", "region": "aws:ap-northeast-2", "unit": "million_requests", "price": 0.4, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-seoul-dynamodb-requests", "product": "dynamodb-requests", "region": "aws:ap-northeast-2", "unit": "million_requests", "price": 1.25, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-seoul-edge-requests", "product": "edge-requests", "region": "aws:ap-northeast-2", "unit": "million_requests", "price": 0.3, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-seoul-neon-compute", "product": "neon-compute", "region": "aws:ap-northeast-2", "unit": "vcpu_second", "price": 0.00004, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "gcp-seoul-bq-tb-scanned", "product": "bq-tb-scanned", "region": "gcp:asia-northeast3", "unit": "tb_scanned", "price": 6.25, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-seoul-storage", "product": "storage", "region": "aws:ap-northeast-2", "unit": "gb_month", "price": 0.1, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-seoul-egress", "product": "egress", "region": "aws:ap-northeast-2", "unit": "gb", "price": 0.1, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-seoul-transfer", "product": "transfer-interregion", "region": "aws:ap-northeast-2", "unit": "gb_interregion", "price": 0.08, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "aws-tokyo-transfer", "product": "transfer-interregion", "region": "aws:ap-northeast-1", "unit": "gb_interregion", "price": 0.09, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "supabase-seoul-pro", "product": "supabase-pro", "region": "supabase:ap-northeast-2", "unit": "month", "price": 25, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" },
+  { "id": "supabase-tokyo-pro", "product": "supabase-pro", "region": "supabase:ap-northeast-1", "unit": "month", "price": 25, "currency": "USD", "as_of": "2026-10-23", "source": "예시 — 실제 가격 아님 (형식 확인용)" }
 ]

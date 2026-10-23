@@ -11,6 +11,7 @@
       { "id": "go_service", "better_for": ["메모리", "속도"] },
       { "id": "node_fastify", "better_for": ["운영 난이도"] }
     ],
+    "billing": {"model": "provisioned", "products": {"instance": "vm-2vcpu"}},
     "sources": ["https://docs.spring.io/spring-boot/index.html"]
   },
   {
@@ -23,6 +24,7 @@
     "works_when": [{ "if": "true", "why": "DB·외부 API를 기다리는 I/O 위주 요청에서 적은 자원으로 동시 처리가 많습니다" }],
     "settings": [{ "name": "무거운 계산은 워커 스레드나 별도 작업으로 분리", "goal": "지연시간" }],
     "alternatives": [{ "id": "go_service", "better_for": ["속도"], "note": "CPU 계산이 많을 때" }],
+    "billing": {"model": "provisioned", "products": {"instance": "vm-2vcpu"}},
     "sources": ["https://fastify.dev/docs/latest/", "https://docs.nestjs.com/"]
   },
   {
@@ -34,6 +36,7 @@
     "goals": { "메모리": "좋음", "속도": "좋음", "운영 난이도": "보통" },
     "works_when": [{ "if": "true", "why": "적은 메모리로 높은 처리량과 빠른 시작을 얻을 수 있습니다" }],
     "alternatives": [{ "id": "spring_boot", "better_for": ["안정성"], "note": "기업용 기능이 많이 필요할 때" }],
+    "billing": {"model": "provisioned", "products": {"instance": "vm-2vcpu"}},
     "sources": ["https://go.dev/doc/"]
   },
   {
@@ -45,6 +48,7 @@
     "goals": { "운영 난이도": "좋음", "속도": "보통", "메모리": "보통" },
     "works_when": [{ "if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "데이터 분석·AI 모델을 그대로 API로 감싸기 쉽습니다" }],
     "alternatives": [{ "id": "go_service", "better_for": ["속도", "메모리"] }],
+    "billing": {"model": "provisioned", "products": {"instance": "vm-2vcpu"}},
     "sources": ["https://fastapi.tiangolo.com/"]
   },
   {
@@ -64,6 +68,7 @@
       { "id": "connection_pooler", "better_for": ["동시성"], "note": "DB 연결 문제일 때" }
     ],
     "thresholds": { "max_connections": { "value": 100, "unit": "개", "source": "PostgreSQL max_connections 기본값" } },
+    "billing": {"model": "usage", "products": {"gb_second": "fn-gb-second", "million_requests": "fn-requests"}},
     "sources": ["https://docs.aws.amazon.com/lambda/latest/dg/welcome.html", "https://cloud.google.com/run/docs/overview/what-is-cloud-run"]
   },
   {
@@ -76,6 +81,7 @@
     "works_when": [{ "if": "deploy_mode == 'web' or deploy_mode == 'mobile'", "why": "인증·라우팅·개인화처럼 가벼운 처리를 사용자 가까이에서 끝낼 수 있습니다" }],
     "fails_when": [{ "if": "offline_required == true or deploy_mode == 'local_exe'", "why": "엣지 클라우드에서만 실행됩니다" }],
     "alternatives": [{ "id": "serverless_functions", "better_for": ["확장성"], "note": "긴 처리나 무거운 라이브러리" }],
+    "billing": {"model": "usage", "products": {"million_requests": "edge-requests"}},
     "sources": ["https://developers.cloudflare.com/workers/platform/limits/"]
   },
   {
@@ -99,6 +105,7 @@
     "fails_when": [{ "if": "read_ratio < th.min_read_ratio", "why": "읽기 비율 {read_ratio}가 낮아 캐시 효과보다 데이터 불일치 부담이 큽니다" }],
     "alternatives": [{ "id": "redis8", "better_for": ["확장성"], "note": "벡터 셋 등 Redis 8 기능이 필요할 때" }],
     "thresholds": { "min_read_ratio": { "value": 0.5, "unit": "비율", "source": "예시값 — 실측 적중률로 교체 필요" } },
+    "billing": {"model": "provisioned", "products": {"instance": "cache-node"}},
     "sources": ["https://valkey.io/", "https://linux.slashdot.org/story/24/03/28/213213/linux-foundation-launches-valkey-as-a-redis-fork"]
   },
   {
@@ -113,6 +120,7 @@
     "settings": [{ "name": "AGPL 의무 확인(수정한 Redis를 서비스로 제공하는 경우)", "goal": "안정성" }],
     "alternatives": [{ "id": "valkey", "better_for": ["비용"], "note": "BSD 라이선스" }],
     "thresholds": { "min_read_ratio": { "value": 0.5, "unit": "비율", "source": "예시값 — 실측 적중률로 교체 필요" } },
+    "billing": {"model": "provisioned", "products": {"instance": "cache-node"}},
     "sources": ["https://redis.io/docs/latest/", "https://www.thestack.technology/redis-reverts-to-open-source/"]
   },
   {
@@ -126,6 +134,7 @@
     "fails_when": [{ "if": "read_ratio < th.min_read_ratio", "why": "읽기 비율 {read_ratio}가 낮아 캐시 효과가 적습니다" }],
     "alternatives": [{ "id": "valkey", "better_for": ["안정성"], "note": "영속성·자료구조가 필요할 때" }],
     "thresholds": { "min_read_ratio": { "value": 0.5, "unit": "비율", "source": "예시값 — 실측 적중률로 교체 필요" } },
+    "billing": {"model": "provisioned", "products": {"instance": "cache-node"}},
     "sources": ["https://memcached.org/about"]
   }
 ]

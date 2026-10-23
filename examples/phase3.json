@@ -22,7 +22,7 @@
   ],
   "target_utilization": 0.7,
   "default_availability": 0.999,
-  "cost": { "storage": "aws-seoul-storage", "egress": "aws-seoul-egress" },
+  "cost": { "region": "aws:ap-northeast-2", "storage": "storage", "egress": "egress", "transfer": "transfer-interregion" },
   "growth": { "monthly_rate": 0.1, "months": 24, "lead_months": 3 },
   "nodes": [
     { "id": "web", "name": "웹 화면", "layer": "ui" },
@@ -33,12 +33,10 @@
     },
     {
       "id": "api", "name": "주문 API", "layer": "backend", "primary": "api_autoscale",
-      "perf": { "service_ms": 20, "workers": 8 },
-      "price": "aws-seoul-api-2vcpu"
+      "perf": { "service_ms": 20, "workers": 8 }, "spec": { "vcpu": 2, "memGb": 1 }
     },
     {
       "id": "db", "name": "주문 DB", "layer": "db", "primary": "postgresql", "replicas": 2,
-      "price": "aws-seoul-db-2vcpu",
       "vars": { "normal": { "db_connections": 60 }, "event": { "db_connections": 60 } }
     },
     {

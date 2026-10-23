@@ -42,7 +42,8 @@ function metricsOf(a: Analysis): PlanMetrics {
   const p99s = a.paths.flatMap((x) => (x.p99 ? [x.p99.value] : []));
   const avs = a.paths.map((x) => x.availability.value);
   return {
-    cost: a.cost?.total?.value,
+    // 계량값이나 가격이 빠진 조합은 합계가 실제보다 작게 나오므로 비용을 '모름'으로 둔다
+    cost: a.cost && !a.cost.missing.length ? a.cost.total?.value : undefined,
     limitUsers: a.bottleneck?.limitUsers.value,
     p99: p99s.length ? Math.max(...p99s) : undefined,
     availability: avs.length ? Math.min(...avs) : undefined,

@@ -10,6 +10,7 @@
     "fails_when": [{ "if": "offline_required == true", "why": "클라우드에서만 동작하는 관리형 서비스입니다" }],
     "settings": [{ "name": "웨어하우스 자동 일시정지(짧게)", "goal": "비용" }],
     "alternatives": [{ "id": "duckdb", "better_for": ["비용", "오프라인"], "note": "데이터가 한 대에 들어갈 때" }],
+    "billing": {"model": "plan", "products": {"month": "snowflake-warehouse"}},
     "sources": ["https://docs.snowflake.com/en/user-guide/warehouses-overview"]
   },
   {
@@ -22,6 +23,7 @@
     "works_when": [{ "if": "deploy_mode == 'web' or deploy_mode == 'server'", "why": "대용량 정제와 AI 학습을 같은 데이터에서 해야 할 때 맞습니다" }],
     "fails_when": [{ "if": "offline_required == true", "why": "클라우드에서만 동작하는 관리형 서비스입니다" }],
     "alternatives": [{ "id": "snowflake", "better_for": ["운영 난이도"], "note": "SQL·BI 위주일 때" }],
+    "billing": {"model": "plan", "products": {"month": "databricks-workspace"}},
     "sources": ["https://docs.databricks.com/aws/en/lakehouse/"]
   },
   {
@@ -35,6 +37,7 @@
     "fails_when": [{ "if": "offline_required == true", "why": "클라우드에서만 동작하는 관리형 서비스입니다" }],
     "settings": [{ "name": "파티션·클러스터링으로 읽는 양 줄이기", "goal": "비용" }],
     "alternatives": [{ "id": "clickhouse", "better_for": ["지연시간"], "note": "실시간 대시보드" }],
+    "billing": {"model": "usage", "products": {"tb_scanned": "bq-tb-scanned"}},
     "sources": ["https://cloud.google.com/bigquery/docs/introduction"]
   },
   {
@@ -46,6 +49,7 @@
     "goals": { "지연시간": "좋음", "속도": "좋음", "운영 난이도": "보통" },
     "works_when": [{ "if": "true", "why": "로그·이벤트를 몇 초 안에 집계해 보여줘야 할 때 맞습니다" }],
     "alternatives": [{ "id": "bigquery", "better_for": ["운영 난이도"], "note": "서버 관리 없이" }],
+    "billing": {"model": "provisioned", "products": {"instance": "db-2vcpu"}},
     "sources": ["https://clickhouse.com/docs/intro", "https://clickhouse.com/blog/google-lakehouse-runtime"]
   },
   {

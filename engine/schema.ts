@@ -37,6 +37,13 @@ export const Threshold = z.object({
   source: z.string().min(1),
 }).refine((t) => !t.bound_by || t.base_spec?.[t.bound_by] !== undefined, '사양 보정에는 base_spec의 해당 자원 값이 필요함');
 
+/** 9절 계량 항목: 대수×시간·월 정액(provisioned/plan), 사용량(usage) */
+export const METERS = ['instance', 'vcpu_second', 'gb_second', 'million_requests', 'tb_scanned', 'month'] as const;
+export const Billing = z.object({
+  model: z.enum(['provisioned', 'usage', 'plan']),
+  products: z.partialRecord(z.enum(METERS), z.string()),
+});
+
 export const CatalogItem = z.object({
   id: z.string().regex(/^[a-z0-9_]+$/),
   name: z.string(),
@@ -53,6 +60,8 @@ export const CatalogItem = z.object({
   alternatives: z.array(z.object({ id: z.string(), better_for: z.array(z.string()), note: z.string().optional() })).default([]),
   settings: z.array(z.object({ name: z.string(), goal: z.string() })).default([]),
   thresholds: z.record(z.string(), Threshold).default({}),
+  /** 9절 과금 방식과 계량 항목별 가격표 상품 키 (리전은 노드에서 정한다) */
+  billing: Billing.optional(),
   sources: z.array(z.string()).min(1),
 });
 
@@ -181,6 +190,8 @@ export const Project = z.object({
     /** 6단계 HTML 와이어프레임에서 뽑은 화면 영역 */
     html: z.object({ file: z.string(), regions: z.array(z.object({ role: z.string(), selector: z.string(), controls: z.array(z.string()) })) }).optional(),
     min_instances: z.number().int().nonnegative().default(1),
+    /** 9절 계산으로 알 수 없는 사용량 (분석 노드의 월 스캔량 등) */
+    usage: z.object({ scanned_tb_month: z.number().nonnegative().optional() }).default({}),
   })),
   edges: z.array(z.object({
     from: z.string(),
@@ -197,7 +208,14 @@ export const Project = z.object({
   // 예시값: 실제 가용성은 각 클라우드의 SLA 문서로 노드마다 넣는다
   default_availability: z.number().min(0).max(1).default(0.999),
   /** 9절 프로젝트 단위 과금 상품 id */
-  cost: z.object({ storage: z.string().optional(), egress: z.string().optional() }).default({}),
+  cost: z.object({
+    /** 노드에 리전이 없을 때 쓰는 기본 리전 */
+    region: z.enum(REGIONS).optional(),
+    storage: z.string().optional(),
+    egress: z.string().optional(),
+    /** 리전이 다른 노드 사이 전송 상품 */
+    transfer: z.string().optional(),
+  }).default({}),
   /** 10절 최선 조합: 꼭 지킬 조건과 목표 우선순위(앞일수록 중요, 비우면 모든 목표 같은 가중치) */
   optimize: z.object({
     budget_monthly: z.number().nonnegative().optional(),
@@ -214,8 +232,11 @@ export const Project = z.object({
 export const PriceRow = z.object({
   id: z.string(),
   region: z.enum(REGIONS),
-  /** hour = 대당 시간, month = 대당 월 정액, gb_month = 저장 GB·월, gb = 송신 GB */
-  unit: z.enum(['hour', 'month', 'gb_month', 'gb']),
+  /** 리전과 무관한 상품 키 (예: vm-2vcpu). 카탈로그 billing.products와 노드 리전으로 찾는다. 없으면 id */
+  product: z.string().optional(),
+  /** hour = 대당 시간, month = 대당 월 정액, gb_month = 저장 GB·월, gb = 인터넷 송신 GB, gb_interregion = 리전 간 전송 GB,
+   *  vcpu_second·gb_second = 연산 사용량, million_requests = 요청 100만 건, tb_scanned = 스캔 TB */
+  unit: z.enum(['hour', 'month', 'gb_month', 'gb', 'gb_interregion', 'vcpu_second', 'gb_second', 'million_requests', 'tb_scanned']),
   price: z.number().nonnegative(),
   currency: z.string().length(3),
   as_of: z.iso.date(),

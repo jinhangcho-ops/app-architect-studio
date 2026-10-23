@@ -4,6 +4,7 @@ import { monthlyDowntimeHours, nodeAvailability, pathAvailability, singlePointsO
 import { calibrate } from './calibrate';
 import { hourlyInstances, instancesNeeded } from './capacity';
 import { monthlyCost, type CostResult } from './cost';
+import { costLines } from './meters';
 import { enabled } from './deploy';
 import { timeline, usersAt, type Milestone } from './growth';
 import { checkRules, judgeNode, mergeScenario, type NodeJudgement, type RuleHit, type Scenario } from './judge';
@@ -116,14 +117,12 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     if (load && per.rps && shape) return hourlyInstances(load.rps.normal * factor, shape, per.rps.value, u, n.min_instances, per.max);
     return Array<number>(24).fill(n.min_instances);
   };
-  const costAt = (factor: number) => monthlyCost({
-    nodes: p.nodes.map((n) => ({ id: n.id, price: n.price, hourly: hourlyOf(n, factor) })),
-    storageGb: t && t.storageGbWithOverhead.value * factor,
-    storageProduct: p.cost.storage,
-    egressGbPerMonth: t && t.egressGbPerDay.value * 30 * factor,
-    egressProduct: p.cost.egress,
-  }, d.prices, today);
-  const cost = enabled(p.deploy, 'cost') && (p.cost.storage || p.cost.egress || p.nodes.some((n) => n.price)) ? costAt(1) : undefined;
+  const costAt = (factor: number) => {
+    const { lines, missing } = costLines(p, t, loads, d.catalog, hourlyOf, factor);
+    return { result: monthlyCost(lines, d.prices, today, missing), any: lines.length + missing.length > 0 };
+  };
+  const first = enabled(p.deploy, 'cost') ? costAt(1) : undefined;
+  const cost = first?.any ? first.result : undefined;
 
   // 판정 변수에 계산값을 더한다: 사용률, 노드 p99, 이 노드를 지나는 경로 중 가장 낮은 가용성
   const judged = new Map<string, Scenario>();
@@ -159,7 +158,7 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     const limits = Object.entries(nodes).flatMap(([nodeId, x]) => (x.limitUsers ? [{ nodeId, limitUsers: x.limitUsers.value }] : []));
     growth = {
       milestones: timeline(limits, p.scale.users, g, lead_months),
-      monthlyCost: cost ? Array.from({ length: months + 1 }, (_, mo) => costAt(usersAt(1, g, mo)).total) : [],
+      monthlyCost: cost ? Array.from({ length: months + 1 }, (_, mo) => costAt(usersAt(1, g, mo)).result.total) : [],
     };
   }
 

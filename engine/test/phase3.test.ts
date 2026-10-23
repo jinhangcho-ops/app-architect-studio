@@ -100,28 +100,30 @@ describe('관문: 9절 월 비용', () => {
   const row = (id: string, unit: PriceRow['unit'], price: number, as_of = '2026-10-01'): PriceRow =>
     ({ id, region: 'aws:ap-northeast-2', unit, price, currency: 'USD', as_of, source: '예시' });
 
+  const inst = (key: string, product: string, hourly: number[]) =>
+    ({ key, product, quantities: { hour: hourly.reduce((s, x) => s + x, 0) * 30, month: Math.max(...hourly) }, how: {} });
+
   it('하루 송신 144GB → 월 4,320GB, 시간당 과금은 30일 × 시간대 대수 합', () => {
-    const c = monthlyCost({
-      nodes: [{ id: 'api', price: 'h', hourly: Array(24).fill(2) }],
-      egressGbPerMonth: 144 * 30, egressProduct: 'e',
-    }, [row('h', 'hour', 0.1), row('e', 'gb', 0.1)], '2026-10-23');
-    expect(c.parts['송신'].inputs.GB).toBe(4320);
+    const c = monthlyCost([
+      inst('api', 'h', Array(24).fill(2)),
+      { key: '송신', product: 'e', quantities: { gb: 144 * 30 }, how: {} },
+    ], [row('h', 'hour', 0.1), row('e', 'gb', 0.1)], '2026-10-23');
+    expect(Object.values(c.parts['송신'].inputs)[0]).toBe(4320);
     expect(c.parts.api.value).toBeCloseTo(30 * 48 * 0.1, 6);
     expect(c.total!.value).toBeCloseTo(144 + 432, 6);
   });
 
-  it('가격표에 없는 상품은 0이 아니라 missing, 90일 넘은 가격은 stale', () => {
-    const c = monthlyCost({
-      nodes: [{ id: 'a', price: 'nope', hourly: [1] }, { id: 'b', price: 'old', hourly: [1] }],
-    }, [row('old', 'month', 10, '2026-01-01')], '2026-10-23');
-    expect(c.missing).toEqual(['nope']);
+  it('가격표에 없는 상품은 0이 아니라 missing, 90일 넘은 가격은 stale, 월 정액은 최대 대수', () => {
+    const c = monthlyCost([inst('a', 'nope', [1]), inst('b', 'old', [1, 3])], [row('old', 'month', 10, '2026-01-01')], '2026-10-23', ['b: 메모리 사양 없음']);
+    expect(c.missing).toEqual(['b: 메모리 사양 없음', '가격 없음: nope']);
     expect(c.stale).toEqual(['old (2026-01-01)']);
     expect(c.parts.a).toBeUndefined();
+    expect(c.parts.b.value).toBe(30);
   });
 
   it('단위가 맞지 않는 상품이나 통화가 섞이면 오류', () => {
-    expect(() => monthlyCost({ nodes: [], egressGbPerMonth: 1, egressProduct: 'h' }, [row('h', 'hour', 1)], '2026-10-23')).toThrow('단위');
-    expect(() => monthlyCost({ nodes: [{ id: 'a', price: 'x', hourly: [1] }, { id: 'b', price: 'y', hourly: [1] }] },
+    expect(() => monthlyCost([{ key: '송신', product: 'h', quantities: { gb: 1 }, how: {} }], [row('h', 'hour', 1)], '2026-10-23')).toThrow('단위');
+    expect(() => monthlyCost([inst('a', 'x', [1]), inst('b', 'y', [1])],
       [row('x', 'hour', 1), { ...row('y', 'hour', 1), currency: 'KRW' }], '2026-10-23')).toThrow('통화');
   });
 });

@@ -1,4 +1,5 @@
-import { Persona, Scale, PATTERN_IDS, type Project } from '../../engine/schema';
+import { Persona, REGIONS, Scale, PATTERN_IDS, type PriceRow, type Project } from '../../engine/schema';
+import { prices } from './data';
 import { PATTERNS } from '../../engine/traffic';
 import { STANDARD_OFFSET } from '../../engine/timezones';
 import { NumField, Row, Section, TextField } from './fields';
@@ -70,6 +71,24 @@ export function ProjectPanel() {
         {p.personas.length > 0 && Math.abs(shareSum - 1) > 1e-6 && <p className="warn">비율 합이 100%여야 계산합니다.</p>}
       </Section>
 
+      <Section title="비용 기준">
+        <Row label="기본 리전">
+          <select value={p.cost.region ?? ''} onChange={(e) => set({ cost: { ...p.cost, region: (e.target.value || undefined) as typeof p.cost.region } })}>
+            <option value="">(없음)</option>
+            {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </Row>
+        {([['저장 (GB·월)', 'storage', 'gb_month'], ['인터넷 송신 (GB)', 'egress', 'gb'], ['리전 간 전송 (GB)', 'transfer', 'gb_interregion']] as const).map(([label, key, unit]) => (
+          <Row key={key} label={label}>
+            <select value={p.cost[key] ?? ''} onChange={(e) => set({ cost: { ...p.cost, [key]: e.target.value || undefined } })}>
+              <option value="">(계산 안 함)</option>
+              {productsOf(unit).map((x) => <option key={x} value={x}>{x}</option>)}
+            </select>
+          </Row>
+        ))}
+        <p className="muted">노드 비용은 주 항목의 과금 방식(대수×시간·사용량·월 정액)과 노드 리전으로 가격표에서 찾습니다.</p>
+      </Section>
+
       <Section title="성장">
         {!p.growth && <button onClick={() => set({ growth: { monthly_rate: 0.1, months: 24, lead_months: 3 } })}>성장률 입력하기</button>}
         {p.growth && <>
@@ -81,3 +100,6 @@ export function ProjectPanel() {
     </div>
   );
 }
+
+/** 가격표에서 이 단위로 파는 상품 키 목록 */
+const productsOf = (unit: PriceRow['unit']) => [...new Set(prices.filter((r) => r.unit === unit).map((r) => r.product ?? r.id))];

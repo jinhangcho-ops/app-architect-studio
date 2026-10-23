@@ -1,59 +1,62 @@
-// 9절 월 비용: 노드별 시간대 대수 × 가격표 + 저장 + 송신. 가격이 없으면 0으로 채우지 않고 missing에 남긴다.
+// 9절 월 비용: 과금 방식별 계량 항목(대수×시간, 사용량, 정액, 저장, 송신, 리전 간 전송) × 가격표.
+// 가격이나 계량에 필요한 값이 없으면 0으로 채우지 않고 missing에 이유를 남긴다.
 import type { Metric } from './model';
 import type { PriceRow } from './schema';
 
-export type CostInput = {
-  /** hourly = 0~23시 필요 대수 */
-  nodes: { id: string; price?: string; hourly: number[] }[];
-  storageGb?: number;
-  storageProduct?: string;
-  egressGbPerMonth?: number;
-  egressProduct?: string;
+/** 한 줄 = 한 계량 항목. quantities는 가격표 행의 단위별 수량이다(대수 상품은 hour·month 둘 다 주고 행의 단위로 고른다). */
+export type LineItem = {
+  /** 결과 parts의 묶음 이름 (노드 id, '저장', '송신', '리전 간 전송') */
+  key: string;
+  /** 가격표 행 id 또는 상품 키 */
+  product: string;
+  region?: string;
+  quantities: Partial<Record<PriceRow['unit'], number>>;
+  /** 수량이 어떻게 나왔는지 (단위별) */
+  how: Partial<Record<PriceRow['unit'], string>>;
 };
 
 export type CostResult = {
   total?: Metric;
   parts: Record<string, Metric>;
-  /** 가격표에 없는 상품 id */
+  /** 가격표에 없는 상품, 계량에 필요한 값이 없는 노드 */
   missing: string[];
   /** 기준일이 오래된 가격 (id와 기준일) */
   stale: string[];
 };
 
 const DAY_MS = 86_400_000;
+const UNIT_NAME: Record<PriceRow['unit'], string> = {
+  hour: '대·시간', month: '대(월 정액)', gb_month: 'GB·월', gb: '송신 GB', gb_interregion: '리전 간 GB',
+  vcpu_second: 'vCPU·초', gb_second: 'GB·초', million_requests: '요청 100만 건', tb_scanned: '스캔 TB',
+};
 
-/** today는 'YYYY-MM-DD'. 순수 함수로 두려고 오늘 날짜를 인자로 받는다. */
-export function monthlyCost(input: CostInput, prices: PriceRow[], today: string, staleDays = 90): CostResult {
-  const byId = new Map(prices.map((p) => [p.id, p]));
+/** 행 찾기: id가 같으면 그 행, 아니면 같은 상품 키 + 같은 리전 */
+export function findPrice(prices: PriceRow[], product: string, region?: string): PriceRow | undefined {
+  return prices.find((r) => r.id === product)
+    ?? prices.find((r) => (r.product ?? r.id) === product && (region === undefined || r.region === region));
+}
+
+/** today는 'YYYY-MM-DD'. missingInputs는 계량값을 못 구한 이유(분석 단계에서 넘김) */
+export function monthlyCost(lines: LineItem[], prices: PriceRow[], today: string, missingInputs: string[] = [], staleDays = 90): CostResult {
   const parts: Record<string, Metric> = {};
-  const missing: string[] = [];
+  const missing = [...missingInputs];
   const used: PriceRow[] = [];
 
-  const find = (id: string, units: PriceRow['unit'][]) => {
-    const row = byId.get(id);
-    if (!row) { missing.push(id); return undefined; }
-    if (!units.includes(row.unit)) throw new Error(`가격 ${id}의 단위 ${row.unit}는 여기 쓸 수 없음 (${units.join('/')}만 가능)`);
+  for (const l of lines) {
+    const row = findPrice(prices, l.product, l.region);
+    if (!row) { missing.push(`가격 없음: ${l.product}${l.region ? ` @ ${l.region}` : ''}`); continue; }
+    const qty = l.quantities[row.unit];
+    if (qty === undefined) throw new Error(`가격 ${row.id}의 단위 ${row.unit}는 ${l.key}에 쓸 수 없음 (${Object.keys(l.quantities).join('/')}만 가능)`);
     used.push(row);
-    return row;
-  };
-
-  for (const n of input.nodes) {
-    if (!n.price) continue;
-    const row = find(n.price, ['hour', 'month']);
-    if (!row) continue;
-    const instanceHours = n.hourly.reduce((s, x) => s + x, 0) * 30;
-    parts[n.id] = row.unit === 'hour'
-      ? { value: instanceHours * row.price, unit: row.currency, formula: '30일 × Σ 시간대 대수 × 시간당 단가', inputs: { 대시간: instanceHours, 단가: row.price } }
-      // shortcut: 월 정액은 하루 중 최대 대수만큼 상시 켠다고 본다. 시간대별로 끄고 켤 수 있으면 hour 단가로 넣는다
-      : { value: Math.max(...n.hourly) * row.price, unit: row.currency, formula: '최대 대수 × 월 정액', inputs: { 최대대수: Math.max(...n.hourly), 단가: row.price } };
-  }
-  if (input.storageProduct && input.storageGb !== undefined) {
-    const row = find(input.storageProduct, ['gb_month']);
-    if (row) parts['저장'] = { value: input.storageGb * row.price, unit: row.currency, formula: '저장량(여유분 포함) × GB·월 단가', inputs: { GB: input.storageGb, 단가: row.price } };
-  }
-  if (input.egressProduct && input.egressGbPerMonth !== undefined) {
-    const row = find(input.egressProduct, ['gb']);
-    if (row) parts['송신'] = { value: input.egressGbPerMonth * row.price, unit: row.currency, formula: '월 송신 GB × GB 단가', inputs: { GB: input.egressGbPerMonth, 단가: row.price } };
+    const value = qty * row.price;
+    const label = `${UNIT_NAME[row.unit]} ${row.id}`;
+    const prev = parts[l.key];
+    parts[l.key] = {
+      value: (prev?.value ?? 0) + value,
+      unit: row.currency,
+      formula: [prev?.formula, `${l.how[row.unit] ?? row.unit} × ${UNIT_NAME[row.unit]} 단가`].filter(Boolean).join(' + '),
+      inputs: { ...prev?.inputs, [`${label} 수량`]: qty, [`${label} 단가`]: row.price },
+    };
   }
 
   const currencies = new Set(used.map((r) => r.currency));
@@ -63,7 +66,7 @@ export function monthlyCost(input: CostInput, prices: PriceRow[], today: string,
 
   const values = Object.values(parts);
   const total = values.length
-    ? { value: values.reduce((s, m) => s + m.value, 0), unit: values[0].unit, formula: '노드 + 저장 + 송신 합계', inputs: Object.fromEntries(Object.entries(parts).map(([k, m]) => [k, m.value])) }
+    ? { value: values.reduce((s, m) => s + m.value, 0), unit: values[0].unit, formula: '노드별 과금 + 저장 + 송신 + 리전 간 전송', inputs: Object.fromEntries(Object.entries(parts).map(([k, m]) => [k, m.value])) }
     : undefined;
   return { total, parts, missing: [...new Set(missing)], stale };
 }

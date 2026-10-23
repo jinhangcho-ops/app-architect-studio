@@ -128,9 +128,17 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
         <NumField label="1대 가용성" value={n.availability} step={0.0001} hint="비우면 프로젝트 기본값" onChange={(v) => upd({ availability: v })} />
         <NumField label="평균 처리(ms)" value={n.perf?.service_ms} onChange={(v) => upd({ perf: v ? { workers: n.perf?.workers ?? 8, ...n.perf, service_ms: v } : undefined })} />
         <NumField label="대당 동시 처리" value={n.perf?.workers} step={1} onChange={(v) => n.perf && upd({ perf: { ...n.perf, workers: v ?? 1 } })} />
-        <Row label="가격 상품">
+        {(() => {
+          const b = n.primary ? catalog.byId.get(n.primary)?.billing : undefined;
+          const MODEL = { provisioned: '대수 × 시간', usage: '사용량', plan: '월 정액' } as const;
+          return <>
+            <Row label="과금 방식"><span>{b ? `${MODEL[b.model]} (${Object.values(b.products).join(', ')})` : '과금 없음 (자원이 아님)'}</span></Row>
+            {b?.products.tb_scanned && <NumField label="월 스캔량(TB)" value={n.usage.scanned_tb_month} onChange={(v) => upd({ usage: { ...n.usage, scanned_tb_month: v } })} />}
+          </>;
+        })()}
+        <Row label="상품 직접 지정">
           <select value={n.price ?? ''} onChange={(e) => upd({ price: e.target.value || undefined })}>
-            <option value="">(없음)</option>
+            <option value="">(항목의 과금 방식 사용)</option>
             {prices.filter((r) => r.unit === 'hour' || r.unit === 'month').map((r) => <option key={r.id} value={r.id}>{r.id}</option>)}
           </select>
         </Row>

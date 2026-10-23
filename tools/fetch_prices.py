@@ -19,7 +19,7 @@ AZURE_API = "https://prices.azure.com/api/retail/prices"
 ALLOWED = {"koreacentral", "koreasouth", "japaneast", "japanwest"}  # 가격표는 한국·일본 리전만 받는다
 
 
-def azure_vm_hourly(sku: str, region: str) -> dict:
+def azure_vm_hourly(sku: str, region: str, product: str) -> dict:
     flt = (f"serviceName eq 'Virtual Machines' and armRegionName eq '{region}' "
            f"and armSkuName eq '{sku}' and priceType eq 'Consumption'")
     url = f"{AZURE_API}?{urllib.parse.urlencode({'$filter': flt})}"
@@ -34,6 +34,7 @@ def azure_vm_hourly(sku: str, region: str) -> dict:
         raise SystemExit(f"예상과 다른 단위: {item['unitOfMeasure']}")
     return {
         "id": f"azure-{region}-{sku}",
+        "product": product,
         "region": f"azure:{region}",
         "unit": "hour",
         "price": item["retailPrice"],
@@ -49,6 +50,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cloud", choices=["azure", "aws", "gcp"])
     ap.add_argument("--sku", default="Standard_D2s_v5")
+    ap.add_argument("--product", default="vm-2vcpu", help="카탈로그 billing.products가 가리키는 상품 키")
     ap.add_argument("--regions", nargs="+", default=["koreacentral", "japaneast"])
     ap.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "..", "data", "prices"))
     a = ap.parse_args()
@@ -59,7 +61,7 @@ def main() -> None:
     bad = set(a.regions) - ALLOWED
     if bad:
         raise SystemExit(f"한국·일본 리전만 받습니다: {', '.join(sorted(bad))}")
-    rows = [azure_vm_hourly(a.sku, r) for r in a.regions]
+    rows = [azure_vm_hourly(a.sku, r, a.product) for r in a.regions]
     path = os.path.join(a.out, f"azure-{a.sku}.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(rows, f, ensure_ascii=False, indent=2)
