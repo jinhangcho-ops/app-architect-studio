@@ -1,7 +1,7 @@
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { parseProject } from '../../engine/data';
 import { snapshotFromFile } from './autosave';
@@ -14,6 +14,8 @@ const files = require('../../electron/files.cjs') as {
   allow: (f: string) => string;
   writeSnapshot: (f: string, kind: string, name: string, text: string, max: number) => boolean;
   listSnapshots: (f: string, kind: string) => { name: string; text: string }[];
+  writePngs: (dir: string, files: { name: string; base64: string }[]) => string[];
+  pngName: (name: string) => string;
 };
 
 const dir = mkdtempSync(join(tmpdir(), 'aas-files-'));
@@ -62,5 +64,19 @@ describe('시점 파일 이름과 내용', () => {
     expect(s.project).toEqual(p);
     expect(s.positions).toEqual({ api: { x: 1, y: 2 } });
     expect(snapshotFromFile('2026-10-24_03-05-09', '{깨진')).toBeUndefined();
+  });
+});
+
+describe('와이어프레임 PNG 쓰기', () => {
+  const png = Buffer.from('89504e470d0a1a0a0000', 'hex').toString('base64');
+  it('경로 문자를 빼고, 같은 이름은 번호를 붙여 고른 폴더에만 씀', () => {
+    expect(files.pngName('../a/b:c')).toBe('_a_b_c.png');
+    expect(files.pngName('')).toBe('화면.png');
+    const out = files.writePngs(dir, [{ name: '웹 화면-화면 1', base64: png }, { name: '웹 화면-화면 1', base64: png }]);
+    expect(out.map((p) => basename(p))).toEqual(['웹 화면-화면 1.png', '웹 화면-화면 1 2.png']);
+    expect(readdirSync(dir)).toEqual(expect.arrayContaining(['웹 화면-화면 1.png', '웹 화면-화면 1 2.png']));
+  });
+  it('PNG가 아닌 내용은 쓰지 않음', () => {
+    expect(() => files.writePngs(dir, [{ name: 'x', base64: Buffer.from('hello').toString('base64') }])).toThrow('PNG');
   });
 });

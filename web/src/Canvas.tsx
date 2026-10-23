@@ -1,6 +1,8 @@
 import { Background, BackgroundVariant, Controls, Handle, MarkerType, Position, ReactFlow, type Edge, type Node, type NodeProps, type ReactFlowInstance } from '@xyflow/react';
 import { useEffect, useRef } from 'react';
 import type { Analysis } from '../../engine/analyze';
+import { callSplit } from '../../engine/api';
+import { edgeFlow } from '../../engine/load';
 import { LAYER_NAMES, VERDICT_NAMES, type Verdict } from '../../engine/model';
 import type { ProjectNode } from '../../engine/schema';
 import { catalog } from './data';
@@ -78,19 +80,23 @@ export function Canvas({ analysis, onSelect }: { analysis?: Analysis; onSelect: 
     };
   });
 
-  // 선 굵기 = 요청량 (보내는 노드 평소 피크 × 호출 비율)
-  const rpsOf = (e: (typeof project.edges)[number]) => (analysis?.nodes[e.from]?.load?.rps.normal ?? 0) * e.callRatio;
+  // 선 굵기 = 이 연결로 흐르는 평소 피크 요청 (엔진의 부하 전파와 같은 계산)
+  const rpsOf = (e: (typeof project.edges)[number]) => {
+    const from = analysis?.nodes[e.from]?.load;
+    return from ? edgeFlow(e, from, callSplit(project, project.nodes.find((n) => n.id === e.from)!), 'normal').rps : 0;
+  };
   const maxRps = Math.max(1, ...project.edges.map(rpsOf));
   const edges: Edge[] = project.edges.map((e) => {
     const rps = rpsOf(e);
     const color = !e.sync ? EDGE.async : health.get(e.to)?.health === 'bad' ? EDGE.bad : e.carries === 'read' ? EDGE.read : EDGE.base;
-    const label = [!e.sync ? '비동기' : rps ? `${fmt(rps)} RPS` : '', e.carries === 'write' ? 'write' : e.carries === 'read' ? '읽기' : '', e.callRatio !== 1 ? `×${e.callRatio}` : '']
+    const label = [!e.sync ? `비동기${rps ? ` ${fmt(rps)} RPS` : ''}` : rps ? `${fmt(rps)} RPS` : '', e.carries === 'write' ? 'write' : e.carries === 'read' ? '읽기' : '', e.callRatio !== 1 ? `×${e.callRatio}` : '']
       .filter(Boolean).join(' ');
     return {
       id: `${e.from}->${e.to}`,
       source: e.from,
       target: e.to,
-      style: { stroke: color, strokeWidth: 1.5 + (6 * rps) / maxRps, ...(e.sync ? {} : { strokeDasharray: '6 5' }) },
+      // 비동기(점선)는 굵기로 양을 나타내지 않는다: 굵은 점선은 읽기 어렵다
+      style: { stroke: color, strokeWidth: e.sync ? 1.5 + (6 * rps) / maxRps : 1.5, ...(e.sync ? {} : { strokeDasharray: '5 4' }) },
       label: label || undefined,
       labelStyle: { fill: e.sync ? '#8b95a5' : EDGE.async, fontSize: 11 },
       labelBgStyle: { fill: '#0d1117' },

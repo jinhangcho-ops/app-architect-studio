@@ -6,6 +6,8 @@ export type DesktopApi = {
   saveFile: (file: string | undefined, text: string, suggested: string) => Promise<string | null>;
   writeSnapshot: (file: string, kind: 'manual' | 'auto', name: string, text: string, max: number) => Promise<boolean>;
   listSnapshots: (file: string, kind: 'manual' | 'auto') => Promise<{ name: string; text: string }[]>;
+  /** 한 장이면 저장 창, 여러 장이면 폴더 고르기. 저장한 경로들(취소면 null) */
+  savePngs: (files: { name: string; base64: string }[]) => Promise<string[] | null>;
 };
 
 export const desktop = (globalThis as { desktop?: DesktopApi }).desktop;

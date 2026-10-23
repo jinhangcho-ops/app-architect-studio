@@ -98,7 +98,8 @@ export function htmlToScreen(text: string, frame: { w: number; h: number }, name
   const place = (r: Element, x: number, y: number, w: number, minH: number): number => {
     const kind = ROLE_KIND[roleOf(r)!];
     const formApi = r.tagName === 'FORM' && r.getAttribute('action') ? apiOf((r.getAttribute('method') ?? 'GET').toUpperCase(), r.getAttribute('action')!) : undefined;
-    let cx = x + G, cy = y + 32, rowH = 0;
+    // 영역 이름이 왼쪽 위에 오므로 컨트롤은 그 아래부터 (막대는 낮아서 조금 더 위부터)
+    let cx = x + G, cy = y + (['header', 'nav', 'footer'].includes(kind) ? 22 : 32), rowH = 0;
     for (const c of controlsOf2(r)) {
       const tag = c.tagName.toLowerCase();
       const t = (c.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 30);

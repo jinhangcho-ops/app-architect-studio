@@ -316,12 +316,13 @@ textarea.spec { width: 100%; min-height: 90px; font-family: ui-monospace, monosp
 .wwrap { flex: 1; min-height: 0; position: relative; overflow: hidden; outline: none; background-image: radial-gradient(#253041 1px, transparent 1px); background-size: 24px 24px; }
 .wframe { position: absolute; background: #f4f6f9; border-radius: 6px; box-shadow: 0 0 0 1px var(--line-2), 0 8px 30px #0008; overflow: hidden; }
 .wempty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: #8a94a3; }
-.wi { position: absolute; display: flex; align-items: center; justify-content: center; border: 1.5px solid #9aa4b2; border-radius: 4px; background: #ffffffcc; color: #3b4452; font-size: 12px; cursor: move; user-select: none; touch-action: none; overflow: hidden; }
+.wi { position: absolute; display: flex; align-items: center; justify-content: center; border: 1.5px solid #9aa4b2; border-radius: 4px; background: #ffffffcc; color: #3b4452; font-size: 1em; line-height: 1.2; cursor: move; user-select: none; touch-action: none; overflow: hidden; }
 .wi.sel { border-color: #2b5fd9; box-shadow: 0 0 0 2px #2b5fd955; }
 .wi .wl { padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wi input { width: 90%; color: #1d2433; background: #fff; border-color: #2b5fd9; }
-.wi-header, .wi-nav, .wi-footer { background: #e3e7ee; justify-content: flex-start; padding-left: 10px; }
-.wi-sidebar, .wi-main, .wi-form, .wi-list, .wi-card, .wi-table { align-items: flex-start; justify-content: flex-start; padding: 6px; border-style: dashed; background: #ffffff88; }
+.wi-header, .wi-nav, .wi-footer { background: #e3e7ee; justify-content: flex-start; align-items: flex-start; padding: 0.25em 0 0 0.6em; }
+.wi.has-api:not(.wi-header):not(.wi-nav):not(.wi-footer):not(.wi-sidebar):not(.wi-main):not(.wi-form):not(.wi-list):not(.wi-card):not(.wi-table) { align-items: flex-start; padding-top: 0.15em; }
+.wi-sidebar, .wi-main, .wi-form, .wi-list, .wi-card, .wi-table { align-items: flex-start; justify-content: flex-start; padding: 0.25em 0.6em; border-style: dashed; background: #ffffff88; }
 .wi-table { background: repeating-linear-gradient(#ffffff88 0 23px, #c9d0da 23px 24px); border-style: solid; }
 .wi-list { background: repeating-linear-gradient(#ffffff88 0 35px, #dde2e9 35px 36px); }
 .wi-modal { background: #fff; box-shadow: 0 6px 20px #0003; border-style: solid; }
@@ -341,7 +342,7 @@ textarea.spec { width: 100%; min-height: 90px; font-family: ui-monospace, monosp
 .wcall { display: inline-flex; gap: 6px; align-items: center; padding: 2px 8px; border: 1px solid var(--line-2); border-radius: 6px; }
 .wcall code { color: var(--accent); }
 .wire .inside-hint { position: static; padding: 4px 12px; background: var(--panel); }
-.wi .wapi { position: absolute; right: 3px; bottom: 2px; font-size: 9px; padding: 0 4px; border-radius: 3px; background: #2b5fd9; color: #fff; pointer-events: none; white-space: nowrap; }
+.wi .wapi { position: absolute; right: 3px; bottom: 1px; font-size: 0.75em; line-height: 1.2; padding: 0 4px; border-radius: 3px; background: #2b5fd9; color: #fff; pointer-events: none; white-space: nowrap; }
 .wi .wapi.none { background: #d98a00; }
 
 /* 끄는 동안 놓을 수 있는 곳 */

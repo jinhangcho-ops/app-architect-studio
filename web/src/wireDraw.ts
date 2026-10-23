@@ -1,5 +1,6 @@
 // 와이어프레임 한 장을 캔버스에 그린다. PNG 저장과 설계서 그림이 같이 쓴다 (화면의 CSS 모양과 같은 색·선).
 import type { Deploy, Screen, WireItem } from '../../engine/schema';
+import { desktop } from './desktop';
 
 export const frameOf = (mode: Deploy['mode']) => (mode === 'mobile' ? { w: 390, h: 844, name: '모바일 390×844' } : { w: 1280, h: 800, name: '데스크톱 1280×800' });
 
@@ -44,13 +45,22 @@ export function drawScreen(c: Ctx, screen: Screen, frame: { w: number; h: number
     if (kind === 'image') { c.beginPath(); c.moveTo(x, y); c.lineTo(x + w, y + h); c.moveTo(x + w, y); c.lineTo(x, y + h); c.stroke(); }
     if (kind === 'tabs') { c.fillStyle = '#3b4452'; c.fillRect(x, y + h - 2, w / 4, 2); }
     c.font = '12px "Pretendard", "Malgun Gothic", sans-serif';
-    c.textBaseline = REGION.has(kind) ? 'top' : 'middle';
+    // 영역·막대(헤더 등)는 이름을 왼쪽 위에 (안의 컨트롤과 겹치지 않게), 컨트롤은 가운데 줄에. API가 있으면 글을 조금 올리고 아래에 작게 적는다
+    const top = REGION.has(kind) || BAR.has(kind);
+    const mid = y + h / 2 - (it.api && h >= 28 ? 6 : 0);
+    c.textBaseline = top ? 'top' : 'middle';
     const center = kind === 'button' || kind === 'image' || kind === 'modal';
     c.textAlign = center ? 'center' : 'left';
     c.fillStyle = kind === 'button' ? '#ffffff' : kind === 'input' || kind === 'select' ? '#8a94a3' : '#3b4452';
-    const label = it.api ? `${it.label}  ·  ${it.api.method} ${it.api.path}` : it.label;
-    c.fillText(label, center ? x + w / 2 : x + 8, REGION.has(kind) ? y + 6 : y + h / 2);
-    if (kind === 'select') { c.textAlign = 'right'; c.fillText('▾', x + w - 8, y + h / 2); }
+    c.fillText(it.label, center ? x + w / 2 : x + 8, top ? y + 4 : mid);
+    if (kind === 'select') { c.textAlign = 'right'; c.fillText('▾', x + w - 8, mid); }
+    if (it.api) {
+      c.font = '9px "Pretendard", "Malgun Gothic", sans-serif';
+      c.textAlign = 'right';
+      c.textBaseline = 'bottom';
+      c.fillStyle = kind === 'button' ? '#c9d6ff' : '#2b5fd9';
+      c.fillText(`${it.api.method} ${it.api.path}`, x + w - 4, y + h - 2);
+    }
     c.restore();
   }
   c.restore();
@@ -65,11 +75,10 @@ export function screenCanvas(screen: Screen, frame: { w: number; h: number }, sc
   return cv;
 }
 
-export function downloadPng(screen: Screen, frame: { w: number; h: number }, fileBase: string) {
-  screenCanvas(screen, frame).toBlob((blob) => {
-    if (!blob) return;
-    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `${fileBase}.png` });
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }, 'image/png');
+/** 화면들을 PNG로 저장. 데스크톱 앱은 저장 창(여러 장이면 폴더 한 번), 브라우저는 내려받기. 저장한 장 수(취소면 0) */
+export async function savePngs(list: { screen: Screen; name: string }[], frame: { w: number; h: number }): Promise<number> {
+  const urls = list.map(({ screen, name }) => ({ name, url: screenCanvas(screen, frame).toDataURL('image/png') }));
+  if (desktop) return (await desktop.savePngs(urls.map(({ name, url }) => ({ name, base64: url.slice(url.indexOf(',') + 1) }))))?.length ?? 0;
+  for (const { name, url } of urls) Object.assign(document.createElement('a'), { href: url, download: `${name}.png` }).click();
+  return urls.length;
 }

@@ -41,6 +41,23 @@ function listSnapshots(projectFile, kind) {
     .map((f) => ({ name: f.slice(0, -5), text: fs.readFileSync(path.join(dir, f), 'utf8') }));
 }
 
+/** PNG 파일 이름: 경로·예약 문자를 빼고, 비면 '화면' */
+const pngName = (name) => `${String(name).replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/^\.+/, '').slice(0, 120) || '화면'}.png`;
+
+/** 와이어프레임 PNG 쓰기: 고른 폴더에 이름이 겹치지 않게 (base64 PNG만 받는다) */
+function writePngs(dir, files) {
+  const used = new Set();
+  return files.map(({ name, base64 }) => {
+    const buf = Buffer.from(String(base64), 'base64');
+    if (buf.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') throw new Error('PNG가 아닙니다');
+    let file = pngName(name);
+    for (let k = 2; used.has(file); k++) file = pngName(`${name} ${k}`);
+    used.add(file);
+    fs.writeFileSync(path.join(dir, file), buf);
+    return path.join(dir, file);
+  });
+}
+
 /** Electron에 연결: dialog를 쓰는 열기·저장과, 위 시점 함수들 */
 function registerFileApi() {
   const { BrowserWindow, dialog, ipcMain } = require('electron');
@@ -62,8 +79,21 @@ function registerFileApi() {
     fs.writeFileSync(target, text, 'utf8');
     return target;
   });
+  // 한 장이면 저장 창, 여러 장이면 폴더를 한 번 골라 모두 쓴다
+  ipcMain.handle('png:save', async (_e, files) => {
+    if (!Array.isArray(files) || !files.length) return null;
+    if (files.length === 1) {
+      const r = await dialog.showSaveDialog(win(), { defaultPath: pngName(files[0].name), filters: [{ name: 'PNG 그림', extensions: ['png'] }] });
+      if (r.canceled || !r.filePath) return null;
+      const [out] = writePngs(path.dirname(r.filePath), [{ ...files[0], name: path.basename(r.filePath, '.png') }]);
+      return [out];
+    }
+    const r = await dialog.showOpenDialog(win(), { title: 'PNG를 저장할 폴더', properties: ['openDirectory', 'createDirectory'] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    return writePngs(r.filePaths[0], files);
+  });
   ipcMain.handle('snap:write', (_e, file, kind, name, text, max) => writeSnapshot(file, kind, name, text, max));
   ipcMain.handle('snap:list', (_e, file, kind) => listSnapshots(file, kind));
 }
 
-module.exports = { registerFileApi, writeSnapshot, listSnapshots, allow };
+module.exports = { registerFileApi, writeSnapshot, listSnapshots, allow, writePngs, pngName };

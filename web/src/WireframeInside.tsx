@@ -12,7 +12,7 @@ import { htmlToScreen } from './htmlImport';
 import { markDrag, overPalette, readDrag, WIRE_NAMES } from './Palette';
 import { Select } from './Select';
 import { useStore } from './store';
-import { downloadPng, drawOrder, fitItem, frameOf } from './wireDraw';
+import { drawOrder, fitItem, frameOf, savePngs } from './wireDraw';
 
 const GRID = 8;
 const snap = (v: number) => Math.round(v / GRID) * GRID;
@@ -123,13 +123,13 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
           edit((x) => mapScreens(x, nodeId, (ss) => [...ss.filter((y) => y.items.length || ss.length > 1), sc]));
           setCur(screen.items.length || screens.length > 1 ? screens.length : 0);
         }} />
-        <button onClick={() => downloadPng(screen, frame, `${n.name}-${screen.name}`)}>PNG 저장</button>
-        {screens.length > 1 && <button onClick={() => screens.forEach((s) => downloadPng(s, frame, `${n.name}-${s.name}`))}>모든 화면 PNG</button>}
+        <button onClick={() => savePngs([{ screen, name: `${n.name}-${screen.name}` }], frame)}>PNG 저장</button>
+        {screens.length > 1 && <button onClick={() => savePngs(screens.map((s) => ({ screen: s, name: `${n.name}-${s.name}` })), frame)}>모든 화면 PNG</button>}
       </div>
       <div className="wwrap" ref={wrap} tabIndex={0}
         onKeyDown={(e) => { if (sel && !editing && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); remove(sel); } }}
         onPointerDown={() => setSel(undefined)}>
-        <div className="wframe" style={{ left: fit.left, top: fit.top, width: frame.w * k, height: frame.h * k }}
+        <div className="wframe" style={{ left: fit.left, top: fit.top, width: frame.w * k, height: frame.h * k, fontSize: 12 * k }}
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             const d = readDrag(e);
@@ -145,7 +145,7 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
           }}>
           {!items.length && <p className="wempty muted">왼편에서 헤더·버튼 같은 상자를 끌어 여기에 놓으세요</p>}
           {items.map((it) => (
-            <div key={it.id} className={`wi wi-${it.kind} ${sel === it.id ? 'sel' : ''}`} style={{ left: it.x * k, top: it.y * k, width: it.w * k, height: it.h * k }}
+            <div key={it.id} className={`wi wi-${it.kind} ${sel === it.id ? 'sel' : ''} ${it.api ? 'has-api' : ''}`} style={{ left: it.x * k, top: it.y * k, width: it.w * k, height: it.h * k }}
               onPointerDown={(e) => down(e, it, 'move')} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel}
               onDoubleClick={() => setEditing(it.id)} title={`${WIRE_NAMES[it.kind]} · ${it.w}×${it.h}`}>
               {editing === it.id
@@ -162,7 +162,7 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
       <div className="winspect">
         {picked ? <>
           <b>{WIRE_NAMES[picked.kind]}</b>
-          <label>글 <input value={picked.label} onChange={(e) => edit((x) => updateWire(x, nodeId, si, picked.id, { label: e.target.value }))} /></label>
+          <label>표시 글 <input value={picked.label} onChange={(e) => edit((x) => updateWire(x, nodeId, si, picked.id, { label: e.target.value }))} /></label>
           {picked.api ? <>
             <Select aria-label="메서드" value={picked.api.method} onChange={(e) => edit((x) => bindApi(x, nodeId, si, picked.id, { ...picked.api!, method: e.target.value as typeof METHODS[number] }))}>
               {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}

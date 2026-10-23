@@ -109,6 +109,6 @@ describe('PNG 그리기', () => {
     ];
     drawScreen(ctx, { name: 's', items }, frameOf('web'));
     expect(drawOrder(items).map((i) => i.id)).toEqual(['w2', 'w1']);
-    expect(texts).toEqual(['본문', '주문  ·  POST /api/orders']);
+    expect(texts).toEqual(['본문', '주문', 'POST /api/orders']);
   });
 });

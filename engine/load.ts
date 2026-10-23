@@ -2,7 +2,7 @@
 import { callSplit } from './api';
 import { deployVars } from './deploy';
 import type { Scenario } from './judge';
-import type { Project } from './schema';
+import type { Project, ProjectEdge } from './schema';
 import type { Traffic } from './traffic';
 
 type Pair = { normal: number; event: number };
@@ -24,28 +24,28 @@ export function nodeLoads(p: Project, t: Traffic): Map<string, NodeLoad> {
 
   for (const id of topoOrder(p)) {
     const from = loads.get(id)!;
-    // 화면 와이어프레임에 API 호출이 있으면 화면에서 나가는 부하는 호출 비율대로 나눈다
     const split = callSplit(p, p.nodes.find((n) => n.id === id)!);
     for (const e of p.edges.filter((x) => x.from === id)) {
       const to = loads.get(e.to)!;
-      if (split) {
-        const f = split.get(e.to) ?? { read: 0, write: 0 };
-        for (const s of ['normal', 'event'] as const) {
-          const w = from.writeRps[s];
-          to.rps[s] += (from.rps[s] - w) * f.read + w * f.write;
-          to.writeRps[s] += w * f.write;
-        }
-        continue;
-      }
       for (const s of ['normal', 'event'] as const) {
-        const w = from.writeRps[s];
-        const r = e.carries === 'all' ? from.rps[s] : e.carries === 'write' ? w : from.rps[s] - w;
-        to.rps[s] += r * e.callRatio;
-        if (e.carries !== 'read') to.writeRps[s] += w * e.callRatio;
+        const f = edgeFlow(e, from, split, s);
+        to.rps[s] += f.rps;
+        to.writeRps[s] += f.write;
       }
     }
   }
   return loads;
+}
+
+/** 연결선 하나로 흐르는 요청과 그중 쓰기. 화면 와이어프레임에 API 호출이 있으면(split) 호출 비율대로, 없으면 carries × callRatio */
+export function edgeFlow(e: ProjectEdge, from: NodeLoad, split: ReturnType<typeof callSplit>, s: 'normal' | 'event'): { rps: number; write: number } {
+  const w = from.writeRps[s];
+  if (split) {
+    const f = split.get(e.to) ?? { read: 0, write: 0 };
+    return { rps: (from.rps[s] - w) * f.read + w * f.write, write: w * f.write };
+  }
+  const r = e.carries === 'all' ? from.rps[s] : e.carries === 'write' ? w : from.rps[s] - w;
+  return { rps: r * e.callRatio, write: e.carries === 'read' ? 0 : w * e.callRatio };
 }
 
 /** Kahn 위상 정렬. 순환 연결이 있으면 부하가 끝없이 불어나므로 오류로 멈춘다. */
