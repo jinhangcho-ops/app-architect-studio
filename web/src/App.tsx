@@ -128,6 +128,8 @@ export function App() {
       if (k === 'f') { e.preventDefault(); setFind({ q: find?.q ?? '', at: 0 }); return; }
       if (k === 'o') { e.preventDefault(); openProject(); return; }
       if (typing) return;
+      // 세부 구성에서는 노드 복사·붙여넣기를 하지 않는다 (와이어프레임 상자를 복사하려다 노드가 복제되지 않게)
+      if (focus && (k === 'c' || k === 'v')) return;
       // 페이지 글자를 드래그해 골라 둔 경우에는 브라우저의 복사를 그대로 둔다
       if (k === 'c' && selected?.kind === 'node' && !window.getSelection()?.toString()) {
         set({ clipboard: project.nodes.find((n) => n.id === selected.id) });

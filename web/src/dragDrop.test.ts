@@ -29,20 +29,17 @@ describe('세부 구성 끌어 놓기', () => {
     const db = p0.nodes.find((n) => n.primary && storageProfileOf(catalog.byId.get(n.primary), catalog.byId))!;
     const sp = storageProfileOf(catalog.byId.get(db.primary!), catalog.byId)!;
     const rec = selectedFeatures(sp, db).map((f) => f.id);
-    const off = sp.features.find((f) => !rec.includes(f.id) && !sp.groups[f.group].one);
-    if (off) {
-      const on = node(setFeature(p0, db.id, off.id, true), db.id).storage_features!;
-      expect(on).toEqual([...rec, off.id]);
-      expect(node(setFeature(setFeature(p0, db.id, off.id, true), db.id, off.id, false), db.id).storage_features).toEqual(rec);
-    }
-    const [g] = Object.entries(sp.groups).find(([gg, def]) => def.one && sp.features.filter((f) => f.group === gg).length > 1) ?? [];
-    if (g) {
-      const [a, b] = sp.features.filter((f) => f.group === g);
-      const ids = node(setFeature(setFeature(p0, db.id, a.id, true), db.id, b.id, true), db.id).storage_features!;
-      expect(ids).toContain(b.id);
-      expect(ids).not.toContain(a.id);
-    }
-    expect(run(setFeature(p0, db.id, sp.features[0].id, true), today).error).toBeUndefined();
+    const [g] = Object.entries(sp.groups).find(([gg, def]) => def.one && sp.features.filter((f) => f.group === gg).length > 1)!;
+    const inG = sp.features.filter((f) => f.group === g);
+    const other = inG.find((f) => !rec.includes(f.id))!;
+    const was = inG.find((f) => rec.includes(f.id))!;
+    // 켜면 같은 묶음의 권장 기능이 꺼지고, 다른 묶음의 권장 기능은 그대로
+    const on = setFeature(p0, db.id, other.id, true);
+    expect(node(on, db.id).storage_features!.sort()).toEqual([...rec.filter((id) => id !== was.id), other.id].sort());
+    // 끄면 그 기능만 빠진다
+    const off = setFeature(on, db.id, other.id, false);
+    expect(node(off, db.id).storage_features!.sort()).toEqual(rec.filter((id) => id !== was.id).sort());
+    expect(run(on, today).error).toBeUndefined();
   });
 
   it('와이어프레임: 화면을 더하고 상자를 놓고 옮기고 지우며, 저장 형식 검사를 통과', () => {

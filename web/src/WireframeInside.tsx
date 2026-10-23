@@ -91,6 +91,9 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
     if (now.x !== o.x || now.y !== o.y || now.w !== o.w || now.h !== o.h) edit((x) => updateWire(x, nodeId, si, id, { x: now.x, y: now.y, w: now.w, h: now.h }));
   };
 
+  /** 터치·창 전환으로 끌기가 취소되면 옮기지 않고 끝낸다 */
+  const cancel = () => { setLive(undefined); markDrag(); };
+
   // 큰 상자(영역)를 먼저 그려 작은 상자(컨트롤)가 위에 오게 한다
   const items = drawOrder(screen.items.map((it) => (live?.id === it.id ? live.now : fitItem(it, frame))));
 
@@ -143,7 +146,7 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
           {!items.length && <p className="wempty muted">왼편에서 헤더·버튼 같은 상자를 끌어 여기에 놓으세요</p>}
           {items.map((it) => (
             <div key={it.id} className={`wi wi-${it.kind} ${sel === it.id ? 'sel' : ''}`} style={{ left: it.x * k, top: it.y * k, width: it.w * k, height: it.h * k }}
-              onPointerDown={(e) => down(e, it, 'move')} onPointerMove={move} onPointerUp={up}
+              onPointerDown={(e) => down(e, it, 'move')} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel}
               onDoubleClick={() => setEditing(it.id)} title={`${WIRE_NAMES[it.kind]} · ${it.w}×${it.h}`}>
               {editing === it.id
                 ? <input autoFocus defaultValue={it.label} aria-label="상자 글" onPointerDown={(e) => e.stopPropagation()}
@@ -151,7 +154,7 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
                   onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditing(undefined); }} />
                 : <span className="wl">{it.label}</span>}
               {it.api && <span className={`wapi ${it.api.to ? '' : 'none'}`}>{it.api.method}{it.api.to ? ` → ${nameOf(it.api.to)}` : ' (받는 블록 없음)'}</span>}
-              {sel === it.id && <i className="wsize" aria-label="크기 바꾸기" onPointerDown={(e) => down(e, it, 'size')} onPointerMove={move} onPointerUp={up} />}
+              {sel === it.id && <i className="wsize" aria-label="크기 바꾸기" onPointerDown={(e) => down(e, it, 'size')} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel} />}
             </div>
           ))}
         </div>
