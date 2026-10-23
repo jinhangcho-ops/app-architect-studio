@@ -1,7 +1,7 @@
 :root {
   /* 어두운 테마 (design/ui-mockup.html) */
-  --bg: #0d1117; --panel: #121821; --panel-2: #161d27; --field: #0f151d; --line: #232c38; --line-2: #2c3644;
-  --ink: #e7ebf1; --muted: #8b95a5; --dim: #5f6a7a;
+  --bg: #0b0f15; --panel: #10161e; --panel-2: #151c26; --field: #0d131a; --line: #1f2834; --line-2: #2a3544;
+  --ink: #e9edf3; --muted: #93a0b3; --dim: #5f6c7e;
   --ok: #2ec4a6; --cond: #f5b301; --fail: #ff5a5a; --unknown: #8792a6; --accent: #2ec4a6;
   color-scheme: dark;
   font-family: 'Pretendard', 'Malgun Gothic', system-ui, sans-serif; font-size: 13px; color: var(--ink);
@@ -14,6 +14,10 @@ body { margin: 0; background: var(--bg); }
 .app { display: grid; grid-template: 52px auto minmax(0, 1fr) / clamp(230px, 20vw, 280px) minmax(0, 1fr) clamp(300px, 24vw, 360px); height: 100vh; }
 .toolbar { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .brand { margin-right: 8px; }
+/* 도구줄: 무리마다 세로 구분선, 버튼은 투명 (주 버튼만 흰색) */
+.toolbar .sep { width: 1px; height: 20px; background: var(--line-2); margin: 0 4px; }
+.toolbar > button:not(.primary) { background: transparent; border-color: transparent; color: var(--muted); }
+.toolbar > button:not(.primary):hover:not(:disabled) { background: var(--panel-2); color: var(--ink); border-color: var(--line-2); }
 .spacer { flex: 1; }
 button, select, input, textarea { font: inherit; }
 button { border: 1px solid var(--line-2); background: var(--panel-2); color: var(--ink); border-radius: 7px; padding: 5px 11px; cursor: pointer; }
@@ -69,7 +73,12 @@ button:disabled { opacity: 0.4; cursor: default; }
 .scatter .pt.bad { fill: var(--unknown); opacity: 0.3; }
 .scatter .pt.best { fill: var(--ok); stroke: #fff; stroke-width: 1.5; opacity: 1; }
 /* 노드 카드 */
-.card { width: 200px; background: var(--panel-2); border: 1px solid var(--line-2); border-left: 4px solid var(--dim); border-radius: 8px; padding: 9px 12px; }
+.card { position: relative; width: 200px; height: 92px; display: flex; flex-direction: column; background: var(--panel-2); border: 1px solid var(--line-2); border-left: 4px solid var(--dim); border-radius: 8px; padding: 9px 12px; cursor: pointer; }
+.card .meter { margin-top: auto; }
+.card-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .chev { position: absolute; right: 8px; top: 34px; color: var(--muted); font-size: 18px; opacity: 0; transition: opacity .15s; }
+.card:hover .chev { opacity: 1; }
+.card:hover { border-color: #3a4656; }
 .card.sel { box-shadow: 0 0 0 2px var(--accent); }
 .card.h-ok { border-left-color: var(--ok); } .card.h-warn { border-left-color: var(--cond); }
 .card.h-bad { border: 2px solid var(--fail); background: #2a1719; box-shadow: 0 0 0 4px #ff5a5a22; }
@@ -82,7 +91,8 @@ button:disabled { opacity: 0.4; cursor: default; }
 .meter .track i { display: block; height: 100%; background: var(--ok); }
 .h-warn .meter .track i { background: var(--cond); } .h-bad .meter .track i { background: var(--fail); }
 .canvas-wrap { position: relative; height: 100%; }
-.legend { position: absolute; top: 12px; left: 16px; z-index: 5; display: flex; gap: 14px; color: var(--muted); font-size: 12px; pointer-events: none; }
+.legend { position: absolute; bottom: 14px; left: 56px; z-index: 5; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: #10161ecc; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font-size: 12px; pointer-events: none; }
+.legend-hint { color: var(--dim); border-top: 1px solid var(--line); padding-top: 6px; }
 .legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 5px; background: var(--dim); }
 .legend i.h-ok { background: var(--ok); } .legend i.h-warn { background: var(--cond); } .legend i.h-bad { background: var(--fail); }
 .card-spof { font-size: 11px; color: var(--fail); margin-top: 2px; }
@@ -249,3 +259,35 @@ textarea.spec { width: 100%; min-height: 90px; font-family: ui-monospace, monosp
 .select-list > div.at { background: #1d2633; } .select-list > div.on { color: var(--accent); font-weight: 600; }
 .select-list > div.off { color: var(--dim); cursor: default; }
 .tooltip { position: fixed; z-index: 1001; max-width: 360px; padding: 7px 10px; background: #1d2633; color: var(--ink); border: 1px solid var(--line-2); border-radius: 6px; box-shadow: 0 6px 18px #0008; font-size: 12px; line-height: 1.5; white-space: pre-line; pointer-events: none; }
+
+/* 세부 구성 (카드를 누르면 열림) */
+.detail { height: 100%; display: flex; flex-direction: column; background: var(--bg); }
+.detail > .inside { flex: 1; min-height: 0; height: auto; }
+.dhead { display: flex; gap: 10px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.dhead .back { background: transparent; border-color: var(--line-2); color: var(--muted); }
+.dhead .back:hover { color: var(--ink); }
+.dtabs { display: flex; gap: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
+.dtabs button { border: 0; background: none; color: var(--muted); padding: 4px 12px; }
+.dtabs button.on { background: var(--panel-2); color: var(--ink); font-weight: 700; }
+.servers { flex: 1; min-height: 0; display: flex; flex-direction: column; background-image: radial-gradient(#253041 1px, transparent 1px); background-size: 24px 24px; }
+.dwrap { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+.dstage { position: absolute; left: 0; top: 0; width: 840px; height: 380px; transform-origin: 0 0; }
+.dstage svg { position: absolute; inset: 0; width: 840px; height: 380px; }
+.dbox, .dinst { position: absolute; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 6px 12px; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 8px; }
+.dbox small { color: var(--muted); font-size: 11px; }
+.dbox b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbox.router { border: 1.5px dashed #53627b; background: transparent; }
+.dinst { border-left: 4px solid var(--ok); }
+.dinst .meter { margin-top: 2px; }
+.dinst.more { align-items: center; color: var(--muted); border-left-color: var(--line-2); border-style: dashed; }
+.dctl { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; padding: 10px 14px; background: var(--panel); border-top: 1px solid var(--line); }
+.dctl .ctl { display: flex; flex-direction: column; gap: 4px; }
+.dctl .ctl > span, .dctl .res span { color: var(--muted); font-size: 11px; }
+.step { display: flex; align-items: center; border: 1px solid var(--line-2); border-radius: 7px; overflow: hidden; }
+.step button { border: 0; border-radius: 0; background: var(--panel-2); width: 30px; padding: 4px 0; font-size: 15px; }
+.step output { min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; }
+.dctl .res { margin-left: auto; display: flex; gap: 22px; }
+.dctl .res > div { display: flex; flex-direction: column; gap: 2px; }
+.dctl .res b { font-size: 15px; font-variant-numeric: tabular-nums; }
+.dctl .res b.over { color: var(--fail); } .dctl .res b.okc { color: var(--ok); }
+.dnote { margin: 0; padding: 0 14px 8px; background: var(--panel); color: var(--cond); font-size: 12px; }

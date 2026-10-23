@@ -57,7 +57,8 @@ export type Data = { catalog: Map<string, CatalogItem>; rules: Rule[]; prices: P
 
 const m = (value: number, unit: string, formula: string, inputs: Record<string, number>): Metric => ({ value, unit, formula, inputs });
 
-function perInstance(node: ProjectNode, catalog: Map<string, CatalogItem>) {
+/** 대당 처리량(사양·실측으로 보정)과 최대 대수. 화면의 세부 구성도 같은 값을 쓴다 */
+export function perInstance(node: ProjectNode, catalog: Map<string, CatalogItem>) {
   const th = node.primary ? catalog.get(node.primary)?.thresholds : undefined;
   const rps = th?.rps && calibrate(th.rps, node.spec, node.measured.rps);
   const max = th?.max_instances && calibrate(th.max_instances, node.spec, node.measured.max_instances);

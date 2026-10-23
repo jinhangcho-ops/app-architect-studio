@@ -6,7 +6,6 @@ import type { ProjectNode } from '../../engine/schema';
 import { catalog } from './data';
 import { addEdge, removeEdge, removeNode, worstVerdict } from './edit';
 import { fmt } from './format';
-import { canEnter } from './NodeInside';
 import { useStore } from './store';
 
 /** 카드 색: 첫 병목(빨강) · 성장하면 한계에 닿는 노드(노랑) · 여유 충분(초록) · 계산 대상 아님(회색) */
@@ -40,6 +39,7 @@ function Card({ data, selected }: NodeProps<Node<CardData>>) {
         <div className="meter"><div className="track"><i style={{ width: `${Math.min(100, meter * 100)}%` }} /></div>{Math.round(meter * 100)}%</div>
       )}
       {spof && <div className="card-spof">단일 장애점</div>}
+      <span className="chev" aria-hidden>›</span>
       <Handle type="source" position={Position.Right} />
     </div>
   );
@@ -110,6 +110,7 @@ export function Canvas({ analysis, onSelect }: { analysis?: Analysis; onSelect: 
         <span><i className="h-ok" />여유 충분</span>
         {months.map((m) => <span key={`${m.health}${m.month}`}><i className={`h-${m.health}`} />{m.month}개월째 착수</span>)}
         <span>선 굵기 = 요청량</span>
+        <span className="legend-hint">카드를 누르면 세부 구성이 열려요</span>
       </div>
       <ReactFlow
         nodes={nodes}
@@ -124,13 +125,12 @@ export function Canvas({ analysis, onSelect }: { analysis?: Analysis; onSelect: 
         onNodesDelete={(ns) => edit((p) => ns.reduce((acc, n) => removeNode(acc, n.id), p))}
         onEdgesDelete={(es) => edit((p) => es.reduce((acc, e) => removeEdge(acc, e.source, e.target), p))}
         onConnect={(c) => c.source && c.target && edit((p) => addEdge(p, c.source, c.target))}
-        onNodeClick={(_, n) => { select({ kind: 'node', id: n.id }); onSelect(); }}
-        // 안쪽 다이어그램이 있는 블록은 두 번 누르면 들어간다
-        onNodeDoubleClick={(_, n) => { if (canEnter(project.nodes.find((x) => x.id === n.id)?.layer)) setFocus(n.id); }}
+        // 카드를 누르면 세부 구성이 열린다 (오른쪽 패널에는 그 노드 설정)
+        onNodeClick={(_, n) => { setFocus(n.id); select({ kind: 'node', id: n.id }); onSelect(); }}
         onEdgeClick={(_, e) => { select({ kind: 'edge', from: e.source, to: e.target }); onSelect(); }}
         onPaneClick={() => select(null)}
       >
-        <Background variant={BackgroundVariant.Lines} gap={28} color="#1a222d" />
+        <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="#253041" />
         <Controls />
       </ReactFlow>
     </div>

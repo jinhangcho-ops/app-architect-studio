@@ -171,8 +171,10 @@ export function App() {
           <option value="">+ 노드 추가</option>
           {LAYERS.map((l) => <option key={l} value={l}>{LAYER_NAMES[l]}</option>)}
         </Select>
+        <i className="sep" />
         <button onClick={undo} disabled={!past.length} title="되돌리기 (Ctrl+Z)" aria-label="되돌리기">↶</button>
         <button onClick={redo} disabled={!future.length} title="다시 하기 (Ctrl+Y, Ctrl+Shift+Z)" aria-label="다시 하기">↷</button>
+        <i className="sep" />
         <button onClick={relayout} disabled={view === '3d'}>자동 배치</button>
         <button onClick={() => setView(view === '2d' ? '3d' : '2d')}>{view === '2d' ? '3D 보기' : '2D 보기'}</button>
         <span className="spacer" />
@@ -197,9 +199,11 @@ export function App() {
           }
           e.target.value = '';
         }} />
+        <i className="sep" />
         <button onClick={save} title="저장 기록에 시점을 남깁니다 (Ctrl+S)">저장</button>
         <button onClick={exportFile} title="JSON 파일로 내려받기 (Ctrl+Shift+S)">파일로 내보내기</button>
         <button onClick={() => setHistory(!history)} title="직접 저장·자동 저장 시점 보기와 복구">저장 기록</button>
+        <i className="sep" />
         {/* 최선 조합(7번째 절)은 설계서를 열 때 한 번 찾는다 */}
         <button className="primary" onClick={() => setReport({ plans: findPlans(project, today).result })}>설계서 PDF</button>
       </header>

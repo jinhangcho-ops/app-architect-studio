@@ -93,16 +93,9 @@ function PeerBlock({ data }: NodeProps<Node<PeerData>>) {
 
 const nodeTypes = { part: PartBlock, alt: AltBlock, peer: PeerBlock };
 
-export function InsideBar({ title, layer, children }: { title: string; layer: string; children?: React.ReactNode }) {
-  const { setFocus } = useStore();
-  return (
-    <div className="inside-bar">
-      <button onClick={() => setFocus(undefined)}>← 전체</button>
-      <span className="muted">전체 › {layer} ›</span> <b>{title}</b>
-      <span className="spacer" />
-      {children}
-    </div>
-  );
+/** 탭 안쪽 도구줄 (돌아가기·제목은 세부 구성 머리에 있다) */
+export function InsideBar({ children }: { children?: React.ReactNode }) {
+  return <div className="inside-bar"><span className="spacer" />{children}</div>;
 }
 
 export function PartsInside({ nodeId, analysis, canEnter }: { nodeId: string; analysis?: Analysis; canEnter: (layer: string) => boolean }) {
@@ -147,7 +140,7 @@ export function PartsInside({ nodeId, analysis, canEnter }: { nodeId: string; an
 
   return (
     <div className="inside">
-      <InsideBar title={n.name} layer={LAYER_NAMES[n.layer]}>
+      <InsideBar>
         <Select aria-label="주 항목" value={n.primary ?? ''} onChange={(e) => edit((x) => updateNode(x, nodeId, { primary: e.target.value || undefined }))}>
           <option value="">주 항목 고르기</option>
           {primaries.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}

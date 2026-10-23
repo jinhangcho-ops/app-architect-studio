@@ -13,6 +13,7 @@ import { TableLab } from './ResultsPanel';
 import { useStore } from './store';
 import { TableEditor } from './TablesPanel';
 import { InsideBar, PART_LAYERS, PartsInside, READABLE } from './PartsInside';
+import { ServersInside } from './ServersInside';
 
 type Table = ProjectNode['tables'][number];
 type TableData = { t: Table; size?: TableAnalysis };
@@ -58,16 +59,43 @@ function ActionBlock({ data }: NodeProps<Node<ActionData>>) {
 
 const nodeTypes = { table: TableBlock, action: ActionBlock };
 
-/** 안쪽 다이어그램이 있는 블록: 테이블을 두는 DB·캐시·분석, 부품을 두는 백엔드·게이트웨이·워커 */
-export const canEnter = (layer?: string) => !!layer && ([...TABLE_LAYERS, ...PART_LAYERS] as readonly string[]).includes(layer);
+/** 모든 블록은 세부 구성(서버 구성)을 연다 */
+export const canEnter = (layer?: string) => !!layer;
 
+type Tab = 'servers' | 'tables' | 'parts';
+
+/** 카드를 누르면 열리는 세부 구성: 서버 구성(모든 블록) + 테이블 구성(DB·캐시·분석) 또는 부품 구성(백엔드·게이트웨이·워커) */
 export function NodeInside({ nodeId, analysis, onSelect }: { nodeId: string; analysis?: Analysis; onSelect: () => void }) {
-  const { project: p, edit, select, selected, setFocus } = useStore();
+  const { project: p, selected, setFocus } = useStore();
+  const n = p.nodes.find((x) => x.id === nodeId);
+  const [tab, setTab] = useState<Tab>(selected?.kind === 'table' && selected.node === nodeId ? 'tables' : 'servers');
+  if (!n) return <p className="muted inside-empty">블록이 없습니다. <button onClick={() => setFocus(undefined)}>← 전체 구조</button></p>;
+  const tabs: [Tab, string][] = [['servers', '서버 구성']];
+  if ((TABLE_LAYERS as readonly string[]).includes(n.layer)) tabs.push(['tables', '테이블 구성']);
+  if ((PART_LAYERS as readonly string[]).includes(n.layer)) tabs.push(['parts', '부품 구성']);
+  return (
+    <div className="detail" onContextMenu={(e) => { e.preventDefault(); setFocus(undefined); }}>
+      <div className="dhead">
+        <button className="back" onClick={() => setFocus(undefined)} title="Esc 또는 오른쪽 클릭으로도 돌아갑니다">← 전체 구조</button>
+        <b>{n.name} · 세부 구성</b>
+        <span className="muted">{LAYER_NAMES[n.layer]}</span>
+        <span className="spacer" />
+        {tabs.length > 1 && <div className="dtabs" role="tablist">{tabs.map(([k, label]) => (
+          <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>
+        ))}</div>}
+      </div>
+      {tab === 'servers' && <ServersInside nodeId={nodeId} analysis={analysis} />}
+      {tab === 'tables' && <TablesInside nodeId={nodeId} analysis={analysis} onSelect={onSelect} />}
+      {tab === 'parts' && <PartsInside nodeId={nodeId} analysis={analysis} canEnter={canEnter} />}
+    </div>
+  );
+}
+
+function TablesInside({ nodeId, analysis, onSelect }: { nodeId: string; analysis?: Analysis; onSelect: () => void }) {
+  const { project: p, edit, select, selected } = useStore();
   // 안쪽 배치는 보는 동안만 기억한다 (저장 파일에는 바깥 노드 위치만 남긴다)
   const [moved, setMoved] = useState<Record<string, { x: number; y: number }>>({});
-  const n = p.nodes.find((x) => x.id === nodeId);
-  if (!n) return <p className="muted inside-empty">블록이 없습니다. <button onClick={() => setFocus(undefined)}>← 전체</button></p>;
-  if ((PART_LAYERS as readonly string[]).includes(n.layer)) return <PartsInside nodeId={nodeId} analysis={analysis} canEnter={canEnter} />;
+  const n = p.nodes.find((x) => x.id === nodeId)!;
 
   const actions = p.actions.filter((a) => a.writes.some((w) => w.node === nodeId));
   const others = p.actions.filter((a) => !actions.includes(a));
@@ -91,7 +119,7 @@ export function NodeInside({ nodeId, analysis, onSelect }: { nodeId: string; ana
 
   return (
     <div className="inside">
-      <InsideBar title={n.name} layer={LAYER_NAMES[n.layer]}>
+      <InsideBar>
         <button onClick={() => edit((x) => addTable(x, nodeId))}>테이블 추가</button>
         <button onClick={() => edit(addAction)} disabled={!n.tables.length && !p.nodes.some((x) => x.tables.length)}>행동 추가</button>
       </InsideBar>

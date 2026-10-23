@@ -42,8 +42,8 @@ describe('백엔드·게이트웨이·워커 블록 안 (부품)', () => {
     expect(run(updateNode(p0, 'N-03', { extras: ['idempotency_key'] }), today).error).toBeUndefined();
   });
 
-  it('안으로 들어갈 수 있는 블록: DB·캐시·분석과 백엔드·게이트웨이·워커, 화면·큐·외부는 아직 아님', () => {
-    expect(['db', 'cache', 'analytics', 'backend', 'gateway', 'batch'].every((l) => canEnter(l))).toBe(true);
-    expect(['ui', 'queue', 'external'].some((l) => canEnter(l))).toBe(false);
+  it('모든 블록은 세부 구성으로 들어갈 수 있음', () => {
+    expect(['ui', 'gateway', 'backend', 'cache', 'queue', 'batch', 'db', 'external', 'analytics'].every((l) => canEnter(l))).toBe(true);
+    expect(canEnter(undefined)).toBe(false);
   });
 });
