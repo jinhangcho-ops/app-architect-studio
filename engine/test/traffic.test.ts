@@ -6,7 +6,7 @@ import { loadCatalog, loadProject } from '../io';
 import { computedScenarios, nodeLoads } from '../load';
 import { judgeNode } from '../judge';
 import { Project } from '../schema';
-import { patternOf, traffic, type Traffic } from '../traffic';
+import { dayCurve, patternOf, traffic, type Traffic } from '../traffic';
 
 const catalog = loadCatalog(fileURLToPath(new URL('../../data/catalog', import.meta.url)));
 const example = loadProject(fileURLToPath(new URL('../../examples/phase2.json', import.meta.url)), catalog.items);
@@ -46,6 +46,28 @@ describe('관문: 무작위 접속 시각 (현지 08~23시에 80%)', () => {
     expect(Math.abs(traffic(all(0.7))!.inWindowShare.value - 0.7)).toBeLessThan(0.005);
     const mixed = { ...all(0.7), personas: example.personas.map((ps) => ({ ...ps, window_share: 0.9 })) };
     expect(Math.abs(traffic(mixed)!.inWindowShare.value - 0.9)).toBeLessThan(0.005);
+  });
+
+  it('창 안 접속 모양이 아주 넓어도(window_sigma 0.5) 곡선이 뒤집히지 않음: 창 안이 고르게 퍼질 때보다 적어지지 않고 음수도 없음', () => {
+    const wide = withPersonas({ window_sigma: 0.5, window_share: 0.8 });
+    const c = dayCurve(wide)!;
+    expect(Math.min(...c.total)).toBeGreaterThanOrEqual(0);
+    // 기준 나라와 같은 시간대 페르소나만 보면 창(현지 시각)이 곡선 시각과 같다
+    const same = wide.personas.map((ps, i) => [ps, c.personas[i]] as const).filter(([ps]) => ps.country === wide.scale!.report_country && ps.utc_offset === undefined);
+    expect(same.length).toBeGreaterThan(0);
+    for (const [ps, cur] of same) {
+      const [a, b] = ps.window;
+      const span = (b - a + 24) % 24 || 24;
+      const inside = cur.rps.reduce((s, v, j) => { const h = (j * 5 + 2.5) / 60; return s + (((h - a + 24) % 24) < span ? v : 0); }, 0);
+      expect(inside / cur.rps.reduce((s, v) => s + v, 0)).toBeGreaterThanOrEqual(span / 24 - 0.01);
+    }
+  });
+
+  it('모아 보내기는 쓰기 요청만 줄이고 저장량 추정은 그대로', () => {
+    const batch = { ...example, exchange: { receive: 'polling' as const, send: 'batch' as const, batch_s: 600 } };
+    const b = traffic(batch)!;
+    expect(b.dailyWrites.value).toBeLessThan(t.dailyWrites.value);
+    expect(b.storageGb.value).toBeCloseTo(t.storageGb.value, 6);
   });
 
   it('피크 1시간 비중은 계산값(약 11.5%)과 거의 같음', () => {

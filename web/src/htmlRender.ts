@@ -86,7 +86,8 @@ export function paginate(entries: Entry[], frame: { w: number; h: number }, name
 /** 바깥 주소 읽기를 막고(CSP), 함께 고른 CSS 파일을 <link> 자리에 넣은 HTML */
 export function prepareHtml(text: string, css: Record<string, string>, parser: DOMParser = new DOMParser()): string {
   const doc = parser.parseFromString(text, 'text/html');
-  for (const el of doc.querySelectorAll('script, iframe, object, embed, base')) el.remove();
+  // meta refresh(다른 주소로 이동)·dns-prefetch 같은 link는 CSP가 막지 못해 바깥으로 요청이 나가므로 지운다
+  for (const el of doc.querySelectorAll('script, iframe, frame, object, embed, base, meta[http-equiv], link:not([rel~="stylesheet"])')) el.remove();
   for (const link of doc.querySelectorAll('link[rel~="stylesheet"]')) {
     const file = (link.getAttribute('href') ?? '').split(/[?#]/)[0].split('/').pop() ?? '';
     if (css[file] !== undefined) { const st = doc.createElement('style'); st.textContent = css[file]; link.replaceWith(st); } else link.remove();

@@ -105,10 +105,12 @@ export function startModel(ps: Persona, defaultShare: number) {
   // 창이 하루 전체면 정규분포만 (바닥을 섞어도 창 안 비율이 바뀌지 않는다)
   if (span === 24) return { span, mu, sigma, center: mu, weight: 1, inWindow: () => true };
   const inWindow = (t: number) => Math.abs(hourDiff(t, mu)) <= span / 2;
-  if (share >= flat) return { span, mu, sigma, center: mu, weight: Math.min(1, (share - flat) / (inBump - flat)), inWindow };
   // 고르게 퍼질 때보다 창 안이 적으면(창 시간을 피함) 정규분포를 창 반대편(12시간 뒤)에 둔다. 그 분포 중 창 안에 걸치는 몫은 양쪽 꼬리
-  const inOpposite = 1 - erf((12 - span / 2) / sigma / Math.SQRT2);
-  return { span, mu, sigma, center: mu + 12, weight: Math.min(1, (flat - share) / (flat - inOpposite)), inWindow };
+  const avoid = share < flat;
+  const inX = avoid ? 1 - erf((12 - span / 2) / sigma / Math.SQRT2) : inBump;
+  // 비율은 0~1. 정규분포가 너무 넓어(window_sigma가 작음) 바닥보다도 못 모으면 맞출 수 없어 고른 바닥(0)이 가장 가깝다
+  const k = (share - flat) / (inX - flat);
+  return { span, mu, sigma, center: avoid ? mu + 12 : mu, weight: Number.isFinite(k) && k > 0 ? Math.min(1, k) : 0, inWindow };
 }
 
 /** mulberry32: 작고 빠른 시드 고정 난수 */
@@ -150,21 +152,23 @@ const m = (value: number, unit: string, formula: string, inputs: Record<string, 
 
 /** 접속 1회의 요청·쓰기. 행동이 있으면 쓰기 요청 = 행동 횟수(행동 1회 = 쓰기 요청 1건)이고 패턴의 writes_per_session은 쓰지 않는다.
  *  하이브리드는 접속마다 동기화 요청만 서버로 간다 */
-export function perSession(p: Project, ps: Persona): { reqPer: number; writePer: number } {
+/** writePer = 쓰기 요청 수(모아 보내면 줄어듦), dataWrites = 실제로 저장하는 쓰기 수(모아 보내도 그대로, 저장량 추정에 쓴다) */
+export function perSession(p: Project, ps: Persona): { reqPer: number; writePer: number; dataWrites: number } {
   const pt = patternOf(ps);
   const writes = p.actions.length ? p.actions.reduce((s, a) => s + (ps.action_rates[a.name] ?? a.per_session), 0) : pt.writes_per_session;
-  if (p.deploy.mode === 'hybrid') return { reqPer: pt.sync_per_session, writePer: pt.sync_per_session };
+  if (p.deploy.mode === 'hybrid') return { reqPer: pt.sync_per_session, writePer: pt.sync_per_session, dataWrites: pt.sync_per_session };
   // 데이터 주고받기: 최신화 주기마다 받기(polling 요청 또는 streaming으로 밀어주는 메시지), 모아 보내기면 쓰기 요청이 주기 수로 준다
   // shortcut: streaming 메시지도 요청 1건으로 센다 (보수적). 메시지가 요청보다 훨씬 가벼운 시스템이면 메시지 무게를 따로 둔다
   const ex = p.exchange;
   const sessionS = pt.session_minutes * 60;
   const refreshes = ex?.refresh_s ? sessionS / ex.refresh_s : 0;
+  // shortcut: 쓰기 RPS(아래 노드·DB로 가는 쓰기 부하)도 요청 수로 센다 (모아 보낸 것을 한 번에 저장한다고 가정). 행마다 따로 저장하면 dataWrites로 센다
   const writeReq = ex?.send === 'batch' && writes > 0 ? Math.min(writes, Math.max(1, sessionS / ex.batch_s)) : writes;
-  return { reqPer: pt.reads_per_session + refreshes + writeReq, writePer: writeReq };
+  return { reqPer: pt.reads_per_session + refreshes + writeReq, writePer: writeReq, dataWrites: writes };
 }
 
 /** 하루 기대 트래픽 곡선 (기준 나라 시각, stepMin분 칸마다 평균 RPS). 무작위 하루(traffic)와 같은 가정을 기댓값으로 계산한다:
- *  접속 시작 시각 = 창 안 비율만큼 창 안의 잘린 정규분포 + 나머지는 창 밖에 고르게, 접속의 요청은 접속 시간 동안 고르게 나뉜다.
+ *  접속 시작 시각 = startModel(창 가운데의 정규분포 + 하루 전체 고른 바닥), 접속의 요청은 접속 시간 동안 고르게 나뉜다.
  *  그래서 곡선이 계산 결과로 부드럽다 (1시간 칸에 몰아 담지 않음) */
 export function dayCurve(p: Project, stepMin = 5): { personas: { name: string; rps: number[] }[]; total: number[] } | undefined {
   if (!enabled(p.deploy, 'traffic') || !p.scale || !p.personas.length) return undefined;
@@ -216,7 +220,7 @@ export function traffic(p: Project): Traffic | undefined {
     const scale = n / sim;
     const { center, sigma, weight, inWindow: inWin } = startModel(ps, p.scale.window_share);
     const shift = reportOffset - utcOffset(ps.country, ps.utc_offset); // 현지 시각 + shift = 기준 나라 시각
-    const { reqPer, writePer } = perSession(p, ps);
+    const { reqPer, writePer, dataWrites } = perSession(p, ps);
     const rowsPer = [...rowsPerSession(p, ps)];
     for (const [k] of rowsPer) if (!tableHour.has(k)) tableHour.set(k, Array<number>(24).fill(0));
     const me: PersonaTraffic = { name: ps.name, share: ps.share, people: n, dau: 0, sessions: 0, requests: 0, writes: 0, responseKb: 0, rows: {}, hourlyRps: Array<number>(24).fill(0) };
@@ -235,7 +239,7 @@ export function traffic(p: Project): Traffic | undefined {
         hourWrite[h] += writePer * scale;
         hourUserSec[h] += pt.session_minutes * 60 * scale;
         sessions += scale;
-        writeKb += writePer * pt.write_kb * scale;
+        writeKb += dataWrites * pt.write_kb * scale;
         respKb += reqPer * pt.response_kb * scale;
         me.sessions += scale;
         for (const [k, rows] of rowsPer) tableHour.get(k)![h] += rows * scale;

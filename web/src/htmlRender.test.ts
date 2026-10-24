@@ -13,6 +13,8 @@ describe('HTML 그리기 준비', () => {
     expect(out).not.toContain('<script');
     expect(out).not.toContain('<iframe');
     expect(out).not.toContain('cdn.example.com');
+    const nav = prepareHtml('<head><meta http-equiv="refresh" content="0;url=https://evil.example"><link rel="dns-prefetch" href="//evil.example"><link rel="preconnect" href="https://evil.example"></head><body></body>', {});
+    expect(nav).not.toContain('evil.example');
     expect(prepareHtml('<img src="https://x.y/a.png" srcset="b.png 2x" width="10"><img src="data:image/png;base64,AA">', {})).not.toMatch(/x\.y|b\.png/);
   });
 });

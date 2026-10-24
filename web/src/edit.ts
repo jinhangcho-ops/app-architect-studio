@@ -273,3 +273,22 @@ export function bindApi(p: Project, nodeId: string, screen: number, id: string, 
   const next = updateWire(p, nodeId, screen, id, { api });
   return api?.to ? addEdge(next, nodeId, api.to) : next;
 }
+
+// ── 페르소나 ──
+/** 페르소나 고치기. 이름이 바뀌면 유입 모형의 "들어오는 페르소나"도 따라 바꾼다 */
+export function updatePersona(p: Project, i: number, patch: Partial<Project['personas'][number]>): Project {
+  const old = p.personas[i]?.name;
+  const next = { ...p, personas: p.personas.map((x, k) => (k === i ? { ...x, ...patch } : x)) };
+  const inflow = p.growth?.inflow;
+  return patch.name !== undefined && inflow?.entry === old ? { ...next, growth: { ...p.growth!, inflow: { ...inflow, entry: patch.name } } } : next;
+}
+
+/** 페르소나 지우기. 유입 모형이 그 페르소나로 들어오게 되어 있으면 남은 첫 페르소나로, 남은 게 없으면 유입 모형을 끈다 */
+export function removePersona(p: Project, i: number): Project {
+  const gone = p.personas[i]?.name;
+  const personas = p.personas.filter((_, k) => k !== i);
+  const inflow = p.growth?.inflow;
+  if (!inflow || inflow.entry !== gone) return { ...p, personas };
+  if (!personas.length) { const { inflow: _, ...rest } = p.growth!; return { ...p, personas, growth: rest }; }
+  return { ...p, personas, growth: { ...p.growth!, inflow: { ...inflow, entry: personas[0].name } } };
+}

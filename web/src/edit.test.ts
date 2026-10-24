@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseProject } from '../../engine/data';
 import { catalog, examples } from './data';
 import { parseSpec } from '../../engine/spec';
-import { addAction, addEdge, addWrite, removeWrite, addNode, addTable, applyAlternative, importTables, removeAction, removeNode, removeTable, run, setActionRate, setVar, updateAction, updateNode, updateTable, worstVerdict } from './edit';
+import { addAction, addEdge, addWrite, removeWrite, addNode, addTable, applyAlternative, importTables, removeAction, removeNode, removePersona, removeTable, run, setActionRate, setVar, updateAction, updateNode, updatePersona, updateTable, worstVerdict } from './edit';
 import { autoLayout } from './layout';
 
 const today = '2026-10-23';
@@ -143,5 +143,25 @@ describe('안쪽 다이어그램에서 선 긋기·지우기', () => {
     expect(p.personas.every((ps) => !('리뷰' in ps.action_rates))).toBe(true);
     expect(removeWrite(p0, '주문', 'db', 'orders').actions.find((a) => a.name === '주문')!.writes.map((w) => w.table)).toEqual(['order_items']);
     expect(run(p, today).error).toBeUndefined();
+  });
+});
+
+describe('페르소나와 유입 모형', () => {
+  const base = parseProject(examples.find((e) => e.name === 'phase3.json')!.data, catalog.items, 'x');
+  const entry = base.personas[4].name;
+  const withInflow = { ...base, growth: { ...base.growth!, inflow: { market: 1e7, external: 0.01, word_of_mouth: 0.3, entry, up: 0.05, down: 0.03, leave: 0.1 } } };
+  it('들어오는 페르소나 이름을 바꾸면 유입 모형도 따라가 결과가 계속 나옴', () => {
+    const p = updatePersona(withInflow, 4, { name: '새 이름' });
+    expect(p.growth!.inflow!.entry).toBe('새 이름');
+    expect(run(p, '2026-10-24').error).toBeUndefined();
+  });
+  it('들어오는 페르소나를 지우면 남은 첫 페르소나로', () => {
+    const p = removePersona(withInflow, 4);
+    expect(p.growth!.inflow!.entry).toBe(base.personas[0].name);
+    expect(p.personas.some((x) => x.name === entry)).toBe(false);
+  });
+  it('단계 이동률 합이 1을 넘으면 검사에서 걸림', () => {
+    const bad = { ...withInflow, growth: { ...withInflow.growth, inflow: { ...withInflow.growth.inflow, up: 0.7, down: 0.5 } } };
+    expect(run(bad, '2026-10-24').error).toMatch(/1을 넘음/);
   });
 });

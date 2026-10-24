@@ -74,6 +74,12 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
             {p.scale && <KV rows={[
               ['활성 사용자', `${fmt(p.scale.users)}명`], ['이벤트 배수', `${p.scale.event_multiplier}배`],
               ['창 안 비율', fmtShare(p.scale.window_share)], ['보관 기간', `${p.scale.retention_days}일`], ['기준 나라', p.scale.report_country],
+              ['데이터 주고받기', p.exchange
+                ? `${p.exchange.receive === 'streaming' ? '스트리밍' : '폴링'}${p.exchange.refresh_s ? ` ${p.exchange.refresh_s}초마다 최신화` : ' (화면을 옮길 때만 받음)'} · ${p.exchange.send === 'batch' ? `${p.exchange.batch_s}초마다 모아 보내기` : '행동마다 바로 보내기'}`
+                : '설정 없음 (접속당 읽기·쓰기만)'],
+              ['성장', !p.growth ? '없음' : p.growth.inflow
+                ? `유입 모형: 시장 ${fmt(p.growth.inflow.market)}명, 바깥 유입 ${p.growth.inflow.external}/월, 입소문 ${p.growth.inflow.word_of_mouth}, '${p.growth.inflow.entry}'로 들어옴, 단계 이동 ↑${p.growth.inflow.up} ↓${p.growth.inflow.down}, 떠남 ${p.growth.inflow.leave}`
+                : `월 성장률 ${fmtShare(p.growth.monthly_rate)}`],
             ]} />}
             {t && <>
               <table className="r-grid">

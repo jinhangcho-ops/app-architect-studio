@@ -490,6 +490,8 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
   const inflow = p.growth?.inflow;
   if (inflow && !p.personas.some((ps) => ps.name === inflow.entry)) errors.push(`유입 모형: 새 사용자가 들어올 페르소나 ${inflow.entry}가 없음`);
   if (inflow && p.scale && inflow.market < p.scale.users) errors.push('유입 모형: 시장 크기가 지금 활성 사용자보다 작음');
+  // 한 단계에서 한 달에 나가는 몫이 1을 넘으면 없던 사람이 생긴다
+  if (inflow && (inflow.up + inflow.down > 1 || inflow.up + inflow.leave > 1)) errors.push('유입 모형: 더 활발해짐 + 덜 쓰게 됨(또는 떠남)이 한 달에 1을 넘음');
   for (const a of p.actions) {
     for (const w of a.writes) {
       const node = p.nodes.find((n) => n.id === w.node);

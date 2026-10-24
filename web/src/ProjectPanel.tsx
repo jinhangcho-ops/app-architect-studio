@@ -6,7 +6,7 @@ import { prices } from './data';
 import { PATTERNS } from '../../engine/traffic';
 import { STANDARD_OFFSET } from '../../engine/timezones';
 import { NumField, Row, Section, TextField } from './fields';
-import { addAction, removeAction, setActionRate, updateAction } from './edit';
+import { addAction, removeAction, removePersona, setActionRate, updateAction, updatePersona } from './edit';
 import { useStore } from './store';
 
 const MODES: [Project['deploy']['mode'], string][] = [
@@ -18,8 +18,7 @@ export function ProjectPanel() {
   const [editPersonas, setEditPersonas] = useState(false);
   const set = (patch: Partial<Project>) => edit((x) => ({ ...x, ...patch }));
   const setScale = (patch: Partial<NonNullable<Project['scale']>>) => p.scale && set({ scale: { ...p.scale, ...patch } });
-  const setPersona = (i: number, patch: Partial<Project['personas'][number]>) =>
-    set({ personas: p.personas.map((x, k) => (k === i ? { ...x, ...patch } : x)) });
+  const setPersona = (i: number, patch: Partial<Project['personas'][number]>) => edit((x) => updatePersona(x, i, patch));
   const shareSum = p.personas.reduce((s, x) => s + x.share, 0);
 
   return (
@@ -81,7 +80,7 @@ export function ProjectPanel() {
             <Select value={ps.country} onChange={(e) => setPersona(i, { country: e.target.value })} aria-label="나라">
               {Object.keys(STANDARD_OFFSET).map((c) => <option key={c} value={c}>{c}</option>)}
             </Select>
-            <button onClick={() => set({ personas: p.personas.filter((_, k) => k !== i) })} aria-label="삭제">×</button>
+            <button onClick={() => edit((x) => removePersona(x, i))} aria-label="삭제">×</button>
           </div>
         ))}
         <div className="inline">
