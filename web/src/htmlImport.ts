@@ -82,7 +82,8 @@ export const dataApi = (el: Element): Api | undefined => {
 export const formApi = (fm: Element) => apiOf((fm.getAttribute('method') ?? 'GET').toUpperCase(), fm.getAttribute('action')!);
 /** 컨트롤이 부르는 API: data-api → /api 링크 → 버튼이면 아직 안 쓴 폼 action (폼은 그 폼의 첫 버튼이 가져간다, 폼이 다른 영역 안에 있어도) */
 export function apiFor(el: Element, isButton: boolean, usedForms: Set<Element>): Api | undefined {
-  const href = el.tagName === 'A' ? el.getAttribute('href') ?? '' : '';
+  // localName은 HTML <a>와 SVG 안의 <a> 모두 'a' (tagName은 HTML만 대문자)
+  const href = el.localName === 'a' ? el.getAttribute('href') ?? '' : '';
   const api = dataApi(el) ?? (href.startsWith('/api') ? apiOf('GET', href) : undefined);
   if (api) return api;
   const fm = isButton ? el.closest('form[action]') : null;

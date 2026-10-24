@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { parseHtml } from './htmlImport';
+import { apiFor, parseHtml } from './htmlImport';
 
 // happy-dom 환경에서는 import.meta.url이 file:이 아니라서 저장소 루트(테스트 실행 위치) 기준으로 읽는다
 const html = readFileSync(join(process.cwd(), 'examples/html/order_checkout.html'), 'utf8');
@@ -34,5 +34,13 @@ describe('관문: v2 예시 화면(order_checkout.html)에서 영역 7개', () =
   it('시맨틱 태그가 아니어도 클래스 이름으로 역할을 맞힘', () => {
     const div = parseHtml('<div class="modal-popup"><button>닫기</button></div><div id="left-sidebar"></div>');
     expect(div.regions.map((x) => x.role)).toEqual(['모달', '사이드바']);
+  });
+});
+
+describe('링크의 API: HTML <a>와 SVG 안의 <a> 모두', () => {
+  it('/api로 시작하는 링크는 GET 호출, 일반 링크는 아님', () => {
+    const doc = new DOMParser().parseFromString('<a id="h" href="/api/list">목록</a><a id="n" href="/about">소개</a><svg><a id="s" href="/api/like"><text>♥</text></a></svg>', 'text/html');
+    const api = (id: string) => apiFor(doc.getElementById(id)!, false, new Set())?.path;
+    expect([api('h'), api('n'), api('s')]).toEqual(['/api/list', undefined, '/api/like']);
   });
 });
