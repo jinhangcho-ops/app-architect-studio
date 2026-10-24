@@ -391,3 +391,13 @@ body[data-drag='remove'] .palette::before { content: '여기에 놓으면 빠져
 .wtab-add { flex: none; width: 30px; height: 30px; margin: 0 0 3px 6px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); font-size: 18px; }
 .wtab-add:hover { background: #ffffff14; color: var(--ink); }
 .limit-chart h3 small { display: block; margin: 3px 0 0; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 0 0 4px 70px; font-size: 11px; color: var(--muted); }
+.chart-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+
+/* 복구 알림: 한 줄. 시점 이름이 길면 말줄임, 단추는 줄바꿈 없이 */
+.recovery { width: max-content; max-width: min(820px, 94%); white-space: nowrap; }
+.recovery > span { flex: none; }
+.recovery > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.recovery > button { flex: none; }
+.recommend { margin: 4px 0 8px; padding: 8px 10px; border: 1px solid var(--line-2); border-left: 3px solid var(--accent); border-radius: 6px; background: var(--panel-2); font-size: 12px; }
+.recommend p { margin: 4px 0 6px; }

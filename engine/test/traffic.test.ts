@@ -203,6 +203,8 @@ describe('페르소나별 트래픽: 각자의 패턴·비율로 계산하고 �
   it('페르소나 합계가 전체 값과 같고, 1인당 요청은 하루 접속 × 접속당 요청 근처', () => {
     expect(t.personas.reduce((s, x) => s + x.requests, 0)).toBeCloseTo(t.dailyRequests.value, 0);
     expect(t.personas.reduce((s, x) => s + x.dau, 0)).toBeCloseTo(t.dau.value, 0);
+    // 페르소나별 시간대 RPS를 더하면 전체 시간대 RPS
+    for (let h = 0; h < 24; h++) expect(t.personas.reduce((s, x) => s + x.hourlyRps[h], 0)).toBeCloseTo(t.hourlyRps[h], 6);
     for (const [i, x] of t.personas.entries()) {
       const pt = patternOf(example.personas[i]);
       const perPerson = pt.sessions_per_day * (pt.reads_per_session + pt.writes_per_session);

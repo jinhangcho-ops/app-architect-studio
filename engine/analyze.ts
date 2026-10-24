@@ -6,6 +6,7 @@ import { hourlyInstances, instancesNeeded } from './capacity';
 import { monthlyCost, type CostResult } from './cost';
 import { costLines } from './meters';
 import { enabled, localMemoryMb } from './deploy';
+import { adoption, monthReaching, type AdoptionMonth } from './adoption';
 import { timeline, usersAt, type Milestone } from './growth';
 import { checkRules, judgeNode, mergeScenario, type NodeJudgement, type RuleHit, type Scenario } from './judge';
 import { nodeP99, pathP99, syncPaths } from './latency';
@@ -39,7 +40,8 @@ export type Analysis = {
   spof: string[];
   cost?: CostResult;
   bottleneck?: { nodeId: string; limitUsers: Metric };
-  growth?: { milestones: Milestone[]; monthlyCost: (Metric | undefined)[]; /** 파티션 없는 테이블이 서버 메모리를 넘는 달 (nodeId = '노드.테이블') */ tables: Milestone[] };
+  growth?: { milestones: Milestone[]; monthlyCost: (Metric | undefined)[]; /** 파티션 없는 테이블이 서버 메모리를 넘는 달 (nodeId = '노드.테이블') */ tables: Milestone[];
+    /** 유입 모형이 있을 때 달마다 경로별 유입·페르소나별 사용자 */ adoption?: AdoptionMonth[] };
   /** 테이블별 크기·파티션 */
   tables: TableAnalysis[];
   /** 화면 와이어프레임의 API 호출별 피크 RPS */
@@ -179,10 +181,15 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     const tableLimits = tables
       .filter((x) => !x.vars.partitioned && typeof x.vars.server_mem_gb === 'number' && x.storedGb.value > 0)
       .map((x) => ({ nodeId: x.key, limitUsers: (p.scale!.users * (x.vars.server_mem_gb as number)) / x.storedGb.value }));
+    // 유입 모형이 있으면 그 곡선(페르소나 구성까지 반영한 환산 사용자)으로, 없으면 월 성장률로 늘린다. 한계 시점은 10년까지 찾는다
+    const curve = adoption(p, Math.max(months, 120));
+    const reach = curve && ((lim: number) => monthReaching(curve, lim));
+    const factorAt = (mo: number) => (curve ? curve[mo].equivalent / p.scale!.users : usersAt(1, g, mo));
     growth = {
-      milestones: timeline(limits, p.scale.users, g, lead_months),
-      monthlyCost: cost ? Array.from({ length: months + 1 }, (_, mo) => costAt(usersAt(1, g, mo)).result.total) : [],
-      tables: timeline(tableLimits, p.scale.users, g, lead_months),
+      milestones: timeline(limits, p.scale.users, g, lead_months, reach),
+      monthlyCost: cost ? Array.from({ length: months + 1 }, (_, mo) => costAt(factorAt(mo)).result.total) : [],
+      tables: timeline(tableLimits, p.scale.users, g, lead_months, reach),
+      ...(curve && { adoption: curve.slice(0, months + 1) }),
     };
   }
 

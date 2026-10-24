@@ -1,6 +1,7 @@
 import { Select } from './Select';
 import { useState } from 'react';
-import { Persona, REGIONS, Scale, PATTERN_IDS, type PriceRow, type Project } from '../../engine/schema';
+import { Persona, REGIONS, Scale, PATTERN_IDS, SERVICE_KINDS, type Exchange, type PriceRow, type Project } from '../../engine/schema';
+import { RECOMMEND, SERVICE_NAMES } from './exchange';
 import { prices } from './data';
 import { PATTERNS } from '../../engine/traffic';
 import { STANDARD_OFFSET } from '../../engine/timezones';
@@ -110,11 +111,71 @@ export function ProjectPanel() {
         <p className="muted">노드 비용은 주 항목의 과금 방식(대수×시간·사용량·월 정액)과 노드 리전으로 가격표에서 찾습니다.</p>
       </Section>
 
+      <Section title="데이터 주고받기 (로드밸런서)">
+        {(() => {
+          const ex = p.exchange ?? { receive: 'polling' as const, send: 'realtime' as const, batch_s: 60 };
+          const setEx = (patch: Partial<Exchange>) => set({ exchange: { ...ex, ...patch } });
+          const rec = ex.service ? RECOMMEND[ex.service] : undefined;
+          return <>
+            <Row label="서비스 성격">
+              <Select value={ex.service ?? ''} onChange={(e) => setEx({ service: (e.target.value || undefined) as Exchange['service'] })}>
+                <option value="">고르면 추천값을 보여 줘요</option>
+                {SERVICE_KINDS.map((k) => <option key={k} value={k}>{SERVICE_NAMES[k]}</option>)}
+              </Select>
+            </Row>
+            {rec && <div className="recommend">
+              <b>추천: {rec.ex.receive === 'streaming' ? '스트리밍' : '폴링'}{rec.ex.refresh_s ? ` ${rec.ex.refresh_s}초마다` : ' (화면 옮길 때만)'} · {rec.ex.send === 'batch' ? `${rec.ex.batch_s}초마다 모아 보내기` : '바로 보내기'}</b>
+              <p className="muted">{rec.why} (예시값)</p>
+              <button onClick={() => setEx(rec.ex)}>추천값 적용</button>
+            </div>}
+            <Row label="받기">
+              <Select value={ex.receive} onChange={(e) => setEx({ receive: e.target.value as Exchange['receive'] })}>
+                <option value="polling">폴링 (앱이 다시 요청)</option>
+                <option value="streaming">스트리밍 (연결 유지, 서버가 밀어줌)</option>
+              </Select>
+            </Row>
+            <NumField label="최신화 주기(초)" value={ex.refresh_s} step={1} hint="비우면 화면을 옮길 때만 받아요. 짧을수록 접속 중 요청이 늘어요" onChange={(v) => setEx({ refresh_s: v && v > 0 ? v : undefined })} />
+            <Row label="보내기">
+              <Select value={ex.send} onChange={(e) => setEx({ send: e.target.value as Exchange['send'] })}>
+                <option value="realtime">행동마다 바로</option>
+                <option value="batch">모았다가 한꺼번에</option>
+              </Select>
+            </Row>
+            {ex.send === 'batch' && <NumField label="모아 보내는 주기(초)" value={ex.batch_s} step={5} onChange={(v) => setEx({ batch_s: v && v > 0 ? v : 60 })} />}
+            <p className="muted">접속 1회의 요청 = 접속당 읽기 + 접속 시간 ÷ 최신화 주기 + 쓰기 요청(모아 보내면 접속 시간 ÷ 주기). 스트리밍은 접속마다 연결 1개를 열어 둡니다.</p>
+          </>;
+        })()}
+      </Section>
+
       <Section title="성장">
         {!p.growth && <button onClick={() => set({ growth: { monthly_rate: 0.1, months: 24, lead_months: 3 } })}>성장률 입력하기</button>}
         {p.growth && <>
-          <NumField label="월 성장률" value={p.growth.monthly_rate} step={0.01} onChange={(v) => set({ growth: { ...p.growth!, monthly_rate: v ?? 0 } })} />
+          {!p.growth.inflow && <NumField label="월 성장률" value={p.growth.monthly_rate} step={0.01} onChange={(v) => set({ growth: { ...p.growth!, monthly_rate: v ?? 0 } })} />}
           <NumField label="준비 기간(월)" value={p.growth.lead_months} step={1} onChange={(v) => set({ growth: { ...p.growth!, lead_months: v ?? 0 } })} />
+          {!p.growth.inflow && p.scale && p.personas.length > 0 && <button onClick={() => set({ growth: { ...p.growth!, inflow: {
+            market: p.scale!.users * 10, external: 0.01, word_of_mouth: 0.3, up: 0.05, down: 0.03, leave: 0.1,
+            // 새 사용자는 보통 가볍게 써 보며 시작한다: '가끔' 패턴, 없으면 가장 덜 활발한 페르소나
+            entry: (p.personas.find((x) => x.pattern === 'occasional') ?? [...p.personas].sort((a, b) => PATTERN_IDS.indexOf(b.pattern) - PATTERN_IDS.indexOf(a.pattern))[0]).name,
+          } } })}>유입 경로·페르소나 단계로 계산하기</button>}
+          {p.growth.inflow && (() => {
+            const f = p.growth!.inflow!;
+            const setF = (patch: Partial<typeof f>) => set({ growth: { ...p.growth!, inflow: { ...f, ...patch } } });
+            return <>
+              <NumField label="시장 크기(명)" value={f.market} step={10000} hint="이 서비스를 쓸 수 있는 전체 사람 수" onChange={(v) => setF({ market: v ?? f.market })} />
+              <NumField label="바깥 유입(월)" value={f.external} step={0.005} hint="광고·검색 등으로 아직 안 쓴 사람 중 매달 들어오는 비율 (Bass p, 흔히 0.01~0.03)" onChange={(v) => setF({ external: v ?? 0 })} />
+              <NumField label="입소문(월)" value={f.word_of_mouth} step={0.05} hint="써 본 사람이 데려오는 힘 (Bass q, 흔히 0.3~0.5). 써 본 사람이 많을수록 커져 S자 곡선이 됩니다" onChange={(v) => setF({ word_of_mouth: v ?? 0 })} />
+              <Row label="들어오는 페르소나">
+                <Select value={f.entry} onChange={(e) => setF({ entry: e.target.value })}>
+                  {p.personas.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
+                </Select>
+              </Row>
+              <NumField label="더 활발해짐(월)" value={f.up} step={0.01} hint="매달 한 단계 더 활발한 페르소나로 옮기는 비율" onChange={(v) => setF({ up: v ?? 0 })} />
+              <NumField label="덜 쓰게 됨(월)" value={f.down} step={0.01} hint="매달 한 단계 덜 활발한 페르소나로 옮기는 비율" onChange={(v) => setF({ down: v ?? 0 })} />
+              <NumField label="떠남(월)" value={f.leave} step={0.01} hint="가장 덜 활발한 페르소나에서 매달 떠나는 비율" onChange={(v) => setF({ leave: v ?? 0 })} />
+              <p className="muted">한계 시점·월 비용은 페르소나별 1인당 요청을 반영한 사용자 수로 계산합니다. 아래 그래프의 "사용자 유입"·"페르소나 단계" 탭에서 봅니다.</p>
+              <button onClick={() => { const { inflow: _, ...rest } = p.growth!; set({ growth: rest }); }}>월 성장률로 돌아가기</button>
+            </>;
+          })()}
           <button onClick={() => set({ growth: undefined })}>성장률 지우기</button>
         </>}
       </Section>

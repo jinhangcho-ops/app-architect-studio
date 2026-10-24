@@ -224,7 +224,8 @@ export function App() {
         {result.error && <pre className="error-banner">{result.error}</pre>}
         {recovery && (
           <div className="recovery">
-            지난번 작업이 남아 있습니다: <b>{snapshotLabel(recovery)}</b>
+            <span>지난번 작업이 남아 있어요</span>
+            <b title={snapshotLabel(recovery)}>{snapshotLabel(recovery)}</b>
             <button className="primary" onClick={() => restore(recovery)}>복구</button>
             <button onClick={() => setHistory(true)}>다른 시점…</button>
             <button onClick={() => { startNewSnapshot(); setRecovery(undefined); }}>닫기</button>

@@ -10,10 +10,12 @@ export function monthsToLimit(users: number, limitUsers: number, monthlyRate: nu
 
 export type Milestone = { nodeId: string; limitUsers: number; month?: number; startMonth?: number };
 
-export function timeline(limits: { nodeId: string; limitUsers: number }[], users: number, monthlyRate: number, leadMonths: number): Milestone[] {
+/** reach: 한계 사용자에 처음 닿는 달 (월 성장률이면 monthsToLimit, 유입 모형이면 그 곡선에서 찾음) */
+export function timeline(limits: { nodeId: string; limitUsers: number }[], users: number, monthlyRate: number, leadMonths: number,
+  reach: (limitUsers: number) => number | undefined = (lim) => monthsToLimit(users, lim, monthlyRate)): Milestone[] {
   return limits
     .map(({ nodeId, limitUsers }) => {
-      const month = monthsToLimit(users, limitUsers, monthlyRate);
+      const month = reach(limitUsers);
       return { nodeId, limitUsers, month, startMonth: month === undefined ? undefined : Math.max(0, month - leadMonths) };
     })
     .sort((a, b) => (a.month ?? Infinity) - (b.month ?? Infinity));

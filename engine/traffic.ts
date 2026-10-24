@@ -70,6 +70,8 @@ export type PersonaTraffic = {
   responseKb: number;
   /** 테이블('노드.테이블')별 하루 쓰기 행 */
   rows: Record<string, number>;
+  /** 기준 나라 표준시 0~23시별 RPS (평소). 모든 페르소나를 더하면 Traffic.hourlyRps */
+  hourlyRps: number[];
 };
 
 /** 접속 1회당 테이블별 쓰기 행: Σ 행동 빈도(페르소나 값 우선) × 행동 1회의 행 수 */
@@ -119,11 +121,60 @@ export const patternOf = (ps: Persona): Pattern => {
 
 const m = (value: number, unit: string, formula: string, inputs: Record<string, number>): Metric => ({ value, unit, formula, inputs });
 
+/** 접속 1회의 요청·쓰기. 행동이 있으면 쓰기 요청 = 행동 횟수(행동 1회 = 쓰기 요청 1건)이고 패턴의 writes_per_session은 쓰지 않는다.
+ *  하이브리드는 접속마다 동기화 요청만 서버로 간다 */
+export function perSession(p: Project, ps: Persona): { reqPer: number; writePer: number } {
+  const pt = patternOf(ps);
+  const writes = p.actions.length ? p.actions.reduce((s, a) => s + (ps.action_rates[a.name] ?? a.per_session), 0) : pt.writes_per_session;
+  if (p.deploy.mode === 'hybrid') return { reqPer: pt.sync_per_session, writePer: pt.sync_per_session };
+  // 데이터 주고받기: 최신화 주기마다 받기(polling 요청 또는 streaming으로 밀어주는 메시지), 모아 보내기면 쓰기 요청이 주기 수로 준다
+  // shortcut: streaming 메시지도 요청 1건으로 센다 (보수적). 메시지가 요청보다 훨씬 가벼운 시스템이면 메시지 무게를 따로 둔다
+  const ex = p.exchange;
+  const sessionS = pt.session_minutes * 60;
+  const refreshes = ex?.refresh_s ? sessionS / ex.refresh_s : 0;
+  const writeReq = ex?.send === 'batch' && writes > 0 ? Math.min(writes, Math.max(1, sessionS / ex.batch_s)) : writes;
+  return { reqPer: pt.reads_per_session + refreshes + writeReq, writePer: writeReq };
+}
+
+/** 하루 기대 트래픽 곡선 (기준 나라 시각, stepMin분 칸마다 평균 RPS). 무작위 하루(traffic)와 같은 가정을 기댓값으로 계산한다:
+ *  접속 시작 시각 = 창 안 비율만큼 창 안의 잘린 정규분포 + 나머지는 창 밖에 고르게, 접속의 요청은 접속 시간 동안 고르게 나뉜다.
+ *  그래서 곡선이 계산 결과로 부드럽다 (1시간 칸에 몰아 담지 않음) */
+export function dayCurve(p: Project, stepMin = 5): { personas: { name: string; rps: number[] }[]; total: number[] } | undefined {
+  if (!enabled(p.deploy, 'traffic') || !p.scale || !p.personas.length) return undefined;
+  const MIN = 1440;
+  const reportOffset = utcOffset(p.scale.report_country, p.scale.report_utc_offset);
+  const personas = p.personas.map((ps) => {
+    const pt = patternOf(ps);
+    const sessions = Math.round(p.scale!.users * ps.share) * pt.sessions_per_day;
+    const { reqPer } = perSession(p, ps);
+    const [a, b] = ps.window;
+    const span = (b - a + 24) % 24 || 24;
+    const mu = a + span / 2, sigma = span / (2 * ps.window_sigma);
+    const share = span === 24 ? 1 : ps.window_share ?? p.scale!.window_share;
+    // 현지 시각 1분 칸마다 접속 시작 확률
+    const inWin = Array.from({ length: MIN }, (_, i) => { let d = (i + 0.5) / 60 - mu; d = ((d % 24) + 36) % 24 - 12; return Math.abs(d) <= span / 2 ? Math.exp(-0.5 * (d / sigma) ** 2) : 0; });
+    const outWin = Array.from({ length: MIN }, (_, i) => { let d = (i + 0.5) / 60 - mu; d = ((d % 24) + 36) % 24 - 12; return Math.abs(d) > span / 2 ? 1 : 0; }) as number[];
+    const sumIn = inWin.reduce((s, x) => s + x, 0) || 1, sumOut = outWin.reduce((s, x) => s + x, 0) || 1;
+    const start = inWin.map((x, i) => share * (x / sumIn) + (1 - share) * (outWin[i] / sumOut));
+    // 기준 나라 시각으로 옮기고, 접속 시간(분) 동안 요청을 고르게 편다
+    const shift = Math.round((reportOffset - utcOffset(ps.country, ps.utc_offset)) * 60);
+    const dur = Math.max(1, Math.round(pt.session_minutes));
+    const perMin = Array<number>(MIN).fill(0);
+    start.forEach((w, i) => {
+      if (!w) return;
+      const reqPerMin = (sessions * w * reqPer) / dur;
+      for (let k = 0; k < dur; k++) perMin[(((i + shift + k) % MIN) + MIN) % MIN] += reqPerMin;
+    });
+    const slots = MIN / stepMin;
+    return { name: ps.name, rps: Array.from({ length: slots }, (_, j) => perMin.slice(j * stepMin, (j + 1) * stepMin).reduce((s, x) => s + x, 0) / (stepMin * 60)) };
+  });
+  return { personas, total: personas[0].rps.map((_, j) => personas.reduce((s, x) => s + x.rps[j], 0)) };
+}
+
 /** 서버 트래픽이 없는 구동 방식(로컬 exe)이거나 규모·페르소나가 없으면 undefined. */
 export function traffic(p: Project): Traffic | undefined {
   if (!enabled(p.deploy, 'traffic') || !p.scale || !p.personas.length) return undefined;
   const { users, seed, event_multiplier: ev, retention_days: days, overhead_k: k, burst } = p.scale;
-  const hybrid = p.deploy.mode === 'hybrid';
   const reportOffset = utcOffset(p.scale.report_country, p.scale.report_utc_offset);
   const r = rng(seed);
 
@@ -145,14 +196,10 @@ export function traffic(p: Project): Traffic | undefined {
     const mu = a + span / 2, sigma = span / (2 * ps.window_sigma);
     const shift = reportOffset - utcOffset(ps.country, ps.utc_offset); // 현지 시각 + shift = 기준 나라 시각
     const share = ps.window_share ?? p.scale.window_share;
-    // 행동이 있으면 쓰기 요청 = 행동 횟수(행동 1회 = 쓰기 요청 1건). 패턴의 writes_per_session은 쓰지 않는다
-    const actionWrites = p.actions.reduce((s, a) => s + (ps.action_rates[a.name] ?? a.per_session), 0);
-    const writes = p.actions.length ? actionWrites : pt.writes_per_session;
-    const reqPer = hybrid ? pt.sync_per_session : pt.reads_per_session + writes;
-    const writePer = hybrid ? pt.sync_per_session : writes;
+    const { reqPer, writePer } = perSession(p, ps);
     const rowsPer = [...rowsPerSession(p, ps)];
     for (const [k] of rowsPer) if (!tableHour.has(k)) tableHour.set(k, Array<number>(24).fill(0));
-    const me: PersonaTraffic = { name: ps.name, share: ps.share, people: n, dau: 0, sessions: 0, requests: 0, writes: 0, responseKb: 0, rows: {} };
+    const me: PersonaTraffic = { name: ps.name, share: ps.share, people: n, dau: 0, sessions: 0, requests: 0, writes: 0, responseKb: 0, rows: {}, hourlyRps: Array<number>(24).fill(0) };
 
     for (let i = 0; i < sim; i++) {
       const kk = poisson(r, pt.sessions_per_day);
@@ -171,6 +218,7 @@ export function traffic(p: Project): Traffic | undefined {
         // shortcut: 접속의 요청을 시작 시각의 1시간 칸에 몰아 담는다. 분 단위 피크가 필요해지면 접속 시간에 걸쳐 나눈다
         const h = Math.floor((((local + shift) % 24) + 24) % 24);
         hourReq[h] += reqPer * scale;
+        me.hourlyRps[h] += (reqPer * scale) / 3600;
         hourWrite[h] += writePer * scale;
         hourUserSec[h] += pt.session_minutes * 60 * scale;
         sessions += scale;

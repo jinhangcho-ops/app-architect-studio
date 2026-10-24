@@ -295,6 +295,21 @@ export const Scale = z.object({
   burst: z.object({ share: z.number().min(0).max(1), window_s: z.number().positive(), requests: z.number().nonnegative() }).optional(),
 });
 
+/** 데이터 주고받기의 서비스 성격 (추천값을 고르는 기준) */
+export const SERVICE_KINDS = ['chat', 'live', 'feed', 'commerce', 'content', 'tracking', 'iot'] as const;
+/** 로드밸런서에서 정하는 데이터 주고받기. 트래픽(요청 수·시간대 곡선)과 그 뒤 모든 부하·비용이 이것을 따른다 */
+export const Exchange = z.object({
+  service: z.enum(SERVICE_KINDS).optional(),
+  /** 받기: polling = 앱이 최신화 주기마다 다시 요청, streaming = 연결을 열어 두고 서버가 최신화 주기마다 밀어줌 */
+  receive: z.enum(['polling', 'streaming']).default('polling'),
+  /** 최신화 주기(초). 없으면 화면을 옮길 때만 받는다 (패턴의 접속당 읽기만) */
+  refresh_s: z.number().positive().optional(),
+  /** 보내기: realtime = 행동마다 바로, batch = 모았다가 batch_s초마다 한꺼번에 (요청 수는 줄고 쓰는 행 수는 같음) */
+  send: z.enum(['realtime', 'batch']).default('realtime'),
+  batch_s: z.number().positive().default(60),
+});
+export type Exchange = z.infer<typeof Exchange>;
+
 export const Project = z.object({
   name: z.string(),
   deploy: Deploy.default({ mode: 'web', offline_required: false, scope: 'public', targets: [] }),
@@ -381,7 +396,23 @@ export const Project = z.object({
     priorities: z.array(z.string()).default([]),
   }).default({ priorities: [] }),
   /** 14절 월 성장률, 보는 기간, 교체 준비 기간 */
-  growth: z.object({ monthly_rate: z.number().gt(-1), months: z.number().int().positive().default(24), lead_months: z.number().int().nonnegative().default(3) }).optional(),
+  exchange: Exchange.optional(),
+  growth: z.object({
+    monthly_rate: z.number().gt(-1), months: z.number().int().positive().default(24), lead_months: z.number().int().nonnegative().default(3),
+    /** 14절 유입 모형. 있으면 월 성장률 대신 이것으로 달마다 사용자 수를 계산한다.
+     *  유입: Bass 확산 — 바깥 유입(광고·검색) = external × 남은 시장, 입소문 = word_of_mouth × (써 본 사람 / 시장) × 남은 시장.
+     *  새 사용자는 entry 페르소나로 들어오고, 달마다 up만큼 한 단계 더 활발한 페르소나로, down만큼 한 단계 덜 활발한 페르소나로 옮기며,
+     *  가장 덜 활발한 페르소나에서 leave만큼 떠난다 (페르소나 단계 = 사용 패턴의 활발한 순서) */
+    inflow: z.object({
+      market: z.number().positive(),
+      external: z.number().min(0).max(1),
+      word_of_mouth: z.number().min(0).max(2),
+      entry: z.string(),
+      up: z.number().min(0).max(1).default(0.05),
+      down: z.number().min(0).max(1).default(0.03),
+      leave: z.number().min(0).max(1).default(0.1),
+    }).optional(),
+  }).optional(),
 });
 
 
@@ -456,6 +487,9 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
     for (const d of dupes(n.tables.map((t) => t.name))) errors.push(`${n.id}: 테이블 이름 중복 ${d}`);
   }
   for (const d of dupes(p.actions.map((a) => a.name))) errors.push(`행동 이름 중복 ${d}`);
+  const inflow = p.growth?.inflow;
+  if (inflow && !p.personas.some((ps) => ps.name === inflow.entry)) errors.push(`유입 모형: 새 사용자가 들어올 페르소나 ${inflow.entry}가 없음`);
+  if (inflow && p.scale && inflow.market < p.scale.users) errors.push('유입 모형: 시장 크기가 지금 활성 사용자보다 작음');
   for (const a of p.actions) {
     for (const w of a.writes) {
       const node = p.nodes.find((n) => n.id === w.node);
