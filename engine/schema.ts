@@ -270,9 +270,9 @@ export const Persona = z.object({
   utc_offset: z.number().min(-12).max(14).optional(),
   /** 주로 깨어 있는 시간대 [시작, 끝]시 (현지 표준시). 끝이 더 작으면 자정을 넘는다 */
   window: z.tuple([z.number().min(0).max(24), z.number().min(0).max(24)]).default([8, 23]),
-  /** 접속 중 창 안에 들어오는 비율. 나머지는 창 밖(밤) 시간에 고르게 퍼진다. 없으면 scale.window_share */
+  /** 접속 중 창 안에 들어오는 비율. 창 가운데의 정규분포와 하루 전체에 고른 바닥을 섞어 맞춘다(창 끝에서 끊기지 않음). 없으면 scale.window_share */
   window_share: z.number().min(0).max(1).optional(),
-  /** 창 안 접속의 모양: 창 반폭 = window_sigma × σ인 정규분포(창 밖은 잘라냄). 클수록 가운데가 덜 붐빈다 */
+  /** 창 안 접속의 모양: 창 반폭 = window_sigma × σ인 정규분포(자르지 않아 창 밖으로 서서히 줄어듦). 클수록 가운데로 더 몰린다 */
   window_sigma: z.number().positive().default(2.7),
 }).refine((p) => p.utc_offset !== undefined || p.country in STANDARD_OFFSET, {
   message: '표준시를 모르는 국가: utc_offset을 직접 넣어 주세요',

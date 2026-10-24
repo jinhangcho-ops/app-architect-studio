@@ -24,9 +24,10 @@ const expected = (p: Project) => {
   }
   return { sessions, requests, dau };
 };
-// 창 안 80%: 창 반폭 7.5시간 = 2.7σ(σ ≈ 2.78시간)에서 잘라낸 정규분포. 15:30 중심 ±0.5시간 칸의 질량
-// = 0.8 × 0.14285 / 0.99307 ≈ 0.1151. 창 밖 20%는 밤 9시간에 고르게 퍼져 이 칸에는 들어가지 않는다
-const PEAK_SHARE = 0.1151;
+// 창 안 80%: 정규분포(창 반폭 7.5시간 = 2.7σ, σ ≈ 2.78시간, 자르지 않음)를 w만큼 + 하루 전체 고른 바닥을 1 − w만큼.
+// 창 안 비율 0.8 = w × 0.99307 + (1 − w) × 15/24 → w ≈ 0.4754. 15:30 중심 ±0.5시간 칸의 질량
+// = 0.4754 × 0.14285 + 0.5246 / 24 ≈ 0.0898
+const PEAK_SHARE = 0.0898;
 const withPersonas = (over: object) => ({ ...example, personas: example.personas.map((ps) => ({ ...ps, ...over })) });
 
 describe('관문: 무작위 접속 시각 (현지 08~23시에 80%)', () => {
@@ -35,7 +36,8 @@ describe('관문: 무작위 접속 시각 (현지 08~23시에 80%)', () => {
   });
 
   it('페르소나의 window_share를 바꾸면 그 비율을 따라감', () => {
-    expect(traffic(withPersonas({ window_share: 1 }))!.inWindowShare.value).toBe(1);
+    // 정규분포를 자르지 않으므로 창 밖으로 꼬리가 조금(0.7%) 나간다: 1을 넣으면 가능한 최대치(정규분포만)
+    expect(traffic(withPersonas({ window_share: 1 }))!.inWindowShare.value).toBeGreaterThan(0.99);
     expect(Math.abs(traffic(withPersonas({ window_share: 0.6 }))!.inWindowShare.value - 0.6)).toBeLessThan(0.005);
   });
 

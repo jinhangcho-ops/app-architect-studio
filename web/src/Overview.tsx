@@ -121,7 +121,7 @@ export function LimitChart({ project: p, analysis: a }: { project: Project; anal
     : Math.max(p99Goal ? p99Goal * 1.3 : 0, nowP99 * 4, 10)) || 1;
   const y = (v: number) => H - B - ((H - B - T) * Math.min(v, yMax * 1.05)) / yMax;
   const yTicks = [0, yMax / 2, yMax].map((v) => (kind === 'util' ? Math.round(v * 20) / 20 : v));
-  const yLabel = (v: number) => (kind === 'util' ? `${Math.round(v * 100)}%` : kind === 'traffic' ? `${fmt(v)} RPS` : kind === 'p99' ? `${fmt(v)}ms` : `${fmt(v)}명`);
+  const yLabel = (v: number) => (kind === 'util' ? `${Math.round(v * 100)}%` : kind === 'traffic' ? `${fmt(Math.round(v))} RPS` : kind === 'p99' ? `${fmt(v)}ms` : `${fmt(v)}명`);
   const short = (u: number) => (u >= 1e6 ? `${fmt(u / 1e6)}M` : `${Math.round(u / 1000)}k`);
   const line = (pts: [number, number][]) => {
     const end = pts.findIndex(([, v]) => !Number.isFinite(v));

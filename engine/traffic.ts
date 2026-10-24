@@ -1,6 +1,6 @@
 // 4절 트래픽 계산: 사용 패턴별 사용자를 하루 동안 무작위로 접속시켜(시드 고정) 요청·피크·동시 접속·용량을 센다.
-// 접속 횟수 ~ 포아송(패턴의 하루 평균). 접속 시각(현지 표준시)은 window_share 확률로 창 안의 정규분포(창 반폭 = window_sigma × σ,
-// 창 밖은 다시 뽑음), 나머지는 창 밖 시간에 고르게. 그 뒤 기준 나라 표준시로 바꿔 1시간 칸에 담는다.
+// 접속 횟수 ~ 포아송(패턴의 하루 평균). 접속 시각(현지 표준시)은 창 가운데를 중심으로 한 정규분포(창 반폭 = window_sigma × σ, 자르지 않음)와
+// 하루 전체에 고른 바닥의 섞음이다. 섞는 비율은 창 안에 들어오는 접속이 window_share가 되게 정한다 (startModel). 그 뒤 기준 나라 표준시로 바꾼다.
 import { enabled } from './deploy';
 import type { Metric } from './model';
 import type { Persona, Project } from './schema';
@@ -84,6 +84,33 @@ export function rowsPerSession(p: Project, ps: Persona): Map<string, number> {
   return out;
 }
 
+/** 오차함수 (Abramowitz–Stegun 7.1.26, 오차 1.5e-7) */
+const erf = (x: number) => {
+  const t = 1 / (1 + 0.3275911 * Math.abs(x));
+  const y = 1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return x >= 0 ? y : -y;
+};
+/** 두 시각(시)의 차이를 −12~12로 */
+const hourDiff = (t: number, mu: number) => ((((t - mu) % 24) + 36) % 24) - 12;
+
+/** 접속 시작 시각 모형: 창 가운데(mu)의 정규분포를 weight만큼, 하루 전체 고른 바닥을 (1 − weight)만큼 섞는다.
+ *  둘 다 매끄러워 하루 곡선에 턱이 없다 (예전처럼 창 끝에서 정규분포를 자르고 창 밖에만 고르게 두면 창 끝에서 곡선이 끊겼다).
+ *  weight는 창 안 비율이 share가 되게 고른다: share = weight × (정규분포 중 창 안 몫) + (1 − weight) × (창 길이 / 24) */
+export function startModel(ps: Persona, defaultShare: number) {
+  const [a, b] = ps.window;
+  const span = (b - a + 24) % 24 || 24;
+  const mu = a + span / 2, sigma = span / (2 * ps.window_sigma);
+  const share = ps.window_share ?? defaultShare;
+  const inBump = erf(ps.window_sigma / Math.SQRT2), flat = span / 24;
+  // 창이 하루 전체면 정규분포만 (바닥을 섞어도 창 안 비율이 바뀌지 않는다)
+  if (span === 24) return { span, mu, sigma, center: mu, weight: 1, inWindow: () => true };
+  const inWindow = (t: number) => Math.abs(hourDiff(t, mu)) <= span / 2;
+  if (share >= flat) return { span, mu, sigma, center: mu, weight: Math.min(1, (share - flat) / (inBump - flat)), inWindow };
+  // 고르게 퍼질 때보다 창 안이 적으면(창 시간을 피함) 정규분포를 창 반대편(12시간 뒤)에 둔다. 그 분포 중 창 안에 걸치는 몫은 양쪽 꼬리
+  const inOpposite = 1 - erf((12 - span / 2) / sigma / Math.SQRT2);
+  return { span, mu, sigma, center: mu + 12, weight: Math.min(1, (flat - share) / (flat - inOpposite)), inWindow };
+}
+
 /** mulberry32: 작고 빠른 시드 고정 난수 */
 export function rng(seed: number) {
   let a = seed >>> 0;
@@ -147,15 +174,11 @@ export function dayCurve(p: Project, stepMin = 5): { personas: { name: string; r
     const pt = patternOf(ps);
     const sessions = Math.round(p.scale!.users * ps.share) * pt.sessions_per_day;
     const { reqPer } = perSession(p, ps);
-    const [a, b] = ps.window;
-    const span = (b - a + 24) % 24 || 24;
-    const mu = a + span / 2, sigma = span / (2 * ps.window_sigma);
-    const share = span === 24 ? 1 : ps.window_share ?? p.scale!.window_share;
-    // 현지 시각 1분 칸마다 접속 시작 확률
-    const inWin = Array.from({ length: MIN }, (_, i) => { let d = (i + 0.5) / 60 - mu; d = ((d % 24) + 36) % 24 - 12; return Math.abs(d) <= span / 2 ? Math.exp(-0.5 * (d / sigma) ** 2) : 0; });
-    const outWin = Array.from({ length: MIN }, (_, i) => { let d = (i + 0.5) / 60 - mu; d = ((d % 24) + 36) % 24 - 12; return Math.abs(d) > span / 2 ? 1 : 0; }) as number[];
-    const sumIn = inWin.reduce((s, x) => s + x, 0) || 1, sumOut = outWin.reduce((s, x) => s + x, 0) || 1;
-    const start = inWin.map((x, i) => share * (x / sumIn) + (1 - share) * (outWin[i] / sumOut));
+    // 현지 시각 1분 칸마다 접속 시작 확률 (startModel과 같은 섞음)
+    const { center, sigma, weight } = startModel(ps, p.scale!.window_share);
+    const bump = Array.from({ length: MIN }, (_, i) => Math.exp(-0.5 * (hourDiff((i + 0.5) / 60, center) / sigma) ** 2));
+    const sumBump = bump.reduce((s, x) => s + x, 0) || 1;
+    const start = bump.map((x) => weight * (x / sumBump) + (1 - weight) / MIN);
     // 기준 나라 시각으로 옮기고, 접속 시간(분) 동안 요청을 고르게 편다
     const shift = Math.round((reportOffset - utcOffset(ps.country, ps.utc_offset)) * 60);
     const dur = Math.max(1, Math.round(pt.session_minutes));
@@ -191,11 +214,8 @@ export function traffic(p: Project): Traffic | undefined {
     const sim = Math.min(n, SIM_CAP);
     if (!sim) continue;
     const scale = n / sim;
-    const [a, b] = ps.window;
-    const span = (b - a + 24) % 24 || 24;
-    const mu = a + span / 2, sigma = span / (2 * ps.window_sigma);
+    const { center, sigma, weight, inWindow: inWin } = startModel(ps, p.scale.window_share);
     const shift = reportOffset - utcOffset(ps.country, ps.utc_offset); // 현지 시각 + shift = 기준 나라 시각
-    const share = ps.window_share ?? p.scale.window_share;
     const { reqPer, writePer } = perSession(p, ps);
     const rowsPer = [...rowsPerSession(p, ps)];
     for (const [k] of rowsPer) if (!tableHour.has(k)) tableHour.set(k, Array<number>(24).fill(0));
@@ -205,16 +225,9 @@ export function traffic(p: Project): Traffic | undefined {
       const kk = poisson(r, pt.sessions_per_day);
       if (kk) { dau += scale; me.dau += scale; }
       for (let j = 0; j < kk; j++) {
-        let local: number;
-        if (span === 24 || r() < share) {
-          let off: number;
-          do off = sigma * gaussian(r); while (Math.abs(off) > span / 2);
-          local = mu + off;
-          inWindow += scale;
-        } else {
-          // shortcut: 창 밖(밤)은 고르게 뽑는다. 새벽 4~5시 최저점까지 반영하려면 창 밖에도 곡선을 둔다
-          local = b + r() * (24 - span);
-        }
+        // weight 확률로 창 가운데의 정규분포, 나머지는 하루 전체에 고르게 (startModel)
+        const local = r() < weight ? center + sigma * gaussian(r) : r() * 24;
+        if (inWin(local)) inWindow += scale;
         // shortcut: 접속의 요청을 시작 시각의 1시간 칸에 몰아 담는다. 분 단위 피크가 필요해지면 접속 시간에 걸쳐 나눈다
         const h = Math.floor((((local + shift) % 24) + 24) % 24);
         hourReq[h] += reqPer * scale;

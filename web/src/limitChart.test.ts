@@ -20,11 +20,10 @@ describe('하루 기대 트래픽 (5분 칸)', () => {
     expect(daily).toBeCloseTo(expectedDaily(p), -1);
     expect(Math.abs(daily - a.traffic!.dailyRequests.value) / daily).toBeLessThan(0.02);
   });
-  // 페르소나 접속 창의 끝에서 분포가 잘려(무작위 하루와 같은 가정) 작은 턱이 생기므로 8%까지 둔다
-  it('계산 결과가 부드러움: 이웃한 5분 칸 사이 변화가 피크의 8% 안', () => {
+  it('계산 결과가 부드러움: 이웃한 5분 칸 사이 변화가 피크의 2% 안 (창 끝에서도 끊기지 않음)', () => {
     const peak = Math.max(...c.total);
     const jumps = c.total.map((r, j) => Math.abs(r - c.total[(j + 1) % c.total.length]) / peak);
-    expect(Math.max(...jumps)).toBeLessThan(0.08);
+    expect(Math.max(...jumps)).toBeLessThan(0.02);
   });
   it('최신화 주기가 짧을수록 요청이 늘고, 모아 보내면 쓰기 요청이 줌', () => {
     const poll = { ...p, exchange: { receive: 'polling' as const, refresh_s: 30, send: 'realtime' as const, batch_s: 60 } };
