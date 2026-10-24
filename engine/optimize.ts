@@ -3,7 +3,7 @@
 import { analyze, type Analysis, type Data } from './analyze';
 import { judgeItem } from './judge';
 import { withPrimary, type CatalogItem, type Project } from './schema';
-import { traffic } from './traffic';
+import { traffic, type Traffic } from './traffic';
 
 const GRADE: Record<string, number> = { 좋음: 2, 보통: 1, 나쁨: 0 };
 
@@ -63,13 +63,15 @@ function violationsOf(p: Project, m: PlanMetrics, a: Analysis): string[] {
   return out;
 }
 
-const withAssignment = (p: Project, as: Record<string, string>): Project =>
+/** 조합(노드 → 주 항목)을 프로젝트에 적용한다. 화면의 "이 조합 적용"도 이것을 쓴다 */
+export const withAssignment = (p: Project, as: Record<string, string>): Project =>
   ({ ...p, nodes: p.nodes.map((n) => (as[n.id] ? withPrimary(n, as[n.id]) : n)) });
 
-export function optimize(p: Project, d: Data, today: string, opts: { beam?: number; perNode?: number } = {}): OptimizeResult {
+/** opts.traffic: 이미 계산한 트래픽이 있으면 넘긴다 (항목만 바꾸므로 트래픽은 같다) */
+export function optimize(p: Project, d: Data, today: string, opts: { beam?: number; perNode?: number; traffic?: Traffic } = {}): OptimizeResult {
   const beam = opts.beam ?? 30;
   const perNode = opts.perNode ?? 3;
-  const t = traffic(p);
+  const t = opts.traffic ?? traffic(p);
   const run = (as: Record<string, string>) => analyze(withAssignment(p, as), d, today, { traffic: t });
   const base = run({});
   const items = [...d.catalog.values()];
@@ -105,7 +107,8 @@ export function optimize(p: Project, d: Data, today: string, opts: { beam?: numb
   }
 
   const evaluated: Plan[] = partial.map(({ as, score }) => {
-    const analysis = run(as);
+    // 지금 설계는 base와 같은 프로젝트다 (같은 항목이면 withPrimary가 노드를 그대로 돌려준다)
+    const analysis = targets.every((n) => as[n.id] === current[n.id]) ? base : run(as);
     const metrics = metricsOf(analysis);
     return { assignment: as, score, metrics, violations: violationsOf(p, metrics, analysis), analysis };
   });

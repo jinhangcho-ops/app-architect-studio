@@ -4,7 +4,7 @@ import type { DragEvent, ReactNode } from 'react';
 import type { Analysis } from '../../engine/analyze';
 import { judgeItem } from '../../engine/judge';
 import { VERDICT_NAMES, type Verdict } from '../../engine/model';
-import { selectedFeatures, storageProfileOf, type CatalogItem, type WireItem } from '../../engine/schema';
+import { nodeStorageProfile, selectedFeatures, type CatalogItem, type WireItem } from '../../engine/schema';
 import { catalog } from './data';
 import { dropRemove, type Drag } from './edit';
 import { useStore } from './store';
@@ -62,7 +62,7 @@ export function Palette({ nodeId, analysis }: { nodeId: string; analysis?: Analy
         drag={used || j?.verdict === 'fail' ? undefined : { kind: 'item', id: it.id }}>{it.name}</Chip>
     );
   });
-  const sp = storageProfileOf(n.primary ? catalog.byId.get(n.primary) : undefined, catalog.byId);
+  const sp = nodeStorageProfile(n, catalog.byId);
   const onFeat = new Set(sp ? selectedFeatures(sp, n).map((f) => f.id) : []);
 
   return (

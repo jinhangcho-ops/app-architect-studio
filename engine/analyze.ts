@@ -13,7 +13,7 @@ import { nodeP99, pathP99, syncPaths } from './latency';
 import { limitFactor } from './limits';
 import { apiLoads, type ApiLoad } from './api';
 import { computedScenarios, nodeLoads, type NodeLoad } from './load';
-import type { Metric } from './model';
+import { metric, type Metric } from './model';
 import { checkRegulation, type LawHit } from './regulation';
 import type { CatalogItem, LawRow, PriceRow, Project, ProjectNode, Rule } from './schema';
 import { tableSizes, type TableAnalysis } from './tables';
@@ -60,7 +60,7 @@ export type Analysis = {
 
 export type Data = { catalog: Map<string, CatalogItem>; rules: Rule[]; prices: PriceRow[]; laws?: LawRow[] };
 
-const m = (value: number, unit: string, formula: string, inputs: Record<string, number>): Metric => ({ value, unit, formula, inputs });
+const m = metric;
 
 /** 대당 처리량(사양·실측으로 보정)과 최대 대수. 화면의 세부 구성도 같은 값을 쓴다 */
 export function perInstance(node: ProjectNode, catalog: Map<string, CatalogItem>) {
@@ -74,7 +74,7 @@ export function perInstance(node: ProjectNode, catalog: Map<string, CatalogItem>
 export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: Traffic | undefined }): Analysis {
   const t = reuse ? reuse.traffic : traffic(p);
   const loads = t ? nodeLoads(p, t) : undefined;
-  const scenarios = computedScenarios(p, t);
+  const scenarios = computedScenarios(p, loads);
   const u = p.target_utilization;
   const shape = t && t.peakRps.value > 0 ? t.hourlyRps.map((x) => x / t.peakRps.value) : undefined;
 

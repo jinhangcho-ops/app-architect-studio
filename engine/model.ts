@@ -10,6 +10,9 @@ export type Metric = {
   basis?: Basis;
 };
 
+/** Metric 만들기 (basis 없이) */
+export const metric = (value: number, unit: string, formula: string, inputs: Record<string, number>): Metric => ({ value, unit, formula, inputs });
+
 export type Verdict = 'ok' | 'conditional' | 'fail' | 'unknown';
 
 export const LAYERS = ['ui', 'gateway', 'backend', 'cache', 'queue', 'batch', 'db', 'external', 'analytics'] as const;

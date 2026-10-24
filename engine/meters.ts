@@ -19,7 +19,7 @@ export function costLines(
 ): { lines: LineItem[]; missing: string[] } {
   const lines: LineItem[] = [];
   const missing: string[] = [];
-  const regionOf = (n: ProjectNode) => (n.region && n.region !== 'local' ? n.region : n.region === 'local' ? undefined : p.cost.region);
+  const regionOf = (n: ProjectNode) => (n.region === 'local' ? undefined : n.region ?? p.cost.region);
   // 노드의 하루 요청 = 전체 하루 요청 × (이 노드 피크 / 전체 피크). 부하가 연결선을 따라 같은 비율로 전파되기 때문
   const requestsPerMonth = (n: ProjectNode) => {
     const l = loads?.get(n.id);

@@ -3,7 +3,7 @@
 // 인덱스를 나중에 한 번에 만들면 빽빽하게 채워져 실제(행이 하나씩 들어옴)보다 작게 나오므로 처음부터 만든다.
 import type { Database, SqlJsStatic, SqlValue } from 'sql.js';
 import { DEFAULT_STORAGE, type Column, type Table } from '../../engine/schema';
-import { valueBytes } from '../../engine/tables';
+import { intPk, valueBytes } from '../../engine/tables';
 import { rng } from '../../engine/traffic';
 
 export type LabResult = {
@@ -21,15 +21,12 @@ export type LabResult = {
 const AFFINITY = { integer: 'INTEGER', real: 'REAL', text: 'TEXT', blob: 'BLOB' } as const;
 const q = (name: string) => `"${name.replace(/"/g, '""')}"`;
 
-/** 기본 키가 테이블과 따로 인덱스로 저장되는지 (engine/tables.ts의 SQLite 규칙과 같다) */
-const pkIsRowid = (t: Table) => t.primary_key.length === 1 && ['int', 'bigint'].includes(t.columns.find((c) => c.name === t.primary_key[0])!.type)
-  && (t.columns.find((c) => c.name === t.primary_key[0])!.storage ?? 'integer') === 'integer';
 
 export function ddlFor(t: Table, withoutRowid = false): { table: string; indexes: string[] } {
-  const inTable = pkIsRowid(t) || (withoutRowid && t.primary_key.length > 0);
+  const inTable = intPk(t) || (withoutRowid && t.primary_key.length > 0);
   const cols = t.columns.map((c) => `${q(c.name)} ${AFFINITY[c.storage ?? DEFAULT_STORAGE[c.type]]}${c.nullable ? '' : ' NOT NULL'}`);
   const pk = inTable ? [`PRIMARY KEY (${t.primary_key.map(q).join(', ')})`] : [];
-  const table = `CREATE TABLE ${q(t.name)} (${[...cols, ...pk].join(', ')})${inTable && withoutRowid && !pkIsRowid(t) ? ' WITHOUT ROWID' : ''}`;
+  const table = `CREATE TABLE ${q(t.name)} (${[...cols, ...pk].join(', ')})${inTable && withoutRowid && !intPk(t) ? ' WITHOUT ROWID' : ''}`;
   const indexes = [
     ...(!inTable && t.primary_key.length ? [`CREATE UNIQUE INDEX ${q(`pk_${t.name}`)} ON ${q(t.name)} (${t.primary_key.map(q).join(', ')})`] : []),
     ...t.indexes.map((ix) => `CREATE ${ix.unique ? 'UNIQUE ' : ''}INDEX ${q(ix.name)} ON ${q(t.name)} (${ix.columns.map(q).join(', ')})`),
@@ -77,7 +74,7 @@ export function runSqliteLab(SQL: SqlJsStatic, t: Table, opts: { rows?: number; 
     const insert = `INSERT OR IGNORE INTO ${q(t.name)} (${t.columns.map((c) => q(c.name)).join(', ')}) VALUES (${t.columns.map(() => '?').join(', ')})`;
     const sa = a.prepare(insert), sb = b.prepare(insert);
     const r = rng(opts.seed ?? 1);
-    const seqPk = pkIsRowid(t) ? t.primary_key[0] : undefined;
+    const seqPk = intPk(t) ? t.primary_key[0] : undefined;
     const data = Array.from({ length: rows }, (_, i) => t.columns.map((c) => fakeValue(c, r, i, c.name === seqPk)));
 
     a.run('BEGIN');

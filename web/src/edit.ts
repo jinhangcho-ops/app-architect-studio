@@ -3,16 +3,26 @@ import { analyze, type Analysis } from '../../engine/analyze';
 import { parseProject } from '../../engine/data';
 import type { NodeJudgement } from '../../engine/judge';
 import { LAYER_NAMES, type Layer, type Verdict } from '../../engine/model';
-import { optimize, type OptimizeResult } from '../../engine/optimize';
-import { EdgeSchema, NodeSchema, selectedFeatures, storageProfileOf, Table as TableSchema, withPrimary, type Project, type ProjectEdge, type ProjectNode, type Screen, type WireItem } from '../../engine/schema';
+import { optimize, withAssignment, type OptimizeResult } from '../../engine/optimize';
+import { traffic, type Traffic } from '../../engine/traffic';
+import { EdgeSchema, NodeSchema, nodeStorageProfile, selectedFeatures, Table as TableSchema, withPrimary, type Project, type ProjectEdge, type ProjectNode, type Screen, type WireItem } from '../../engine/schema';
 import { catalog, engineData } from './data';
 
 export type RunResult = { analysis?: Analysis; error?: string };
 
+// 트래픽(시드 고정 무작위 하루)은 이 다섯 값으로만 정해진다. 이름·항목·연결만 바꾼 편집은 다시 돌리지 않는다 (편집은 바뀐 곳만 새 객체)
+let lastTraffic: { key: unknown[]; traffic: Traffic | undefined } | undefined;
+function trafficOf(p: Project, parsed: Project) {
+  const key = [p.personas, p.scale, p.deploy, p.actions, p.exchange];
+  if (!lastTraffic || key.some((k, i) => k !== lastTraffic!.key[i])) lastTraffic = { key, traffic: traffic(parsed) };
+  return lastTraffic.traffic;
+}
+
 /** 입력이 틀렸으면 계산하지 않고 무엇이 틀렸는지 돌려준다. */
 export function run(p: Project, today: string): RunResult {
   try {
-    return { analysis: analyze(parseProject(p, catalog.items), engineData, today) };
+    const parsed = parseProject(p, catalog.items);
+    return { analysis: analyze(parsed, engineData, today, { traffic: trafficOf(p, parsed) }) };
   } catch (e) {
     return { error: (e as Error).message };
   }
@@ -21,14 +31,14 @@ export function run(p: Project, today: string): RunResult {
 /** 최선 조합 찾기. 조합마다 분석하므로 버튼을 눌렀을 때만 부른다. */
 export function findPlans(p: Project, today: string): { result?: OptimizeResult; error?: string } {
   try {
-    return { result: optimize(parseProject(p, catalog.items), engineData, today) };
+    const parsed = parseProject(p, catalog.items);
+    return { result: optimize(parsed, engineData, today, { traffic: trafficOf(p, parsed) }) };
   } catch (e) {
     return { error: (e as Error).message };
   }
 }
 
-export const applyPlan = (p: Project, assignment: Record<string, string>): Project =>
-  ({ ...p, nodes: p.nodes.map((n) => (assignment[n.id] ? withPrimary(n, assignment[n.id]) : n)) });
+export const applyPlan = withAssignment;
 
 /** 주 항목이 바뀌면 이전 시스템의 저장 기능 선택을 지운다 (withPrimary) */
 export const updateNode = (p: Project, id: string, patch: Partial<ProjectNode>): Project =>
@@ -44,9 +54,15 @@ export const removeNode = (p: Project, id: string): Project => {
   return { ...cleared, nodes: cleared.nodes.filter((x) => x.id !== id).map(unbind), edges: cleared.edges.filter((e) => e.from !== id && e.to !== id) };
 };
 
+/** make(k)가 taken에 없는 가장 작은 k (from부터) */
+const freeK = (taken: string[], make: (k: number) => string, from = 1) => {
+  let k = from;
+  while (taken.includes(make(k))) k++;
+  return k;
+};
+
 export function addNode(p: Project, layer: Layer): { project: Project; id: string } {
-  let k = 1;
-  while (p.nodes.some((n) => n.id === `${layer}-${k}`)) k++;
+  const k = freeK(p.nodes.map((n) => n.id), (k) => `${layer}-${k}`);
   const id = `${layer}-${k}`;
   return { project: { ...p, nodes: [...p.nodes, NodeSchema.parse({ id, name: `${LAYER_NAMES[layer]} ${k}`, layer })] }, id };
 }
@@ -123,8 +139,7 @@ export function removeTable(p: Project, nodeId: string, name: string): Project {
 
 export function addTable(p: Project, nodeId: string): Project {
   const n = p.nodes.find((x) => x.id === nodeId)!;
-  let k = 1;
-  while (n.tables.some((t) => t.name === `table_${k}`)) k++;
+  const k = freeK(n.tables.map((t) => t.name), (k) => `table_${k}`);
   return mapTables(p, nodeId, (ts) => [...ts, TableSchema.parse({ name: `table_${k}`, columns: [{ name: 'id', type: 'bigint' }], primary_key: ['id'] })]);
 }
 
@@ -137,8 +152,7 @@ const dropRates = (p: Project, names: string[]): Project => (!names.length ? p :
 export function addAction(p: Project): Project {
   const first = p.nodes.flatMap((n) => n.tables.map((t) => ({ node: n.id, table: t.name, rows: 1 })))[0];
   if (!first) return p;
-  let k = 1;
-  while (p.actions.some((a) => a.name === `행동 ${k}`)) k++;
+  const k = freeK(p.actions.map((a) => a.name), (k) => `행동 ${k}`);
   return { ...p, actions: [...p.actions, { name: `행동 ${k}`, per_session: 0.1, writes: [first] }] };
 }
 
@@ -188,8 +202,7 @@ export function removeWrite(p: Project, action: string, node: string, table: str
 
 /** 붙여넣기(Ctrl+V): 복사한 노드를 새 id·"(복사)" 이름으로 넣는다. 연결선과 행동은 따라오지 않는다 */
 export function pasteNode(p: Project, node: ProjectNode): { project: Project; id: string } {
-  let k = 2;
-  while (p.nodes.some((n) => n.id === `${node.id}-${k}`)) k++;
+  const k = freeK(p.nodes.map((n) => n.id), (k) => `${node.id}-${k}`, 2);
   const id = `${node.id}-${k}`;
   return { project: { ...p, nodes: [...p.nodes, { ...node, id, name: `${node.name} (복사)` }] }, id };
 }
@@ -217,7 +230,7 @@ export function dropItem(p: Project, nodeId: string, itemId: string): Project {
 /** 저장 기능 켜기·끄기. 처음 고르면 권장 기능에서 시작하고, 하나만 고르는 묶음은 같은 묶음의 다른 기능을 끈다 */
 export function setFeature(p: Project, nodeId: string, featureId: string, on: boolean): Project {
   const n = p.nodes.find((x) => x.id === nodeId)!;
-  const sp = storageProfileOf(n.primary ? catalog.byId.get(n.primary) : undefined, catalog.byId);
+  const sp = nodeStorageProfile(n, catalog.byId);
   const f = sp?.features.find((x) => x.id === featureId);
   if (!sp || !f) return p;
   let ids = selectedFeatures(sp, n).map((x) => x.id).filter((id) => id !== featureId);
@@ -235,7 +248,7 @@ export function dropRemove(p: Project, nodeId: string, d: Extract<Drag, { kind: 
 }
 
 // ── 와이어프레임 ──
-const screensOf = (n: ProjectNode): Screen[] => n.wireframe?.screens ?? [{ name: '화면 1', items: [] }];
+export const screensOf = (n: ProjectNode): Screen[] => n.wireframe?.screens ?? [{ name: '화면 1', items: [] }];
 export const mapScreens = (p: Project, nodeId: string, fn: (ss: Screen[]) => Screen[]): Project =>
   updateNode(p, nodeId, { wireframe: { screens: fn(screensOf(p.nodes.find((x) => x.id === nodeId)!)) } });
 
@@ -249,9 +262,7 @@ export const uniqueName = (names: string[], base: string) => {
 /** 화면 한 장 더하기 (screen이 없으면 빈 화면, device는 그 화면의 기기) */
 export function addScreen(p: Project, nodeId: string, device?: Screen['device'], screen?: Screen): Project {
   return mapScreens(p, nodeId, (ss) => {
-    let k = ss.length + 1;
-    while (ss.some((s) => s.name === `화면 ${k}`)) k++;
-    const add = screen ?? { name: `화면 ${k}`, items: [] };
+    const add = screen ?? { name: `화면 ${freeK(ss.map((s) => s.name), (k) => `화면 ${k}`, ss.length + 1)}`, items: [] };
     return [...ss, { ...add, name: uniqueName(ss.map((s) => s.name), add.name), ...(device && { device }) }];
   });
 }
@@ -259,9 +270,8 @@ export function addScreen(p: Project, nodeId: string, device?: Screen['device'],
 export function addWire(p: Project, nodeId: string, screen: number, item: Omit<WireItem, 'id'>): Project {
   return mapScreens(p, nodeId, (ss) => ss.map((s, i) => {
     if (i !== screen) return s;
-    let k = s.items.length + 1;
-    while (s.items.some((x) => x.id === `w${k}`)) k++;
-    return { ...s, items: [...s.items, { ...item, id: `w${k}` }] };
+    const id = `w${freeK(s.items.map((x) => x.id), (k) => `w${k}`, s.items.length + 1)}`;
+    return { ...s, items: [...s.items, { ...item, id }] };
   }));
 }
 

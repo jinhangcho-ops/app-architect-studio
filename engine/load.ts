@@ -69,10 +69,9 @@ function topoOrder(p: Project): string[] {
   return order;
 }
 
-/** 계산한 부하와 구동 방식을 노드의 판정 변수로 바꾼다. 트래픽이 없으면 구동 방식 변수만 준다. */
-export function computedScenarios(p: Project, t: Traffic | undefined): Map<string, Scenario> {
+/** 계산한 부하(nodeLoads)와 구동 방식을 노드의 판정 변수로 바꾼다. 트래픽이 없으면 구동 방식 변수만 준다. */
+export function computedScenarios(p: Project, loads: Map<string, NodeLoad> | undefined): Map<string, Scenario> {
   const common = deployVars(p.deploy);
-  const loads = t && nodeLoads(p, t);
   return new Map(p.nodes.map((n) => {
     const l = loads?.get(n.id);
     const at = (s: 'normal' | 'event') => ({

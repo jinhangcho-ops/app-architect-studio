@@ -204,7 +204,7 @@ describe('노드별 부하 전파', () => {
     const d = nodeLoads(p, fixed).get('d')!;
     expect(d.rps).toEqual({ normal: 2 + 2, event: 6 + 6 }); // a에서 전체 2, b에서 읽기만 (2×2 − 쓰기 2) = 2
     expect(d.writeRps).toEqual({ normal: 1, event: 3 });
-    expect(computedScenarios(p, fixed).get('d')!.normal.writer_nodes).toBe(1);
+    expect(computedScenarios(p, nodeLoads(p, fixed)).get('d')!.normal.writer_nodes).toBe(1);
   });
 
   it('순환 연결은 오류', () => {
@@ -214,7 +214,7 @@ describe('노드별 부하 전파', () => {
 
 describe('계산값이 판정으로 연결됨', () => {
   it('예시 프로젝트: SQLite는 쓰는 노드 2개(API·워커)로 안 됨, API 1대 판정에는 계산된 RPS가 쓰임', () => {
-    const c = computedScenarios(example, t);
+    const c = computedScenarios(example, nodeLoads(example, t));
     const verdict = (id: string) => judgeNode(example.nodes.find((n) => n.id === id)!, catalog.byId, c.get(id)).items[0];
     expect(verdict('db').verdict).toBe('fail');
     expect(verdict('db').reasons[0]).toContain('쓰는 노드가 2개');

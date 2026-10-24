@@ -11,6 +11,14 @@ const base = parseProject(ex.data, catalog.items, ex.name);
 const verdictOf = (p: typeof base, id: string) => worstVerdict(run(p, today).analysis!.judgements.find((j) => j.nodeId === id));
 
 describe('관문: 노드 항목이나 사용자 수를 바꾸면 판정이 바로 바뀜', () => {
+  it('트래픽은 사용자·페르소나 쪽이 바뀔 때만 다시 계산 (이름만 바꾸면 그대로 재사용)', () => {
+    const t0 = run(base, today).analysis!.traffic;
+    expect(run({ ...base, name: '다른 이름' }, today).analysis!.traffic).toBe(t0);
+    const more = run({ ...base, scale: { ...base.scale!, users: base.scale!.users * 2 } }, today).analysis!.traffic!;
+    expect(more).not.toBe(t0);
+    expect(more.peakRps.value).toBeGreaterThan(t0!.peakRps.value);
+  });
+
   it('예시 프로젝트가 화면 데이터로 그대로 분석됨', () => {
     const r = run(base, today);
     expect(r.error).toBeUndefined();

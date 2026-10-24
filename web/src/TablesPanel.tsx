@@ -1,10 +1,10 @@
 // 노드 패널의 데이터 부분: 명세서 붙여넣기, 테이블 편집, 저장 기능 선택.
 import { Select } from './Select';
 import { useState } from 'react';
-import { COLUMN_TYPES, STORAGE_FORMATS, selectedFeatures, storageProfileOf, type ProjectNode } from '../../engine/schema';
+import { COLUMN_TYPES, nodeStorageProfile, selectedFeatures, STORAGE_FORMATS, STORAGE_NAMES, type ProjectNode } from '../../engine/schema';
 import { parseSpec } from '../../engine/spec';
 import { catalog } from './data';
-import { addTable, importTables, removeTable, updateNode, updateTable } from './edit';
+import { addTable, importTables, removeTable, setFeature, updateNode, updateTable } from './edit';
 import { NumField, Row, Section } from './fields';
 import { useStore } from './store';
 
@@ -12,7 +12,6 @@ type Table = ProjectNode['tables'][number];
 type Column = Table['columns'][number];
 
 const TEMPLATE = '테이블\t컬럼\t타입\t크기\t평균 길이\t저장 형식\tNULL\t키·인덱스\t설명';
-const STORAGE_NAMES = { integer: '정수', real: '실수', text: '문자열', blob: '바이너리' } as const;
 const csv = (xs: string[]) => xs.join(', ');
 const list = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean);
 
@@ -120,14 +119,10 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
 /** 주 항목의 저장 프로필에서 기능 고르기. 아무것도 안 고르면 권장 기능이 켜진다 */
 export function StorageSection({ node }: { node: ProjectNode }) {
   const { edit } = useStore();
-  const sp = storageProfileOf(node.primary ? catalog.byId.get(node.primary) : undefined, catalog.byId);
+  const sp = nodeStorageProfile(node, catalog.byId);
   if (!sp) return null;
   const on = selectedFeatures(sp, node).map((f) => f.id);
   const set = (ids: string[] | undefined) => edit((p) => updateNode(p, node.id, { storage_features: ids }));
-  const toggle = (group: string, id: string, one: boolean, checked: boolean) => {
-    const inGroup = sp.features.filter((f) => f.group === group).map((f) => f.id);
-    set(one ? [...on.filter((x) => !inGroup.includes(x)), id] : checked ? [...on, id] : on.filter((x) => x !== id));
-  };
   return (
     <Section title="저장 기능">
       {sp.note && <p className="muted">{sp.note}</p>}
@@ -137,7 +132,7 @@ export function StorageSection({ node }: { node: ProjectNode }) {
           {sp.features.filter((f) => f.group === g).map((f) => (
             <label key={f.id} title={[f.note, f.source].filter(Boolean).join('\n')}>
               <input type={def.one ? 'radio' : 'checkbox'} name={`${node.id}-${g}`} checked={on.includes(f.id)}
-                onChange={(e) => toggle(g, f.id, def.one, e.target.checked)} />
+                onChange={(e) => edit((p) => setFeature(p, node.id, f.id, e.target.checked))} />
               {f.label}{f.recommended && <span className="tag">권장</span>}
             </label>
           ))}

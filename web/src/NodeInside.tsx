@@ -4,7 +4,7 @@ import { Background, Controls, Handle, MarkerType, Position, ReactFlow, type Edg
 import { useState } from 'react';
 import type { Analysis } from '../../engine/analyze';
 import { LAYER_NAMES } from '../../engine/model';
-import { DEFAULT_STORAGE, selectedFeatures, storageProfileOf, TABLE_LAYERS, type ProjectNode } from '../../engine/schema';
+import { DEFAULT_STORAGE, nodeStorageProfile, selectedFeatures, STORAGE_NAMES, TABLE_LAYERS, type ProjectNode } from '../../engine/schema';
 import { catalog } from './data';
 import { markDrag, overPalette } from './Palette';
 import type { TableAnalysis } from '../../engine/tables';
@@ -24,7 +24,6 @@ type Table = ProjectNode['tables'][number];
 type TableData = { t: Table; size?: TableAnalysis };
 type ActionData = { name: string; perSession: number };
 
-const STORAGE_NAMES = { integer: '정수', real: '실수', text: '문자열', blob: '바이너리' } as const;
 
 function TableBlock({ data, selected }: NodeProps<Node<TableData>>) {
   const { t, size } = data;
@@ -115,7 +114,7 @@ function TablesInside({ nodeId, analysis, onSelect }: { nodeId: string; analysis
   // 안쪽 배치는 보는 동안만 기억한다 (저장 파일에는 바깥 노드 위치만 남긴다)
   const [moved, setMoved] = useState<Record<string, { x: number; y: number }>>({});
   const n = p.nodes.find((x) => x.id === nodeId)!;
-  const sp = storageProfileOf(n.primary ? catalog.byId.get(n.primary) : undefined, catalog.byId);
+  const sp = nodeStorageProfile(n, catalog.byId);
 
   const actions = p.actions.filter((a) => a.writes.some((w) => w.node === nodeId));
   const others = p.actions.filter((a) => !actions.includes(a));

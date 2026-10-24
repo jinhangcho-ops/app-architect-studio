@@ -5,14 +5,11 @@ import { RECOMMEND, SERVICE_NAMES } from './exchange';
 import { INDUSTRIES, INDUSTRY_IDS, type IndustryId } from '../../engine/industry';
 import { prices } from './data';
 import { PATTERNS } from '../../engine/traffic';
+import { enabled, MODE_NAMES, SCOPE_NAMES } from '../../engine/deploy';
 import { STANDARD_OFFSET } from '../../engine/timezones';
 import { NumField, Row, Section, TextField } from './fields';
 import { addAction, removeAction, removePersona, setActionRate, updateAction, updatePersona } from './edit';
 import { useStore } from './store';
-
-const MODES: [Project['deploy']['mode'], string][] = [
-  ['web', '웹 (브라우저 + 서버)'], ['mobile', '모바일 앱'], ['local_exe', '로컬 데스크톱(exe)'], ['hybrid', '하이브리드 (로컬 + 동기화)'], ['server', '서버 전용'],
-];
 
 export function ProjectPanel() {
   const { project: p, edit } = useStore();
@@ -31,16 +28,16 @@ export function ProjectPanel() {
       <Section title="구동 방식">
         <Row label="방식">
           <Select value={p.deploy.mode} onChange={(e) => set({ deploy: { ...p.deploy, mode: e.target.value as Project['deploy']['mode'] } })}>
-            {MODES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            {Object.entries(MODE_NAMES).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </Select>
         </Row>
         <Row label="오프라인 필요"><input type="checkbox" checked={p.deploy.offline_required} onChange={(e) => set({ deploy: { ...p.deploy, offline_required: e.target.checked } })} /></Row>
         <Row label="사용 범위">
           <Select value={p.deploy.scope} onChange={(e) => set({ deploy: { ...p.deploy, scope: e.target.value as Project['deploy']['scope'] } })}>
-            <option value="single">혼자</option><option value="team">팀·사내</option><option value="public">공개 서비스</option>
+            {Object.entries(SCOPE_NAMES).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </Select>
         </Row>
-        {['local_exe', 'mobile', 'hybrid'].includes(p.deploy.mode) && <LocalMemory />}
+        {enabled(p.deploy, 'localMemory') && <LocalMemory />}
       </Section>
 
       <Section title="규모">

@@ -5,8 +5,8 @@ import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 
 import type { Analysis } from '../../engine/analyze';
 import { routedCalls } from '../../engine/api';
 import { LAYER_NAMES } from '../../engine/model';
-import { WIRE_COLORS, WIRE_DEVICES, type Screen, type WireItem } from '../../engine/schema';
-import { addScreen, addWire, bindApi, dropRemove, mapScreens, updateWire } from './edit';
+import { HTTP_METHODS, WIRE_COLORS, WIRE_DEVICES, type Screen, type WireItem } from '../../engine/schema';
+import { addScreen, addWire, bindApi, dropRemove, mapScreens, screensOf, updateWire } from './edit';
 import { fmt } from './format';
 import { htmlToScreen } from './htmlImport';
 import { paginate, renderHtml } from './htmlRender';
@@ -55,7 +55,6 @@ function ShapeSvg({ it }: { it: WireItem }) {
 
 type Live = { id: string; mode: 'move' | 'size'; sx: number; sy: number; o: WireItem; now: WireItem };
 
-const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 
 /** 탭 아이콘: 기기 모양 (데스크톱·태블릿·모바일) */
 function DeviceIcon({ d }: { d: NonNullable<Screen['device']> }) {
@@ -151,7 +150,7 @@ const GAP = 24, CAP = 22;
 export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis?: Analysis }) {
   const { project: p, edit } = useStore();
   const n = p.nodes.find((x) => x.id === nodeId)!;
-  const screens = n.wireframe?.screens ?? [{ name: '화면 1', items: [] }];
+  const screens = screensOf(n);
   const [cur, setCur] = useState(0);
   const si = Math.min(cur, screens.length - 1);
   const screen = screens[si];
@@ -275,8 +274,8 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
               onClick={() => edit((x) => updateWire(x, nodeId, ps, picked.id, { color: c }))} />)}
           </span>
           {picked.api ? <>
-            <Select aria-label="메서드" value={picked.api.method} onChange={(e) => edit((x) => bindApi(x, nodeId, ps, picked.id, { ...picked.api!, method: e.target.value as typeof METHODS[number] }))}>
-              {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+            <Select aria-label="메서드" value={picked.api.method} onChange={(e) => edit((x) => bindApi(x, nodeId, ps, picked.id, { ...picked.api!, method: e.target.value as typeof HTTP_METHODS[number] }))}>
+              {HTTP_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
             </Select>
             <input aria-label="경로" placeholder="/api/orders" value={picked.api.path} onChange={(e) => edit((x) => bindApi(x, nodeId, ps, picked.id, { ...picked.api!, path: e.target.value }))} />
             <Select aria-label="받는 블록" value={picked.api.to ?? ''} onChange={(e) => edit((x) => bindApi(x, nodeId, ps, picked.id, { ...picked.api!, to: e.target.value || undefined }))}>

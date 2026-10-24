@@ -4,7 +4,7 @@ import type { Analysis } from '../../engine/analyze';
 import { impactOf } from '../../engine/availability';
 import type { NodeJudgement } from '../../engine/judge';
 import { LAYER_NAMES, VERDICT_NAMES, type Metric, type Verdict } from '../../engine/model';
-import { selectedFeatures, storageProfileOf, type CatalogItem, type Project } from '../../engine/schema';
+import { nodeStorageProfile, selectedFeatures, type CatalogItem, type Project } from '../../engine/schema';
 import { worstVerdict } from './edit';
 import { fmt, fmtMetric } from './format';
 
@@ -29,7 +29,7 @@ export function nodeCard(p: Project, a: Analysis, byId: Map<string, CatalogItem>
   const items = ids.map((id) => byId.get(id)).filter((x): x is CatalogItem => !!x);
   const itemName = (id: string) => byId.get(id)?.name ?? id;
 
-  const sp = storageProfileOf(n.primary ? byId.get(n.primary) : undefined, byId);
+  const sp = nodeStorageProfile(n, byId);
   const features = sp ? selectedFeatures(sp, n).map((f) => f.label) : [];
   const cost = a.cost?.parts[nodeId];
   const edgeText = (e: Project['edges'][number]) =>

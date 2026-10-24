@@ -179,6 +179,7 @@ export const WIRE_KINDS = ['header', 'nav', 'sidebar', 'main', 'form', 'table', 
 export const WIRE_DEVICES = ['desktop', 'tablet', 'tablet_land', 'mobile'] as const;
 /** 상자 색 (채우기·선) */
 export const WIRE_COLORS = ['gray', 'blue', 'green', 'amber', 'red', 'dark'] as const;
+export const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 export const WireItem = z.object({
   id: z.string(),
   kind: z.enum(WIRE_KINDS),
@@ -187,7 +188,7 @@ export const WireItem = z.object({
   color: z.enum(WIRE_COLORS).optional(),
   /** 이 컨트롤이 부르는 API. to = 받는 노드 id (연결선이 있어야 부하가 간다), per_session = 접속 1회당 횟수 (호출끼리 나누는 비율) */
   api: z.object({
-    method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).default('GET'),
+    method: z.enum(HTTP_METHODS).default('GET'),
     path: z.string().default(''),
     to: z.string().optional(),
     per_session: z.number().nonnegative().default(1),
@@ -200,6 +201,8 @@ export const Screen = z.object({ name: z.string().min(1), device: z.enum(WIRE_DE
 export const COLUMN_TYPES = ['int', 'bigint', 'float', 'numeric', 'bool', 'uuid', 'timestamp', 'date', 'text', 'json', 'bytes'] as const;
 /** SQLite 저장 클래스. 같은 시각도 integer(epoch)면 8바이트, text(ISO)면 24바이트처럼 크기가 달라진다 */
 export const STORAGE_FORMATS = ['integer', 'real', 'text', 'blob'] as const;
+/** 저장 형식의 화면 이름 */
+export const STORAGE_NAMES: Record<(typeof STORAGE_FORMATS)[number], string> = { integer: '정수', real: '실수', text: '문자열', blob: '바이너리' };
 /** 저장 형식을 안 적었을 때 타입별 기본값 */
 export const DEFAULT_STORAGE: Record<(typeof COLUMN_TYPES)[number], (typeof STORAGE_FORMATS)[number]> = {
   int: 'integer', bigint: 'integer', bool: 'integer', timestamp: 'integer', date: 'integer',
@@ -503,7 +506,7 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
     }
   }
   for (const n of p.nodes) {
-    const sp = storageProfileOf(n.primary ? byId.get(n.primary) : undefined, byId);
+    const sp = nodeStorageProfile(n, byId);
     const pick = (where: string, ids: string[] | undefined) => {
       if (!ids) return;
       if (!sp) return errors.push(`${where}: 주 항목에 저장 프로필이 없어 저장 기능을 고를 수 없음`);
@@ -560,6 +563,10 @@ export function storageProfileOf(item: CatalogItem | undefined, byId: Map<string
   const target = byId.get(st.same_as)?.storage;
   return target && !('same_as' in target) ? target : undefined;
 }
+
+/** 노드 주 항목의 저장 방식 */
+export const nodeStorageProfile = (n: { primary?: string }, byId: Map<string, CatalogItem>): StorageProfile | undefined =>
+  storageProfileOf(n.primary ? byId.get(n.primary) : undefined, byId);
 
 /** 실제로 켜진 기능: 테이블 선택 → 노드 선택 → 권장 기능 순 */
 export function selectedFeatures(sp: StorageProfile, node: { storage_features?: string[] }, table?: { storage_features?: string[] }): StorageFeature[] {

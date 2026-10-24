@@ -1,7 +1,7 @@
 // 테이블 크기: 컬럼 타입·저장 형식 → 행 크기, 인덱스 크기, 보관 기간 저장량, 파티션 크기.
 // 시스템별 오버헤드·채움률·압축은 카탈로그 저장 프로필과 켠 기능에서 가져온다. 가정값을 쓰면 assumptions에 남긴다.
 import type { Vars } from './expr';
-import type { Metric } from './model';
+import { metric, type Metric } from './model';
 import { DEFAULT_STORAGE, selectedFeatures, storageProfileOf, type CatalogItem, type Column, type Project, type StorageProfile, type Table } from './schema';
 import type { Traffic } from './traffic';
 
@@ -52,7 +52,13 @@ export function valueBytes(c: Column, assume: (s: string) => void = () => {}): n
   return c.type === 'uuid' ? 16 : TEXT_TYPES.has(c.type) ? variable() : 8;
 }
 
-const m = (value: number, unit: string, formula: string, inputs: Record<string, number>): Metric => ({ value, unit, formula, inputs });
+const m = metric;
+
+/** 기본 키가 정수 열 하나(정수로 저장)인지. SQLite는 이 키를 행 번호(rowid)로 써서 따로 인덱스를 두지 않는다 (SQLite 실험도 같은 규칙) */
+export const intPk = (t: Table) => {
+  const c = t.primary_key.length === 1 ? t.columns.find((x) => x.name === t.primary_key[0]) : undefined;
+  return !!c && ['int', 'bigint'].includes(c.type) && (c.storage ?? 'integer') === 'integer';
+};
 const utf8 = (s: string) => new TextEncoder().encode(s).length;
 
 export function tableSize(
@@ -88,8 +94,7 @@ export function tableSize(
 
   // 인덱스: 기본 키(테이블과 따로 저장되는 경우) + 보조 인덱스. 열 저장은 행 인덱스가 없다
   const pkBytes = t.primary_key.reduce((s, c) => s + bytesOf.get(c)!, 0);
-  const pkCol0 = t.primary_key.length === 1 ? t.columns.find((c) => c.name === t.primary_key[0])! : undefined;
-  const rowidPk = sp?.integer_pk_is_rowid && pkCol0 && ['int', 'bigint'].includes(pkCol0.type) && (pkCol0.storage ?? 'integer') === 'integer';
+  const rowidPk = sp?.integer_pk_is_rowid && intPk(t);
   const pkSeparate = t.primary_key.length > 0 && sp?.layout !== 'columnar' && !sp?.pk_is_table && !eff('pk_is_table') && !rowidPk;
   const indexFill = eff('index_fill') ?? sp?.index_fill ?? 1;
   const entry = (cols: string[], secondary: boolean) =>

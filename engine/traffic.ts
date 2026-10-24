@@ -2,7 +2,7 @@
 // 접속 횟수 ~ 포아송(패턴의 하루 평균). 접속 시각(현지 표준시)은 봉우리(업종의 피크들, 없으면 창 가운데 하나: 창 반폭 = window_sigma × σ) 정규분포와
 // 하루 전체에 고른 바닥의 섞음이다. 섞는 비율은 창 안에 들어오는 접속이 window_share가 되게 정한다 (startModel). 그 뒤 기준 나라 표준시로 바꾼다.
 import { enabled } from './deploy';
-import type { Metric } from './model';
+import { metric, type Metric } from './model';
 import type { Persona, Project } from './schema';
 import { INDUSTRIES, type IndustryId } from './industry';
 import { utcOffset } from './timezones';
@@ -165,7 +165,7 @@ export const patternOf = (ps: Persona): Pattern => {
   };
 };
 
-const m = (value: number, unit: string, formula: string, inputs: Record<string, number>): Metric => ({ value, unit, formula, inputs });
+const m = metric;
 
 /** 접속 1회의 요청·쓰기. 행동이 있으면 쓰기 요청 = 행동 횟수(행동 1회 = 쓰기 요청 1건)이고 패턴의 writes_per_session은 쓰지 않는다.
  *  하이브리드는 접속마다 동기화 요청만 서버로 간다 */

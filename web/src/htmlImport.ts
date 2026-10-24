@@ -1,6 +1,6 @@
 // 11.4 HTML 와이어프레임: 시맨틱 태그와 클래스 이름으로 화면 영역을 뽑고, 폼·링크에서 API 경로를 찾는다.
 // v2 파서를 옮기지 않고 영역 판별 규칙만 가져와 브라우저 DOMParser로 처리한다.
-import type { Screen, WireItem } from '../../engine/schema';
+import { HTTP_METHODS, type Screen, type WireItem } from '../../engine/schema';
 
 export type Region = { role: string; selector: string; controls: string[] };
 export type ApiCall = { method: string; path: string };
@@ -38,9 +38,7 @@ function controlsOf(el: Element): string[] {
 export function extractRegions(doc: Document): Region[] {
   const regions: Region[] = [];
   doc.body.querySelectorAll('*').forEach((el) => {
-    const tag = el.tagName.toLowerCase();
-    const name = `${el.id} ${el.className}`;
-    const role = TAG_ROLE[tag] ?? CLASS_ROLE.find(([re]) => re.test(name))?.[1];
+    const role = roleOf(el);
     if (role) regions.push({ role, selector: selectorOf(el), controls: controlsOf(el) });
   });
   return regions;
@@ -72,8 +70,8 @@ type Kind = WireItem['kind'];
 type Api = NonNullable<WireItem['api']>;
 export const ROLE_KIND: Record<string, Kind> = { '상단 헤더': 'header', '네비게이션': 'nav', '사이드바': 'sidebar', '메인': 'main', '입력 폼': 'form', '표': 'table', '모달': 'modal', '하단 푸터': 'footer' };
 export const roleOf = (el: Element) => TAG_ROLE[el.tagName.toLowerCase()] ?? CLASS_ROLE.find(([re]) => re.test(`${el.id} ${el.className}`))?.[1];
-const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
-export const apiOf = (method: string, path: string): Api => ({ method: (METHODS as readonly string[]).includes(method) ? (method as Api['method']) : 'GET', path, per_session: 1 });
+
+export const apiOf = (method: string, path: string): Api => ({ method: (HTTP_METHODS as readonly string[]).includes(method) ? (method as Api['method']) : 'GET', path, per_session: 1 });
 export const dataApi = (el: Element): Api | undefined => {
   const v = el.getAttribute('data-api');
   if (!v) return undefined;

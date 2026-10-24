@@ -2,10 +2,11 @@
 // 목차: 요약 → 구동 방식 → 규모 가정 → 구조도 → 화면 설계·API → 노드별 판정 근거 → 확장 한계·지연·비용 → 최선 조합 → 가용성·성장 → 조문 → 미해결 → 적용한 설정 → 출처
 import { useEffect, useRef, type ReactNode } from 'react';
 import type { Analysis } from '../../engine/analyze';
+import { MODE_NAMES, SCOPE_NAMES } from '../../engine/deploy';
 import { INDUSTRIES } from '../../engine/industry';
 import { LAYER_NAMES, VERDICT_NAMES } from '../../engine/model';
 import type { OptimizeResult, Plan } from '../../engine/optimize';
-import { selectedFeatures, storageProfileOf, type Project, type Screen } from '../../engine/schema';
+import { nodeStorageProfile, selectedFeatures, type Project, type Screen } from '../../engine/schema';
 import { PATTERNS } from '../../engine/traffic';
 import { catalog, laws, prices } from './data';
 import { worstVerdict } from './edit';
@@ -13,9 +14,6 @@ import { fmt, fmtMetric, fmtShare } from './format';
 import type { XY } from './layout';
 import { nodeCard, openIssues, sourcesOf } from './reportData';
 import { drawScreen, screenFrame } from './wireDraw';
-
-const MODES = { web: '웹 (브라우저 + 서버)', mobile: '모바일 앱', local_exe: '로컬 데스크톱(exe)', hybrid: '하이브리드 (로컬 + 동기화)', server: '서버 전용' } as const;
-const SCOPES = { single: '혼자', team: '팀·사내', public: '공개 서비스' } as const;
 
 const H = ({ n, children }: { n: number; children: ReactNode }) => <h2 className="r-h">{n}. {children}</h2>;
 const KV = ({ rows }: { rows: [string, ReactNode][] }) => (
@@ -51,7 +49,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           <section>
             <H n={1}>요약</H>
             <KV rows={[
-              ['구동 방식', MODES[p.deploy.mode]],
+              ['구동 방식', MODE_NAMES[p.deploy.mode]],
               ['활성 사용자', p.scale ? `${fmt(p.scale.users)}명` : '입력 없음'],
               ['이벤트 피크', t ? fmtMetric(t.peakRpsEvent) : '—'],
               ['월 비용', a.cost?.total ? `${fmtMetric(a.cost.total)}${a.cost.missing.length ? ' (계산 못 한 항목 있음)' : ''}` : '—'],
@@ -63,8 +61,8 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           <section>
             <H n={2}>구동 방식</H>
             <KV rows={[
-              ['방식', MODES[p.deploy.mode]],
-              ['사용 범위', SCOPES[p.deploy.scope]],
+              ['방식', MODE_NAMES[p.deploy.mode]],
+              ['사용 범위', SCOPE_NAMES[p.deploy.scope]],
               ['오프라인 필요', p.deploy.offline_required ? '예' : '아니오'],
               ...(a.localMemory ? [['로컬 메모리', `${fmtMetric(a.localMemory.mb)}${a.localMemory.share ? ` (기기 메모리의 ${fmtShare(a.localMemory.share.value)})` : ''}`] as [string, string]] : []),
             ]} />
@@ -177,7 +175,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           <section>
             <H n={12}>적용한 설정</H>
             <ul>{p.nodes.flatMap((n) => {
-              const sp = storageProfileOf(n.primary ? catalog.byId.get(n.primary) : undefined, catalog.byId);
+              const sp = nodeStorageProfile(n, catalog.byId);
               const feats = sp ? selectedFeatures(sp, n).map((f) => f.label) : [];
               const tips = [n.primary, ...n.extras].flatMap((id) => (id ? catalog.byId.get(id)?.settings ?? [] : [])).map((s) => `${s.name}(${s.goal})`);
               return feats.length || tips.length ? [<li key={n.id}>{n.name}: {[feats.length && `저장 기능 ${feats.join(', ')}${n.storage_features ? '' : ' (권장)'}`, tips.length && `권장 설정 ${tips.join(', ')}`].filter(Boolean).join(' · ')}</li>] : [];

@@ -2,10 +2,11 @@ import type { Analysis } from '../../engine/analyze';
 import type { Traffic } from '../../engine/traffic';
 import type { Metric } from '../../engine/model';
 import { catalog } from './data';
+import { updateTable } from './edit';
 import { Section } from './fields';
 import { fmt, fmtMetric, howMetric } from './format';
 import { useState } from 'react';
-import { selectedFeatures, storageProfileOf } from '../../engine/schema';
+import { nodeStorageProfile, selectedFeatures, storageProfileOf } from '../../engine/schema';
 import { loadSqlJs, runSqliteLab, type LabResult } from './sqliteLab';
 import { useStore } from './store';
 
@@ -197,7 +198,7 @@ export function TableLab({ nodeId, table }: { nodeId: string; table: string }) {
   const [state, setState] = useState<{ running?: boolean; result?: LabResult; error?: string }>({});
   const node = project.nodes.find((n) => n.id === nodeId)!;
   const t = node.tables.find((x) => x.name === table)!;
-  const sp = storageProfileOf(node.primary ? catalog.byId.get(node.primary) : undefined, catalog.byId);
+  const sp = nodeStorageProfile(node, catalog.byId);
   const isSqlite = !!sp && sp === storageProfileOf(catalog.byId.get('sqlite'), catalog.byId);
   const run = async () => {
     setState({ running: true });
@@ -209,12 +210,7 @@ export function TableLab({ nodeId, table }: { nodeId: string; table: string }) {
       setState({ error: (e as Error).message });
     }
   };
-  const apply = (r: LabResult) => edit((p) => ({
-    ...p,
-    nodes: p.nodes.map((n) => n.id !== nodeId ? n : {
-      ...n, tables: n.tables.map((x) => x.name !== table ? x : { ...x, measured: { ...x.measured, row_bytes: r.rowBytes, index_bytes: r.indexBytes } }),
-    }),
-  }));
+  const apply = (r: LabResult) => edit((p) => updateTable(p, nodeId, table, { measured: { ...t.measured, row_bytes: r.rowBytes, index_bytes: r.indexBytes } }));
   const r = state.result;
   return (
     <span className="lab">

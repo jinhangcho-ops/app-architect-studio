@@ -17,6 +17,10 @@ const ENABLED: Record<Deploy['mode'], Calc[]> = {
 
 export const enabled = (d: Deploy, c: Calc) => ENABLED[d.mode].includes(c);
 
+/** 화면·설계서에 쓰는 이름 */
+export const MODE_NAMES: Record<Deploy['mode'], string> = { web: '웹 (브라우저 + 서버)', mobile: '모바일 앱', local_exe: '로컬 데스크톱(exe)', hybrid: '하이브리드 (로컬 + 동기화)', server: '서버 전용' };
+export const SCOPE_NAMES: Record<Deploy['scope'], string> = { single: '혼자', team: '팀·사내', public: '공개 서비스' };
+
 export const deployVars = (d: Deploy): Vars => ({
   deploy_mode: d.mode,
   offline_required: d.offline_required,
