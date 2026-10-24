@@ -411,3 +411,6 @@ body[data-drag='remove'] .palette::before { content: '여기에 놓으면 빠져
 .toolbar .panel-toggles button[aria-pressed='true'] { color: var(--ink); background: var(--panel-2); }
 .toolbar .panel-toggles button:hover { color: var(--ink); }
 .toolbar > button.on { color: var(--ink); background: var(--panel-2); border-color: var(--line-2); }
+
+/* 연결선 글자: 선 위쪽, 배경 없이 작게 (선과 겹치지 않음) */
+.edge-label { position: absolute; font-size: 11px; line-height: 1; white-space: nowrap; pointer-events: none; text-shadow: 0 0 3px var(--bg), 0 0 3px var(--bg); }
