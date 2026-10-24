@@ -35,6 +35,10 @@ export const LAYER_TIER: Record<Layer, number> = {
   ui: 1, gateway: 2, backend: 3, cache: 3, queue: 4, batch: 4, db: 5, external: 5, analytics: 6,
 };
 
+/** 판정이 나쁜 정도 (클수록 나쁨). 판단 불가는 값을 넣기 전까지 쓸 수 있는지 모르므로 조건부보다 나쁘게 본다.
+ *  노드 카드 배지(가장 나쁜 판정), 대안 정렬, 설계서 미해결 목록이 모두 이 순서를 쓴다 */
+export const VERDICT_RANK: Record<Verdict, number> = { ok: 0, conditional: 1, unknown: 2, fail: 3 };
+
 export const VERDICT_NAMES: Record<Verdict, string> = {
   ok: '✅ 됨',
   conditional: '⚠️ 조건부',

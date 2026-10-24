@@ -1,7 +1,7 @@
 // 5절 판정: 노드에 붙은 카탈로그 항목마다 됨·조건부·안 됨·판단 불가와 이유, 통과하는 대안을 낸다.
 import { MissingVar, test, type Value, type Vars } from './expr';
 import { calibrate } from './calibrate';
-import { LAYER_TIER, type Layer, type Verdict } from './model';
+import { LAYER_TIER, VERDICT_RANK, type Layer, type Verdict } from './model';
 import { itemIds, type CatalogItem, type Project, type ProjectNode, type Rule } from './schema';
 
 export type Scenario = { normal: Vars; event: Vars };
@@ -66,7 +66,6 @@ export function judgeItem(item: CatalogItem, node: ProjectNode, s: Scenario): Om
   return { itemId: item.id, verdict: 'ok', reasons: ok };
 }
 
-const RANK: Record<Verdict, number> = { ok: 0, conditional: 1, unknown: 2, fail: 3 };
 
 /** computed = 엔진이 계산한 변수. 노드에 직접 넣은 vars가 있으면 그 값이 우선한다(실측·수동 보정). */
 export const mergeScenario = (node: ProjectNode, computed?: Scenario): Scenario => ({
@@ -85,7 +84,7 @@ export function judgeNode(node: ProjectNode, catalog: Map<string, CatalogItem>, 
     const alternatives = j.verdict === 'ok' ? [] : item.alternatives
       .map((a) => ({ id: a.id, note: a.note, verdict: judgeItem(catalog.get(a.id)!, node, s).verdict }))
       .filter((a) => a.verdict !== 'fail')
-      .sort((a, b) => RANK[a.verdict] - RANK[b.verdict]);
+      .sort((a, b) => VERDICT_RANK[a.verdict] - VERDICT_RANK[b.verdict]);
     return { ...j, alternatives };
   });
   return { nodeId: node.id, items };

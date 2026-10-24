@@ -10,6 +10,14 @@ const ex = examples.find((e) => e.name === 'phase3.json')!;
 const base = parseProject(ex.data, catalog.items, ex.name);
 const verdictOf = (p: typeof base, id: string) => worstVerdict(run(p, today).analysis!.judgements.find((j) => j.nodeId === id));
 
+describe('판정 순위: 됨 < 조건부 < 판단 불가 < 안 됨 (배지·대안·미해결 목록이 같은 순서)', () => {
+  const item = (verdict: 'ok' | 'conditional' | 'unknown' | 'fail') => ({ itemId: verdict, verdict, reasons: [], alternatives: [] });
+  it('조건부와 판단 불가가 같이 있으면 노드 배지는 판단 불가', () => {
+    expect(worstVerdict({ nodeId: 'n', items: [item('conditional'), item('unknown'), item('ok')] })).toBe('unknown');
+    expect(worstVerdict({ nodeId: 'n', items: [item('unknown'), item('fail')] })).toBe('fail');
+  });
+});
+
 describe('관문: 노드 항목이나 사용자 수를 바꾸면 판정이 바로 바뀜', () => {
   it('트래픽은 사용자·페르소나 쪽이 바뀔 때만 다시 계산 (이름만 바꾸면 그대로 재사용)', () => {
     const t0 = run(base, today).analysis!.traffic;

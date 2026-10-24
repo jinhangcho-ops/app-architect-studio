@@ -40,6 +40,11 @@ describe('설계서 노드 카드 (설계서 7절 형식)', () => {
     expect(c.rows.find((r) => r.label === '비고')!.lines.some((l) => l.includes('제28조의8 확인 필요'))).toBe(true);
     expect(c.rows.find((r) => r.label === '📊 계산 결과')!.lines.some((l) => l.startsWith('테이블 ledger_entries'))).toBe(true);
     expect(openIssues(g, ga, catalog.byId).some((x) => x.includes('구조 규칙'))).toBe(true);
+    // 미해결 목록은 나쁜 것부터: 안 됨 → 판단 불가 → 조건부 (조건부·판단 불가가 섞인 판정으로 확인)
+    const it = (verdict: 'conditional' | 'unknown' | 'fail') => ({ itemId: verdict, verdict, reasons: [], alternatives: [] });
+    const mixed = { ...ga, judgements: [{ nodeId: g.nodes[0].id, items: [it('conditional'), it('unknown'), it('fail')] }], rules: [] };
+    const lines = openIssues(g, mixed, catalog.byId);
+    expect(['❌', '❔', '⚠️'].map((mark, i) => lines[i].startsWith(mark))).toEqual([true, true, true]);
   });
 });
 

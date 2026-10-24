@@ -2,7 +2,7 @@
 import { analyze, type Analysis } from '../../engine/analyze';
 import { parseProject } from '../../engine/data';
 import type { NodeJudgement } from '../../engine/judge';
-import { LAYER_NAMES, type Layer, type Verdict } from '../../engine/model';
+import { LAYER_NAMES, VERDICT_RANK, type Layer, type Verdict } from '../../engine/model';
 import { optimize, withAssignment, type OptimizeResult } from '../../engine/optimize';
 import { traffic, type Traffic } from '../../engine/traffic';
 import { EdgeSchema, NodeSchema, nodeStorageProfile, selectedFeatures, Table as TableSchema, withPrimary, type Project, type ProjectEdge, type ProjectNode, type Screen, type WireItem } from '../../engine/schema';
@@ -111,10 +111,9 @@ export function setVar(p: Project, nodeId: string, key: string, value: number | 
   return updateNode(p, nodeId, { vars: { normal: put(n.vars.normal), event: put(n.vars.event) } });
 }
 
-const RANK: Record<Verdict, number> = { ok: 0, unknown: 1, conditional: 2, fail: 3 };
 /** 노드 배지: 붙은 항목 중 가장 나쁜 판정 */
 export const worstVerdict = (j?: NodeJudgement): Verdict | undefined =>
-  j?.items.reduce<Verdict | undefined>((w, i) => (!w || RANK[i.verdict] > RANK[w] ? i.verdict : w), undefined);
+  j?.items.reduce<Verdict | undefined>((w, i) => (!w || VERDICT_RANK[i.verdict] > VERDICT_RANK[w] ? i.verdict : w), undefined);
 
 // ── 테이블 ──
 type Table = ProjectNode['tables'][number];

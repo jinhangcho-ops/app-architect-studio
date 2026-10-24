@@ -3,7 +3,7 @@
 import type { Analysis } from '../../engine/analyze';
 import { impactOf } from '../../engine/availability';
 import type { NodeJudgement } from '../../engine/judge';
-import { LAYER_NAMES, VERDICT_NAMES, type Metric, type Verdict } from '../../engine/model';
+import { LAYER_NAMES, VERDICT_NAMES, VERDICT_RANK, type Metric, type Verdict } from '../../engine/model';
 import { itemIds, nodeStorageProfile, selectedFeatures, type CatalogItem, type Project } from '../../engine/schema';
 import { lawLine } from '../../engine/regulation';
 import { worstVerdict } from './edit';
@@ -95,10 +95,10 @@ export function nodeCard(p: Project, a: Analysis, byId: Map<string, CatalogItem>
 /** 미해결 목록(10번째 절): 안 됨·조건부·판단 불가 항목과 걸린 구조 규칙 */
 export function openIssues(p: Project, a: Analysis, byId: Map<string, CatalogItem>): string[] {
   const name = (id: string) => p.nodes.find((x) => x.id === id)?.name ?? id;
-  const RANK: Record<Verdict, number> = { fail: 0, conditional: 1, unknown: 2, ok: 3 };
   return [
     ...a.judgements.flatMap((j) => j.items.filter((i) => i.verdict !== 'ok').map((i) => ({ v: i.verdict, text: `${VERDICT_NAMES[i.verdict]} ${name(j.nodeId)} · ${byId.get(i.itemId)?.name ?? i.itemId}: ${i.reasons[0] ?? ''}` })))
-      .sort((x, y) => RANK[x.v] - RANK[y.v]).map((x) => x.text),
+      // 나쁜 것부터
+      .sort((x, y) => VERDICT_RANK[y.v] - VERDICT_RANK[x.v]).map((x) => x.text),
     ...a.rules.map((r) => `❌ 구조 규칙 · ${r.target}: ${r.why} → ${r.instead}`),
   ];
 }
