@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { parse } from './expr';
 import { LAYERS } from './model';
 import { STANDARD_OFFSET } from './timezones';
+import { INDUSTRY_IDS } from './industry';
 
 const parses = (s: string) => {
   try {
@@ -289,6 +290,8 @@ export const Scale = z.object({
   report_utc_offset: z.number().min(-12).max(14).optional(),
   /** 페르소나에 window_share가 없을 때 쓰는 서비스 전체 기본값 (창 안 접속 비율) */
   window_share: z.number().min(0).max(1).default(0.8),
+  /** 업종: 정하면 모든 페르소나가 그 업종의 깨어 있는 창과 피크 시각(industry.ts)을 쓴다. 없으면 페르소나마다 창 가운데 한 봉우리 */
+  industry: z.enum(INDUSTRY_IDS).optional(),
   retention_days: z.number().positive().default(365),
   event_multiplier: z.number().min(1).default(1),
   overhead_k: z.number().min(1).default(2),

@@ -2,6 +2,7 @@
 import { useMemo, useState } from 'react';
 import { perInstance, type Analysis } from '../../engine/analyze';
 import { instancesNeeded } from '../../engine/capacity';
+import { INDUSTRIES } from '../../engine/industry';
 import { nodeP99 } from '../../engine/latency';
 import { dayCurve } from '../../engine/traffic';
 import type { Metric } from '../../engine/model';
@@ -137,7 +138,7 @@ export function LimitChart({ project: p, analysis: a }: { project: Project; anal
   const ex = p.exchange;
   const exText = ex ? `${ex.receive === 'streaming' ? '스트리밍' : '폴링'}${ex.refresh_s ? ` ${ex.refresh_s}초` : ''} · ${ex.send === 'batch' ? `${ex.batch_s}초 모아 보내기` : '바로 보내기'}` : '주고받기 설정 없음';
   const SUB: Record<ChartKind, string> = {
-    traffic: `가로: ${tz} 기준 시각 · 세로: 평소 요청 기댓값(5분 평균) · 페르소나 접속 시간대·접속 시간·${exText}로 계산`,
+    traffic: `가로: ${tz} 기준 시각 · 세로: 평소 요청 기댓값(5분 평균) · ${p.scale?.industry ? `업종 「${INDUSTRIES[p.scale.industry].label}」 피크 시각` : '페르소나 접속 시간대'}·접속 시간·${exText}로 계산`,
     util: '가로: 기준 시각 · 세로: 평소 피크에 맞춘 대수로 받을 때의 대당 사용률 (5분 평균)',
     inflow: '가로: 달 · 세로: 그달 새로 들어온 사람 · 바깥 유입(광고·검색)과 입소문(Bass 확산)',
     stages: '가로: 달 · 세로: 페르소나별 활성 사용자 (쌓음) · 점선 = 1인당 요청을 반영한 환산 사용자(부하·한계 시점 기준)',

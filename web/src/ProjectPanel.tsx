@@ -2,6 +2,7 @@ import { Select } from './Select';
 import { useState } from 'react';
 import { Persona, REGIONS, Scale, PATTERN_IDS, SERVICE_KINDS, type Exchange, type PriceRow, type Project } from '../../engine/schema';
 import { RECOMMEND, SERVICE_NAMES } from './exchange';
+import { INDUSTRIES, INDUSTRY_IDS, type IndustryId } from '../../engine/industry';
 import { prices } from './data';
 import { PATTERNS } from '../../engine/traffic';
 import { STANDARD_OFFSET } from '../../engine/timezones';
@@ -48,6 +49,18 @@ export function ProjectPanel() {
           <NumField label="활성 사용자" value={p.scale.users} step={1000} onChange={(v) => v && setScale({ users: v })} />
           <NumField label="이벤트 배수" value={p.scale.event_multiplier} onChange={(v) => setScale({ event_multiplier: v ?? 1 })} />
           <NumField label="창 안 비율" value={p.scale.window_share} step={0.05} hint="깨어 있는 시간대에 들어오는 접속 비율" onChange={(v) => setScale({ window_share: v ?? 0.8 })} />
+          <Row label="업종 (피크 시각)">
+            <Select value={p.scale.industry ?? ''} onChange={(e) => setScale({ industry: (e.target.value || undefined) as IndustryId | undefined })}>
+              <option value="">없음 (페르소나 창 가운데 한 번)</option>
+              {INDUSTRY_IDS.map((k) => <option key={k} value={k}>{INDUSTRIES[k].label}</option>)}
+            </Select>
+          </Row>
+          {p.scale.industry && (() => {
+            const ind = INDUSTRIES[p.scale.industry];
+            // 피크 시각은 정시 아니면 30분 (industry.ts 값)
+            const hh = (h: number) => (Number.isInteger(h) ? `${h}시` : `${Math.floor(h)}시 반`);
+            return <p className="muted">피크 {ind.peaks.map((k) => hh(k.at)).join(' · ')} · 깨어 있는 시간 {ind.window[0]}~{ind.window[1]}시 (모든 페르소나, 현지 시각). {ind.why} (예시값)</p>;
+          })()}
           <Row label="기준 나라">
             <Select value={p.scale.report_country} onChange={(e) => setScale({ report_country: e.target.value })}>
               {Object.keys(STANDARD_OFFSET).map((c) => <option key={c} value={c}>{c}</option>)}
