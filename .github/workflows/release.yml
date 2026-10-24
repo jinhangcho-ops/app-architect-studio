@@ -1,5 +1,5 @@
 # 버전 태그(v1.0.0 등)를 올리면 Windows 설치 파일을 만들어 GitHub Releases에 올린다.
-# 받는 사람은 Releases에서 App-Architect-Studio-Setup-<버전>.exe만 받아 설치하면 된다.
+# 받는 사람은 Releases에서 App-Architect-Studio-Setup-<버전>.exe만 받아 설치하면 된다. 같은 이름의 .sha256으로 받은 파일을 확인할 수 있다.
 name: Release installer
 
 on:
@@ -31,3 +31,16 @@ jobs:
       - run: npx electron-builder --win --x64 --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # 설치 파일의 SHA-256 지문을 같은 Release에 올린다. 받은 사람이 README의 한 줄로 받은 파일이 그대로인지 확인한다
+      # (코드 서명이 없는 동안 받은 파일을 확인하는 방법. 형식은 sha256sum과 같다: "<지문>  <파일 이름>")
+      - name: SHA-256 checksum
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $exe = Get-Item "release/App-Architect-Studio-Setup-*.exe"
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($exe.Name)" | Out-File "$($exe.FullName).sha256" -Encoding ascii -NoNewline
+          "SHA-256 ``$hash`` $($exe.Name)" >> $env:GITHUB_STEP_SUMMARY
+          gh release upload $env:GITHUB_REF_NAME "$($exe.FullName).sha256" --clobber
