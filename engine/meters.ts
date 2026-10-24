@@ -7,7 +7,7 @@ import type { LineItem } from './cost';
 import { callSplit } from './api';
 import { edgeFlow, type NodeLoad } from './load';
 import type { TableAnalysis } from './tables';
-import type { CatalogItem, Project, ProjectNode } from './schema';
+import { nodeRegion, type CatalogItem, type Project, type ProjectNode } from './schema';
 import type { Traffic } from './traffic';
 
 const sum = (xs: number[]) => xs.reduce((s, x) => s + x, 0);
@@ -19,7 +19,7 @@ export function costLines(
 ): { lines: LineItem[]; missing: string[] } {
   const lines: LineItem[] = [];
   const missing: string[] = [];
-  const regionOf = (n: ProjectNode) => (n.region === 'local' ? undefined : n.region ?? p.cost.region);
+  const regionOf = (n: ProjectNode) => { const r = nodeRegion(n, p); return r === 'local' ? undefined : r; };
   // 노드의 하루 요청 = 전체 하루 요청 × (이 노드 피크 / 전체 피크). 부하가 연결선을 따라 같은 비율로 전파되기 때문
   const requestsPerMonth = (n: ProjectNode) => {
     const l = loads?.get(n.id);

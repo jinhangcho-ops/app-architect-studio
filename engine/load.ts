@@ -2,7 +2,7 @@
 import { callSplit } from './api';
 import { deployVars } from './deploy';
 import type { Scenario } from './judge';
-import type { Project, ProjectEdge } from './schema';
+import { entryNodes, type Project, type ProjectEdge } from './schema';
 import type { Traffic } from './traffic';
 
 type Pair = { normal: number; event: number };
@@ -14,7 +14,7 @@ export function nodeLoads(p: Project, t: Traffic): Map<string, NodeLoad> {
     writeRps: { normal: 0, event: 0 },
   }]));
 
-  const entries = p.nodes.filter((n) => n.layer === 'ui');
+  const entries = entryNodes(p);
   for (const n of entries) {
     const share = n.entry_share ?? 1 / entries.length;
     const l = loads.get(n.id)!;

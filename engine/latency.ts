@@ -1,6 +1,6 @@
 // 12절 지연시간: 노드를 M/M/c 대기열로 보고 p99를 추정, 동기 경로를 따라 더한다(보수적 상한).
 import type { Metric } from './model';
-import type { Project } from './schema';
+import { entryNodes, type Project } from './schema';
 
 /** 얼랑 C(대기할 확률). 얼랑 B 점화식으로 계산해 c가 커도 넘치지 않는다. a = λ/μ */
 export function erlangC(c: number, a: number): number {
@@ -32,7 +32,7 @@ export function syncPaths(p: Project): string[][] {
     if (!next.length) out.push(path);
     for (const e of next) walk([...path, e.to]);
   };
-  for (const n of p.nodes.filter((x) => x.layer === 'ui')) walk([n.id]);
+  for (const n of entryNodes(p)) walk([n.id]);
   return out;
 }
 

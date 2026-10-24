@@ -2,7 +2,7 @@
 // GET 호출이 읽기 요청을, 나머지(POST·PUT·PATCH·DELETE)가 쓰기 요청을 접속당 횟수 비율로 나눠 갖는다.
 // 연결선이 없는 대상으로 가는 호출은 빼고(구조도와 어긋나지 않게), 호출이 하나도 남지 않으면 연결선의 callRatio를 그대로 쓴다.
 import type { Metric } from './model';
-import type { Project, ProjectNode, WireItem } from './schema';
+import { entryNodes, type Project, type ProjectNode, type WireItem } from './schema';
 
 export type ApiCall = { node: string; screen: string; item: string; label: string; method: string; path: string; to: string; perSession: number };
 export type ApiLoad = ApiCall & { rps: Metric; rpsEvent: Metric };
@@ -49,7 +49,7 @@ const m = (value: number, formula: string, inputs: Record<string, number>): Metr
 
 /** 호출별 피크 RPS: 화면 노드의 읽기(또는 쓰기) 피크 × 이 호출의 몫 */
 export function apiLoads(p: Project, loads: Map<string, { rps: { normal: number; event: number }; writeRps: { normal: number; event: number } }>): ApiLoad[] {
-  return p.nodes.filter((n) => n.layer === 'ui').flatMap((n) => {
+  return entryNodes(p).flatMap((n) => {
     const l = loads.get(n.id);
     if (!l) return [];
     return [...shares(routedCalls(p, n))].map(([c, s]) => {

@@ -86,9 +86,11 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
 
   // 노드별 대수·사용률·p99·가용성
   const nodes: Record<string, NodeAnalysis> = {};
+  // 대당 처리량(사양·실측 보정)은 노드마다 한 번만: 성장 타임라인이 달마다 다시 쓴다
+  const perOf = new Map(p.nodes.map((n) => [n.id, perInstance(n, d.catalog)]));
   for (const n of p.nodes) {
     const load = loads?.get(n.id);
-    const per = perInstance(n, d.catalog);
+    const per = perOf.get(n.id)!;
     const a = nodeAvailability(n.availability ?? p.default_availability, n.replicas);
     const na: NodeAnalysis = {
       load,
@@ -131,7 +133,7 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
   // 비용: 시간대별 대수 × 가격표
   const hourlyOf = (n: ProjectNode, factor: number) => {
     const load = loads?.get(n.id);
-    const per = perInstance(n, d.catalog);
+    const per = perOf.get(n.id)!;
     // 이중화(replicas > 1)는 부하와 무관하게 늘 떠 있어야 하는 대수다. 1이면 0대까지 줄어드는 워커를 막지 않도록 하한으로 쓰지 않는다
     const floor = n.replicas > 1 ? n.replicas : 0;
     const hourly = load && per.rps && shape

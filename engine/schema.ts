@@ -577,6 +577,11 @@ export function selectedFeatures(sp: StorageProfile, node: { storage_features?: 
 }
 
 /** 주 항목 바꾸기. 저장 기능 선택은 이전 시스템 것이라 지워서 새 시스템의 권장 기능으로 돌아가게 한다 */
+/** 사용자가 들어오는 노드(화면 계층). 부하·지연·가용성·API 계산이 모두 여기서 시작한다 */
+export const entryNodes = (p: Project) => p.nodes.filter((n) => n.layer === 'ui');
+/** 노드가 놓인 리전: 노드에 없으면 프로젝트 기본 리전. 'local' = 사용자 기기 (비용·법령이 같은 규칙) */
+export const nodeRegion = (n: ProjectNode, p: Project) => n.region ?? p.cost.region;
+
 /** 노드에 붙은 카탈로그 항목 id: 주 항목, 그다음 보조 항목 */
 export const itemIds = (n: { primary?: string; extras: string[] }): string[] => (n.primary ? [n.primary, ...n.extras] : n.extras);
 
