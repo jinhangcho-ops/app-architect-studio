@@ -81,7 +81,11 @@
         "repo": "app-architect-studio",
         "releaseType": "release"
       }
-    ]
+    ],
+    "electronFuses": {
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true
+    }
   },
   "repository": {
     "type": "git",
