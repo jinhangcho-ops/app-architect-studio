@@ -79,9 +79,11 @@ export function App() {
         .catch((err: Error) => say(`저장하지 못했습니다: ${err.message}`, 8000));
       return;
     }
-    const ok = writeManualSave(project, positions);
-    setNotice(ok ? `저장했습니다 · ${new Date().toLocaleTimeString('ko-KR')}` : '브라우저 저장소를 쓸 수 없어 저장하지 못했습니다. "파일로 내보내기"(Ctrl+Shift+S)를 쓰세요');
-    setTimeout(() => setNotice(undefined), ok ? 2500 : 8000);
+    const dropped = writeManualSave(project, positions);
+    const ok = dropped !== false;
+    setNotice(!ok ? '브라우저 저장소를 쓸 수 없어 저장하지 못했습니다. "파일로 내보내기"(Ctrl+Shift+S)를 쓰세요'
+      : `저장했습니다 · ${new Date().toLocaleTimeString('ko-KR')}${dropped ? ` · 저장소 공간이 모자라 오래된 직접 저장 시점 ${dropped}개를 지웠어요` : ''}`);
+    setTimeout(() => setNotice(undefined), ok && !dropped ? 2500 : 8000);
   };
   // 자동 저장이 실패하면(저장소가 꽉 참·폴더에 못 씀) 한 번 알린다. 복구 시점이 없는데 있다고 믿지 않게
   const warnedSave = useRef(false);
@@ -92,7 +94,7 @@ export function App() {
       warnedSave.current = true;
       say(`${where} 자동 저장을 하지 못했어요. 강제로 닫히면 복구할 수 없으니 "저장"(Ctrl+S)이나 "파일로 내보내기"로 저장하세요`, 10000);
     };
-    scheduleAutosave(project, positions, fail('브라우저 저장소가 꽉 차서'));
+    scheduleAutosave(project, positions, fail('브라우저 저장소에'));
     if (filePath) scheduleFolderAutosave(filePath, project, positions, fail('프로젝트 폴더에'));
   }, [project, positions, recovery, filePath]);
 

@@ -57,8 +57,9 @@ export function snapshotFromFile(name: string, text: string): Snapshot | undefin
 }
 
 /** 맨 앞에 넣거나(replace면 맨 앞을 바꿔) max개까지 남긴다.
- *  저장소가 꽉 차면(브라우저마다 5MB쯤) 가장 오래된 시점부터 하나씩 버리고 다시 쓴다. 이번 것 하나도 못 쓰면 false (작업은 계속된다) */
-function put(storage: Store, key: string, entry: Raw, replace: boolean, max: number): boolean {
+ *  저장소가 꽉 차면(브라우저마다 5MB쯤) 가장 오래된 시점부터 하나씩 버리고 다시 쓴다.
+ *  돌려주는 값: 공간이 모자라 버린 예전 시점 수. 이번 것 하나도 못 쓰면 false (작업은 계속된다) */
+function put(storage: Store, key: string, entry: Raw, replace: boolean, max: number): number | false {
   if (!storage) return false;
   let list: Raw[] = [];
   try { list = rawList(storage, key); } catch { /* 깨진 기록은 버리고 새로 시작한다 */ }
@@ -66,7 +67,7 @@ function put(storage: Store, key: string, entry: Raw, replace: boolean, max: num
   for (let n = all.length; n >= 1; n--) {
     try {
       storage.setItem(key, JSON.stringify(all.slice(0, n)));
-      return true;
+      return all.length - n;
     } catch { /* 꽉 참: 하나 덜 남기고 다시 */ }
   }
   return false;
@@ -103,7 +104,7 @@ export function writeAutosave(p: Project, positions: Record<string, XY>, storage
   try { latest = rawList(storage, AUTO_KEY)[0]; } catch { /* 깨진 기록 */ }
   const every = autosaveMinutes(storage) * 60_000;
   const same = !forceNew && !!latest && latest.project.name === p.name && now.getTime() - Date.parse(latest.createdAt ?? latest.savedAt) < every;
-  const ok = put(storage, AUTO_KEY, { createdAt: same ? latest!.createdAt ?? latest!.savedAt : now.toISOString(), savedAt: now.toISOString(), project: exportProject(p, positions) }, same, MAX_AUTO);
+  const ok = put(storage, AUTO_KEY, { createdAt: same ? latest!.createdAt ?? latest!.savedAt : now.toISOString(), savedAt: now.toISOString(), project: exportProject(p, positions) }, same, MAX_AUTO) !== false;
   if (ok) forceNew = false;
   return ok;
 }
@@ -111,7 +112,8 @@ export function writeAutosave(p: Project, positions: Record<string, XY>, storage
 export const readAutosaves = (storage: Store = local()) => readList(storage, AUTO_KEY);
 
 // ── 직접 저장 (Ctrl+S) ──
-export function writeManualSave(p: Project, positions: Record<string, XY>, storage: Store = local(), now = new Date()): boolean {
+/** 공간이 모자라 버린 예전 시점 수(보통 0), 못 쓰면 false. 버렸으면 화면이 알린다 (일부러 남긴 시점이라) */
+export function writeManualSave(p: Project, positions: Record<string, XY>, storage: Store = local(), now = new Date()): number | false {
   return put(storage, MANUAL_KEY, { createdAt: now.toISOString(), savedAt: now.toISOString(), project: exportProject(p, positions) }, false, MAX_MANUAL);
 }
 export const readManualSaves = (storage: Store = local()) => readList(storage, MANUAL_KEY);

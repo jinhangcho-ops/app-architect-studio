@@ -79,6 +79,7 @@ describe('저장 기록 (자동 10개·간격 지정, 직접 20개)', () => {
     const full = { ...memory(), setItem: () => { throw new Error('QuotaExceededError'); } } as Storage;
     expect(writeAutosave(p, {}, full)).toBe(false);
     expect(writeManualSave(p, {}, full)).toBe(false);
+    expect(writeManualSave(p, {}, memory())).toBe(0);
     expect(readAutosaves(undefined)).toEqual([]);
   });
 
@@ -89,6 +90,11 @@ describe('저장 기록 (자동 10개·간격 지정, 직접 20개)', () => {
     const small = { ...memory(), getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { if (v.length > one * 3.5) throw new Error('QuotaExceededError'); m.set(k, v); } } as Storage;
     for (let i = 0; i < 6; i++) expect(writeAutosave({ ...p, name: `p${i}` }, {}, small, at(i * 20))).toBe(true);
     expect(readAutosaves(small).map((x) => x.project.name)).toEqual(['p5', 'p4', 'p3']);
+    // 직접 저장은 버린 수를 돌려줘 화면이 알릴 수 있게
+    const m2 = new Map<string, string>();
+    const small2 = { ...memory(), getItem: (k: string) => m2.get(k) ?? null, setItem: (k: string, v: string) => { if (v.length > one * 3.5) throw new Error('QuotaExceededError'); m2.set(k, v); } } as Storage;
+    const drops = [0, 1, 2, 3].map((i) => writeManualSave({ ...p, name: `m${i}` }, {}, small2, at(i)));
+    expect(drops).toEqual([0, 0, 0, 1]);
   });
 });
 
