@@ -1,5 +1,6 @@
 // 업종별 하루 접속 모양: 깨어 있는 창과 그 안의 피크들(현지 표준시). 흔한 모양을 옮긴 예시값이라 서비스에 맞게 고쳐 쓴다.
 // 피크 = 그 시각(at)을 가운데로 한 정규분포(표준편차 sd시간), weight는 피크끼리의 상대 몫.
+// 정규분포의 꼬리가 창 밖으로 조금 나가므로, 창 안 비율 1(100%)은 업종에 따라 0.94~0.99까지만 맞는다 (결과의 "창 안 접속"이 실제 값).
 
 export type Peak = { at: number; sd: number; weight: number };
 export type Industry = { label: string; window: [number, number]; peaks: Peak[]; why: string };

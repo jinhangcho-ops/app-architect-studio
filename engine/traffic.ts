@@ -117,8 +117,9 @@ export function startModel(ps: Persona, scale: { window_share: number; industry?
     const d = hourDiff(mu, x.center);
     return s + x.w * [-24, 0, 24].reduce((q, k) => q + phi((d + span / 2 + k) / x.sigma) - phi((d - span / 2 + k) / x.sigma), 0);
   }, 0);
-  // 고르게 퍼질 때보다 창 안이 적으면(창 시간을 피함) 봉우리를 12시간 뒤로 옮긴다
-  if (share < flat) bumps = bumps.map((x) => ({ ...x, center: x.center + 12 }));
+  // 고르게 퍼질 때보다 창 안이 적으면(창 시간을 피함) 봉우리 하나를 창 반대편(창 가운데 + 12시간)에 둔다.
+  // 업종 피크를 하나씩 12시간 옮기면 긴 창에서는 옮긴 자리도 창 안이라 맞출 수 없다
+  if (share < flat) bumps = [{ center: mu + 12, sigma: span / (2 * ps.window_sigma), w: 1 }];
   // 비율은 0~1. 봉우리가 너무 넓어 바닥보다도 못 모으면 맞출 수 없어 고른 바닥(0)이 가장 가깝다
   const k = (share - flat) / (inside(bumps) - flat);
   return { span, bumps, weight: Number.isFinite(k) && k > 0 ? Math.min(1, k) : 0, inWindow };

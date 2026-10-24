@@ -40,6 +40,14 @@ describe('업종별 피크 시각', () => {
     }
   });
 
+  it('창 안 비율을 고르게 퍼질 때보다 낮게 잡아도 맞음 (긴 창의 여러 피크도 창 반대편으로)', () => {
+    for (const id of ['commute', 'shopping', 'live_game'] as const) {
+      const p = kr(id);
+      const t = traffic({ ...p, scale: { ...p.scale!, window_share: 0.5 } })!;
+      expect(Math.abs(t.inWindowShare.value - 0.5), id).toBeLessThan(0.02);
+    }
+  });
+
   it('라이브 게임의 무작위 하루도 가장 붐비는 시각이 21시대', () => {
     const t = traffic(kr('live_game'))!;
     expect(t.hourlyRps.indexOf(Math.max(...t.hourlyRps))).toBe(21);
