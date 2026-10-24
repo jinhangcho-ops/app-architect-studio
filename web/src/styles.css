@@ -309,10 +309,6 @@ textarea.spec { width: 100%; min-height: 90px; font-family: ui-monospace, monosp
 
 /* 와이어프레임 */
 .wire { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
-.wscreen { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 10px; border: 1px solid var(--line-2); border-radius: 7px; color: var(--muted); cursor: pointer; }
-.wscreen.on { color: var(--ink); border-color: var(--accent); }
-.wscreen button { border: 0; background: none; padding: 0 4px; color: var(--muted); }
-.wscreen input { width: 90px; padding: 1px 4px; }
 .wwrap { flex: 1; min-height: 0; position: relative; overflow: hidden; outline: none; background-image: radial-gradient(#253041 1px, transparent 1px); background-size: 24px 24px; }
 .wframe { position: absolute; background: #f4f6f9; border-radius: 6px; box-shadow: 0 0 0 1px var(--line-2), 0 8px 30px #0008; overflow: hidden; }
 .wempty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: #8a94a3; }
@@ -366,13 +362,32 @@ body[data-drag='remove'] .palette::before { content: '여기에 놓으면 빠져
 .wcolors button { width: 20px; height: 20px; padding: 0; border-radius: 50%; border: 2px solid var(--line-2); }
 .wcolors button:first-child { width: auto; border-radius: 10px; padding: 0 8px; font-size: 11px; }
 .wcolors button.on { box-shadow: 0 0 0 2px var(--accent); }
-.wscreen small { font-size: 10px; }
 /* 나란히 보기: 화면 이름 단추와 기준 화면 */
 .wcap { position: absolute; height: 20px; padding: 0 8px; font-size: 11px; border-radius: 6px; background: var(--panel-2); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wcap.on { color: var(--ink); border-color: var(--accent); }
 .wframe.active { box-shadow: 0 0 0 2px var(--accent), 0 8px 30px #0008; }
-.wscreen.pair { border-style: dashed; color: var(--ink); }
 /* 와이어프레임 도구줄: 좁으면 줄을 바꾸고 글은 줄이지 않는다 */
 .wire > .inside-bar { flex-wrap: wrap; row-gap: 6px; }
 .wire > .inside-bar > * { flex-shrink: 0; white-space: nowrap; }
 .wire > .inside-bar .select { max-width: none; }
+.chart-tabs { display: inline-flex; gap: 2px; margin-left: 12px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; vertical-align: middle; }
+.chart-tabs button { border: 0; background: none; color: var(--muted); padding: 2px 10px; font-size: 12px; }
+.chart-tabs button.on { background: var(--panel-2); color: var(--ink); font-weight: 700; }
+.limit-chart > p { margin: 8px 0; }
+
+/* 화면 탭: 브라우저 탭 모양 (아이콘 · 이름 · 닫기, 탭 사이 구분선, 고른 탭은 아래 도구줄과 이어짐) */
+.wtabbar { display: flex; align-items: flex-end; padding: 6px 8px 0; background: var(--bg); overflow-x: auto; scrollbar-width: none; }
+.wtab { position: relative; display: flex; align-items: center; gap: 8px; flex: 0 1 220px; min-width: 120px; height: 36px; padding: 0 6px 0 12px; border-radius: 8px 8px 0 0; color: var(--muted); cursor: pointer; user-select: none; }
+.wtab + .wtab::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 1px; background: var(--line-2); }
+.wtab.on::before, .wtab.on + .wtab::before, .wtab:hover::before, .wtab:hover + .wtab::before { display: none; }
+.wtab:hover:not(.on) { background: #ffffff0d; color: var(--ink); }
+.wtab.on { background: var(--panel); color: var(--ink); }
+.wtab.pair::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: 0; height: 2px; border-radius: 1px; background: var(--accent); opacity: 0.6; }
+.wtab-ico { width: 16px; height: 16px; flex: none; }
+.wtab .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.wtab input { flex: 1; min-width: 0; padding: 2px 4px; }
+.wtab .x { flex: none; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); font-size: 15px; line-height: 1; }
+.wtab .x:hover { background: #ffffff1a; color: var(--ink); }
+.wtab-add { flex: none; width: 30px; height: 30px; margin: 0 0 3px 6px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); font-size: 18px; }
+.wtab-add:hover { background: #ffffff14; color: var(--ink); }
+.limit-chart h3 small { display: block; margin: 3px 0 0; }

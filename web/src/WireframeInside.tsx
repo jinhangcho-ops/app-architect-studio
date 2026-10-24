@@ -57,6 +57,18 @@ type Live = { id: string; mode: 'move' | 'size'; sx: number; sy: number; o: Wire
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 
+/** 탭 아이콘: 기기 모양 (데스크톱·태블릿·모바일) */
+function DeviceIcon({ d }: { d: NonNullable<Screen['device']> }) {
+  return (
+    <svg className="wtab-ico" viewBox="0 0 16 16" aria-hidden fill="none" stroke="currentColor" strokeWidth={1.4}>
+      {d === 'desktop' && <><rect x="1.5" y="2.5" width="13" height="8.5" rx="1.2" /><path d="M6 14h4M8 11v3" /></>}
+      {d === 'tablet' && <><rect x="3" y="1.5" width="10" height="13" rx="1.5" /><path d="M7 12.5h2" /></>}
+      {d === 'tablet_land' && <><rect x="1.5" y="3" width="13" height="10" rx="1.5" /><path d="M12.5 7v2" /></>}
+      {d === 'mobile' && <><rect x="4.5" y="1.5" width="7" height="13" rx="1.5" /><path d="M7.2 12.5h1.6" /></>}
+    </svg>
+  );
+}
+
 type Sel = { s: number; id: string };
 
 /** 화면 틀 한 장: 상자 놓기·옮기기·크기 바꾸기·글 고치기. 나란히 보기에서는 두 장이 각각 이것을 쓴다 */
@@ -188,18 +200,21 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
 
   return (
     <div className="wire">
-      <div className="inside-bar">
+      <div className="wtabbar" role="tablist" aria-label="화면">
         {screens.map((s, i) => (
-          <span key={i} className={`wscreen ${i === si ? 'on' : ''} ${i === pair ? 'pair' : ''}`} onClick={() => setCur(i)}>
+          <div key={i} role="tab" aria-selected={i === si} className={`wtab ${i === si ? 'on' : ''} ${i === pair ? 'pair' : ''}`} onClick={() => setCur(i)}
+            title={`${s.name} · ${DEVICES[deviceOf(s, p.deploy.mode)].name}${i === pair ? ' · 나란히 보는 중' : ''} (두 번 누르면 이름 고치기)`}>
+            <DeviceIcon d={deviceOf(s, p.deploy.mode)} />
             {editing === `screen:${i}`
-              ? <input autoFocus defaultValue={s.name} aria-label="화면 이름" onBlur={(e) => { const v = e.target.value.trim(); if (v && !screens.some((y, j) => j !== i && y.name === v)) edit((x) => mapScreens(x, nodeId, (ss) => ss.map((y, j) => (j === i ? { ...y, name: v } : y)))); setEditing(undefined); }}
+              ? <input autoFocus defaultValue={s.name} aria-label="화면 이름" onClick={(e) => e.stopPropagation()} onBlur={(e) => { const v = e.target.value.trim(); if (v && !screens.some((y, j) => j !== i && y.name === v)) edit((x) => mapScreens(x, nodeId, (ss) => ss.map((y, j) => (j === i ? { ...y, name: v } : y)))); setEditing(undefined); }}
                 onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditing(undefined); }} />
-              : <span onDoubleClick={() => setEditing(`screen:${i}`)} title="두 번 누르면 이름을 고쳐요">{s.name} <small className="muted">{DEVICE_NAMES[deviceOf(s, p.deploy.mode)]}</small></span>}
-            {screens.length > 1 && <button aria-label={`${s.name} 지우기`} onClick={(e) => { e.stopPropagation(); edit((x) => mapScreens(x, nodeId, (ss) => ss.filter((_, j) => j !== i))); setCur(0); setPair(undefined); setSel(undefined); }}>×</button>}
-          </span>
+              : <span className="name" onDoubleClick={() => setEditing(`screen:${i}`)}>{s.name}</span>}
+            {screens.length > 1 && <button className="x" aria-label={`${s.name} 지우기`} onClick={(e) => { e.stopPropagation(); edit((x) => mapScreens(x, nodeId, (ss) => ss.filter((_, j) => j !== i))); setCur(0); setPair(undefined); setSel(undefined); }}>×</button>}
+          </div>
         ))}
-        <button onClick={() => { edit((x) => addScreen(x, nodeId, device)); setCur(screens.length); }}>+ 화면</button>
-        <span className="spacer" />
+        <button className="wtab-add" aria-label="화면 더하기" title="화면 더하기 (지금 기기)" onClick={() => { edit((x) => addScreen(x, nodeId, device)); setCur(screens.length); }}>+</button>
+      </div>
+      <div className="inside-bar">
         <Select aria-label="기기" value={device} onChange={(e) => setDevice(e.target.value as typeof device)}>
           {WIRE_DEVICES.map((d) => <option key={d} value={d}>{DEVICES[d].name}</option>)}
         </Select>
