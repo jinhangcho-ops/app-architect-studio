@@ -81,6 +81,15 @@ describe('저장 기록 (자동 10개·간격 지정, 직접 20개)', () => {
     expect(writeManualSave(p, {}, full)).toBe(false);
     expect(readAutosaves(undefined)).toEqual([]);
   });
+
+  it('저장소가 꽉 차면 오래된 시점부터 버리고 이번 시점은 남김', () => {
+    // 글자 수 한도가 있는 저장소: 시점 3개까지만 들어감
+    const one = JSON.stringify([{ savedAt: at(0).toISOString(), project: p }]).length;
+    const m = new Map<string, string>();
+    const small = { ...memory(), getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { if (v.length > one * 3.5) throw new Error('QuotaExceededError'); m.set(k, v); } } as Storage;
+    for (let i = 0; i < 6; i++) expect(writeAutosave({ ...p, name: `p${i}` }, {}, small, at(i * 20))).toBe(true);
+    expect(readAutosaves(small).map((x) => x.project.name)).toEqual(['p5', 'p4', 'p3']);
+  });
 });
 
 describe('복사·붙여넣기 (Ctrl+C / Ctrl+V)', () => {

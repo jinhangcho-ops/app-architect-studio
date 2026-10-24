@@ -56,16 +56,20 @@ export function snapshotFromFile(name: string, text: string): Snapshot | undefin
   }
 }
 
-/** 맨 앞에 넣거나(replace면 맨 앞을 바꿔) max개까지 남긴다. 저장소가 막혀 있으면 false (작업은 계속된다) */
+/** 맨 앞에 넣거나(replace면 맨 앞을 바꿔) max개까지 남긴다.
+ *  저장소가 꽉 차면(브라우저마다 5MB쯤) 가장 오래된 시점부터 하나씩 버리고 다시 쓴다. 이번 것 하나도 못 쓰면 false (작업은 계속된다) */
 function put(storage: Store, key: string, entry: Raw, replace: boolean, max: number): boolean {
-  try {
-    let list: Raw[] = [];
-    try { list = rawList(storage, key); } catch { /* 깨진 기록은 버리고 새로 시작한다 */ }
-    storage?.setItem(key, JSON.stringify([entry, ...(replace ? list.slice(1) : list)].slice(0, max)));
-    return !!storage;
-  } catch {
-    return false;
+  if (!storage) return false;
+  let list: Raw[] = [];
+  try { list = rawList(storage, key); } catch { /* 깨진 기록은 버리고 새로 시작한다 */ }
+  const all = [entry, ...(replace ? list.slice(1) : list)].slice(0, max);
+  for (let n = all.length; n >= 1; n--) {
+    try {
+      storage.setItem(key, JSON.stringify(all.slice(0, n)));
+      return true;
+    } catch { /* 꽉 참: 하나 덜 남기고 다시 */ }
   }
+  return false;
 }
 
 // ── 설정: 자동 저장 간격 ──
@@ -88,10 +92,10 @@ let forceNew = false;
 /** 다음 자동 저장은 최신 시점을 덮어쓰지 않고 새 시점으로 (예전 시점을 복구했거나 복구 안내를 닫았을 때 최신 시점을 지키려고) */
 export function startNewSnapshot() { forceNew = true; }
 
-/** 마지막 편집 뒤 WAIT_MS만큼 조용하면 저장한다 (한 글자마다 쓰지 않게) */
-export function scheduleAutosave(p: Project, positions: Record<string, XY>, storage: Store = local()) {
+/** 마지막 편집 뒤 WAIT_MS만큼 조용하면 저장한다 (한 글자마다 쓰지 않게). 못 쓰면 onFail (복구 시점이 없다고 알리게) */
+export function scheduleAutosave(p: Project, positions: Record<string, XY>, onFail?: () => void, storage: Store = local()) {
   clearTimeout(timer);
-  timer = setTimeout(() => writeAutosave(p, positions, storage), WAIT_MS);
+  timer = setTimeout(() => { if (!writeAutosave(p, positions, storage)) onFail?.(); }, WAIT_MS);
 }
 
 export function writeAutosave(p: Project, positions: Record<string, XY>, storage: Store = local(), now = new Date()): boolean {
@@ -120,7 +124,7 @@ export const snapshotLabel = (s: Snapshot) =>
 let folderTimer: ReturnType<typeof setTimeout> | undefined;
 let folderLatest: { file: string; name: string; created: number } | undefined;
 
-export function scheduleFolderAutosave(file: string, p: Project, positions: Record<string, XY>) {
+export function scheduleFolderAutosave(file: string, p: Project, positions: Record<string, XY>, onFail?: () => void) {
   const api = desktop;
   if (!api) return;
   clearTimeout(folderTimer);
@@ -129,7 +133,8 @@ export function scheduleFolderAutosave(file: string, p: Project, positions: Reco
     const same = folderLatest?.file === file && now.getTime() - folderLatest.created < autosaveMinutes() * 60_000;
     const name = same ? folderLatest!.name : stamp(now);
     if (!same) folderLatest = { file, name, created: now.getTime() };
-    api.writeSnapshot(file, 'auto', name, JSON.stringify(exportProject(p, positions), null, 2), MAX_AUTO).catch(() => { /* 폴더에 못 쓰면 브라우저 저장소 기록만 남는다 */ });
+    // 폴더에 못 쓰면(권한·디스크) 브라우저 저장소 기록만 남으므로 알린다
+    api.writeSnapshot(file, 'auto', name, JSON.stringify(exportProject(p, positions), null, 2), MAX_AUTO).catch(() => onFail?.());
   }, WAIT_MS);
 }
 
