@@ -1,5 +1,5 @@
 import { Background, BackgroundVariant, BaseEdge, Controls, EdgeLabelRenderer, getBezierPath, Handle, MarkerType, Position, ReactFlow, type Edge, type EdgeProps, type Node, type NodeProps, type ReactFlowInstance } from '@xyflow/react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type { Analysis } from '../../engine/analyze';
 import { callSplit } from '../../engine/api';
 import { edgeFlow } from '../../engine/load';
@@ -84,7 +84,8 @@ export function Canvas({ analysis, onSelect, layout }: { analysis?: Analysis; on
   }, [layout]);
 
   const users = project.scale?.users;
-  const health = new Map(project.nodes.map((n) => [n.id, healthOf(analysis, users, n.id)]));
+  // 노드를 끄는 동안(위치만 바뀜)에는 아래 계산을 다시 하지 않는다
+  const health = useMemo(() => new Map(project.nodes.map((n) => [n.id, healthOf(analysis, users, n.id)])), [project, analysis, users]);
   const nodes: Node<CardData>[] = project.nodes.map((n) => {
     const na = analysis?.nodes[n.id];
     const h = health.get(n.id)!;
@@ -103,30 +104,33 @@ export function Canvas({ analysis, onSelect, layout }: { analysis?: Analysis; on
     };
   });
 
-  // 선 굵기 = 이 연결로 흐르는 평소 피크 요청 (엔진의 부하 전파와 같은 계산)
-  const rpsOf = (e: (typeof project.edges)[number]) => {
-    const from = analysis?.nodes[e.from]?.load;
-    return from ? edgeFlow(e, from, callSplit(project, project.nodes.find((n) => n.id === e.from)!), 'normal').rps : 0;
-  };
-  const maxRps = Math.max(1, ...project.edges.map(rpsOf));
-  const edges: Edge[] = project.edges.map((e) => {
-    const rps = rpsOf(e);
-    const color = !e.sync ? EDGE.async : health.get(e.to)?.health === 'bad' ? EDGE.bad : e.carries === 'read' ? EDGE.read : EDGE.base;
-    const label = [!e.sync ? `비동기${rps ? ` ${fmt(rps)} RPS` : ''}` : rps ? `${fmt(rps)} RPS` : '', e.carries === 'write' ? 'write' : e.carries === 'read' ? '읽기' : '', e.callRatio !== 1 ? `×${e.callRatio}` : '']
-      .filter(Boolean).join(' ');
-    return {
-      id: `${e.from}->${e.to}`,
-      source: e.from,
-      target: e.to,
-      type: 'flow',
-      // 굵기 = 요청량 (1.5~4.5px). 비동기(점선)는 굵기로 양을 나타내지 않는다: 굵은 점선은 읽기 어렵다
-      style: { stroke: color, strokeWidth: e.sync ? 1.5 + (3 * rps) / maxRps : 1.5, ...(e.sync ? {} : { strokeDasharray: '5 4' }) },
-      data: { text: label || undefined, color: e.sync ? '#93a0b3' : EDGE.async },
-      // 화살촉은 선 굵기와 상관없이 같은 크기. 그림이 viewBox 20칸 중 5칸이라 28이면 실제 약 7×11px로, 최대 4.5px 선보다 크다
-      markerEnd: { type: MarkerType.ArrowClosed, color, width: 28, height: 28, markerUnits: 'userSpaceOnUse' },
-      selected: selected?.kind === 'edge' && selected.from === e.from && selected.to === e.to,
-    };
-  });
+  const edges = useMemo(() => {
+    // 선 굵기 = 이 연결로 흐르는 평소 피크 요청 (엔진의 부하 전파와 같은 계산). 노드마다 호출 나눔(callSplit)은 한 번만
+    const splits = new Map(project.nodes.map((n) => [n.id, callSplit(project, n)]));
+    const flows = project.edges.map((e) => {
+      const from = analysis?.nodes[e.from]?.load;
+      return from ? edgeFlow(e, from, splits.get(e.from), 'normal').rps : 0;
+    });
+    const maxRps = Math.max(1, ...flows);
+    return project.edges.map((e, i): Edge => {
+      const rps = flows[i];
+      const color = !e.sync ? EDGE.async : health.get(e.to)?.health === 'bad' ? EDGE.bad : e.carries === 'read' ? EDGE.read : EDGE.base;
+      const label = [!e.sync ? `비동기${rps ? ` ${fmt(rps)} RPS` : ''}` : rps ? `${fmt(rps)} RPS` : '', e.carries === 'write' ? 'write' : e.carries === 'read' ? '읽기' : '', e.callRatio !== 1 ? `×${e.callRatio}` : '']
+        .filter(Boolean).join(' ');
+      return {
+        id: `${e.from}->${e.to}`,
+        source: e.from,
+        target: e.to,
+        type: 'flow',
+        // 굵기 = 요청량 (1.5~4.5px). 비동기(점선)는 굵기로 양을 나타내지 않는다: 굵은 점선은 읽기 어렵다
+        style: { stroke: color, strokeWidth: e.sync ? 1.5 + (3 * rps) / maxRps : 1.5, ...(e.sync ? {} : { strokeDasharray: '5 4' }) },
+        data: { text: label || undefined, color: e.sync ? '#93a0b3' : EDGE.async },
+        // 화살촉은 선 굵기와 상관없이 같은 크기. 그림이 viewBox 20칸 중 5칸이라 28이면 실제 약 7×11px로, 최대 4.5px 선보다 크다
+        markerEnd: { type: MarkerType.ArrowClosed, color, width: 28, height: 28, markerUnits: 'userSpaceOnUse' },
+        selected: selected?.kind === 'edge' && selected.from === e.from && selected.to === e.to,
+      };
+    });
+  }, [project, analysis, selected, health]);
 
   // 범례: 노란·빨간 노드마다 몇 개월째 착수인지
   const months = [...new Set([...health.values()].filter((h) => h.health !== 'ok' && h.health !== 'none' && h.startMonth !== undefined).map((h) => `${h.health}:${h.startMonth}`))]

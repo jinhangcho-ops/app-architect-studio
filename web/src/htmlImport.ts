@@ -24,7 +24,7 @@ function controlsOf(el: Element): string[] {
   const out: string[] = [];
   el.querySelectorAll('button, input, select, textarea, a[href], th').forEach((c) => {
     const tag = c.tagName.toLowerCase();
-    const text = (c.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 30);
+    const text = clean(c.textContent, 30);
     if (tag === 'button') out.push(`[버튼] ${text || c.getAttribute('aria-label') || ''}`);
     else if (tag === 'input') out.push(`[입력:${c.getAttribute('type') ?? 'text'}] ${c.getAttribute('placeholder') ?? c.getAttribute('name') ?? ''}`);
     else if (tag === 'select') out.push(`[선택창] ${c.getAttribute('name') ?? ''}`);
@@ -78,6 +78,18 @@ export const dataApi = (el: Element): Api | undefined => {
   const [a, b] = v.trim().split(/\s+/);
   return b ? apiOf(a.toUpperCase(), b) : apiOf('GET', a);
 };
+/** 폼의 action → API (method가 없으면 GET) */
+export const formApi = (fm: Element) => apiOf((fm.getAttribute('method') ?? 'GET').toUpperCase(), fm.getAttribute('action')!);
+/** 컨트롤이 부르는 API: data-api → /api 링크 → 버튼이면 아직 안 쓴 폼 action (폼은 그 폼의 첫 버튼이 가져간다, 폼이 다른 영역 안에 있어도) */
+export function apiFor(el: Element, isButton: boolean, usedForms: Set<Element>): Api | undefined {
+  const href = el.tagName === 'A' ? el.getAttribute('href') ?? '' : '';
+  const api = dataApi(el) ?? (href.startsWith('/api') ? apiOf('GET', href) : undefined);
+  if (api) return api;
+  const fm = isButton ? el.closest('form[action]') : null;
+  if (fm && !usedForms.has(fm)) { usedForms.add(fm); return formApi(fm); }
+}
+/** 글 정리: 공백을 하나로, n자까지 */
+export const clean = (s: string | null | undefined, n = 40) => (s ?? '').trim().replace(/\s+/g, ' ').slice(0, n);
 
 export function htmlToScreen(text: string, frame: { w: number; h: number }, name = '가져온 화면', parser: DOMParser = new DOMParser()): Screen {
   const doc = parser.parseFromString(text, 'text/html');
@@ -95,12 +107,12 @@ export function htmlToScreen(text: string, frame: { w: number; h: number }, name
   /** 영역 하나와 그 안의 컨트롤을 놓고 쓴 높이를 돌려준다 */
   const place = (r: Element, x: number, y: number, w: number, minH: number): number => {
     const kind = ROLE_KIND[roleOf(r)!];
-    const formApi = r.tagName === 'FORM' && r.getAttribute('action') ? apiOf((r.getAttribute('method') ?? 'GET').toUpperCase(), r.getAttribute('action')!) : undefined;
+    const ownForm = r.tagName === 'FORM' && r.getAttribute('action') ? formApi(r) : undefined;
     // 영역 이름이 왼쪽 위에 오므로 컨트롤은 그 아래부터 (막대는 낮아서 조금 더 위부터)
     let cx = x + G, cy = y + (['header', 'nav', 'footer'].includes(kind) ? 22 : 32), rowH = 0;
     for (const c of controlsOf2(r)) {
       const tag = c.tagName.toLowerCase();
-      const t = (c.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 30);
+      const t = clean(c.textContent, 30);
       const [k, cw, ch, label]: [Kind, number, number, string] =
         tag === 'button' || (tag === 'input' && ['submit', 'button'].includes(c.getAttribute('type') ?? '')) ? ['button', 120, 36, t || c.getAttribute('value') || c.getAttribute('aria-label') || '버튼']
         : tag === 'select' ? ['select', 200, 36, c.getAttribute('name') ?? '선택']
@@ -109,17 +121,13 @@ export function htmlToScreen(text: string, frame: { w: number; h: number }, name
         : ['text', 160, 24, t];
       const width = Math.min(cw, w - 2 * G);
       if (cx + width > x + w - G) { cx = x + G; cy += rowH + 8; rowH = 0; }
-      const href = tag === 'a' ? c.getAttribute('href') ?? '' : '';
-      let api = dataApi(c) ?? (href.startsWith('/api') ? apiOf('GET', href) : undefined);
-      // 폼 action은 그 폼의 첫 버튼이 가져간다 (폼이 다른 영역 안에 있어도)
-      const fm = k === 'button' ? c.closest('form[action]') : null;
-      if (!api && fm && !usedForms.has(fm)) { usedForms.add(fm); api = apiOf((fm.getAttribute('method') ?? 'GET').toUpperCase(), fm.getAttribute('action')!); }
+      const api = apiFor(c, k === 'button', usedForms);
       items.push({ kind: k, label, x: cx, y: cy, w: width, h: ch, ...(api && { api }) });
       cx += width + 8;
       rowH = Math.max(rowH, ch);
     }
     const h = Math.max(minH, rowH ? cy + rowH + G - y : 0);
-    const api = dataApi(r) ?? (formApi && !usedForms.has(r) ? formApi : undefined);
+    const api = dataApi(r) ?? (ownForm && !usedForms.has(r) ? ownForm : undefined);
     items.push({ kind, label: roleOf(r)!, x, y, w, h, ...(api && { api }) });
     return h;
   };

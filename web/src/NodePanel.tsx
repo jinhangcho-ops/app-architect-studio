@@ -10,7 +10,7 @@ import { callSplit } from '../../engine/api';
 import { addEdge, applyAlternative, removeEdge, removeNode, setVar, updateEdge, updateNode } from './edit';
 import { NumField, Row, Section, TextField } from './fields';
 import { fmtMetric, howMetric } from './format';
-import { useStore } from './store';
+import { usePick } from './store';
 import { StorageSection, TablesSection } from './TablesPanel';
 import { NodeSummary } from './NodeSummary';
 
@@ -20,7 +20,7 @@ const itemName = (id: string) => catalog.byId.get(id)?.name ?? id;
 const parseValue = (s: string) => (s === 'true' ? true : s === 'false' ? false : s !== '' && !Number.isNaN(Number(s)) ? Number(s) : s);
 
 export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis }) {
-  const { project, edit, select, setFocus } = useStore();
+  const { project, edit, select, setFocus } = usePick('project', 'edit', 'select', 'setFocus');
   const [goal, setGoal] = useState('');
   const [newVar, setNewVar] = useState('');
   const [apiCalls, setApiCalls] = useState<ApiCall[]>([]);
@@ -33,8 +33,8 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
   const scenario = analysis?.scenarios[id];
   const fits = catalog.items.filter((i) => i.attaches_to.includes(n.layer));
   const goals = [...new Set(fits.flatMap((i) => Object.keys(i.goals)))].sort();
-  // 판단 불가 이유에서 빠진 변수 이름을 뽑아 바로 입력할 수 있게 한다
-  const missing = [...new Set(j?.items.flatMap((i) => i.verdict === 'unknown' ? i.reasons[0].split(': ')[1]?.split(', ') ?? [] : []) ?? [])]
+  // 판단 불가 항목의 빠진 변수를 바로 입력할 수 있게 한다
+  const missing = [...new Set(j?.items.flatMap((i) => i.missing ?? []) ?? [])]
     .filter((k) => !k.startsWith('th.'));
 
   const changeLayer = (layer: Layer) => upd({
@@ -237,7 +237,7 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
 }
 
 export function EdgePanel({ from, to }: { from: string; to: string }) {
-  const { project, edit, select } = useStore();
+  const { project, edit, select } = usePick('project', 'edit', 'select');
   const e = project.edges.find((x) => x.from === from && x.to === to);
   if (!e) return <p className="muted">연결선이 없습니다.</p>;
   const name = (id: string) => project.nodes.find((n) => n.id === id)?.name ?? id;

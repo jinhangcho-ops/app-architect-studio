@@ -1,5 +1,6 @@
 // 프로젝트 하나와 화면 상태. 노드 위치는 계산과 무관하므로 프로젝트와 따로 둔다(끌 때마다 다시 계산하지 않도록).
 import { create } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
 import { parseProject } from '../../engine/data';
 import type { Project } from '../../engine/schema';
 import { catalog, examples } from './data';
@@ -90,3 +91,14 @@ export const useStore = create<State>((set) => ({
 export function exportProject(p: Project, positions: Record<string, XY>) {
   return { ...p, nodes: p.nodes.map((n) => ({ ...n, pos: positions[n.id] })) };
 }
+
+/** 저장 파일 → 프로젝트와 노드 위치 (exportProject의 반대). 틀린 파일이면 던진다 */
+export function importProject(data: unknown, name: string): { project: Project; positions: Record<string, XY> } {
+  const nodes = (data as { nodes?: { id: string; pos?: XY }[] }).nodes ?? [];
+  const positions = Object.fromEntries(nodes.filter((n) => n.pos).map((n) => [n.id, n.pos!]));
+  return { project: parseProject(data, catalog.items, name), positions };
+}
+
+/** 필요한 값만 구독한다. 노드를 끄는 동안 위치(positions)만 바뀌면 이것을 쓰는 패널은 다시 그리지 않는다 */
+export const usePick = <K extends keyof State>(...keys: K[]) =>
+  useStore(useShallow((s: State) => Object.fromEntries(keys.map((k) => [k, s[k]])) as Pick<State, K>));

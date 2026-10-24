@@ -1,25 +1,20 @@
 // 5절 판정: 노드에 붙은 카탈로그 항목마다 됨·조건부·안 됨·판단 불가와 이유, 통과하는 대안을 낸다.
-import { MissingVar, parse, test, type Ast, type Value, type Vars } from './expr';
+import { MissingVar, test, type Value, type Vars } from './expr';
 import { calibrate } from './calibrate';
 import { LAYER_TIER, type Layer, type Verdict } from './model';
-import type { CatalogItem, Project, ProjectNode, Rule } from './schema';
+import { itemIds, type CatalogItem, type Project, type ProjectNode, type Rule } from './schema';
 
 export type Scenario = { normal: Vars; event: Vars };
 export type ItemJudgement = {
   itemId: string;
   verdict: Verdict;
   reasons: string[];
+  /** 판단에 필요한데 값이 없는 변수 (verdict가 unknown일 때) */
+  missing?: string[];
   alternatives: { id: string; verdict: Verdict; note?: string }[];
 };
 export type NodeJudgement = { nodeId: string; items: ItemJudgement[] };
 export type RuleHit = { ruleId: string; target: string; why: string; instead: string };
-
-const astCache = new Map<string, Ast>();
-const compiled = (src: string) => {
-  let ast = astCache.get(src);
-  if (!ast) astCache.set(src, (ast = parse(src)));
-  return ast;
-};
 
 const show = (v: Value) => (typeof v === 'number' ? String(Math.round(v * 100) / 100) : String(v));
 const fill = (why: string, vars: Vars) => why.replace(/\{([\w.]+)\}/g, (m, k: string) => (k in vars ? show(vars[k]) : m));
@@ -40,13 +35,19 @@ function check(conds: CatalogItem['fails_when'], vars: Vars) {
   const missing = new Set<string>();
   for (const c of conds) {
     try {
-      if (test(compiled(c.if), vars)) hit.push(c);
+      if (test(c.if, vars)) hit.push(c);
     } catch (e) {
       if (e instanceof MissingVar) missing.add(e.varName);
       else throw e;
     }
   }
   return { hit, missing: [...missing] };
+}
+
+/** 한계 찾기용: 기준값 보정은 한 번만 하고, 주어진 부하 변수에서 '안 됨' 조건에 걸리는지만 본다 (judgeItem의 첫 검사와 같다) */
+export function failsWith(item: CatalogItem, node: ProjectNode) {
+  const th = thresholdVars(item, node);
+  return (vars: Vars) => check(item.fails_when, { ...vars, ...th }).hit.length > 0;
 }
 
 export function judgeItem(item: CatalogItem, node: ProjectNode, s: Scenario): Omit<ItemJudgement, 'alternatives'> {
@@ -60,7 +61,7 @@ export function judgeItem(item: CatalogItem, node: ProjectNode, s: Scenario): Om
     return { itemId: item.id, verdict: 'conditional', reasons: e.hit.map((c) => `이벤트 피크에서: ${fill(c.why, event)}`) };
   }
   const missing = [...new Set([...n.missing, ...e.missing])];
-  if (missing.length) return { itemId: item.id, verdict: 'unknown', reasons: [`값이 없어 판단할 수 없음: ${missing.join(', ')}`] };
+  if (missing.length) return { itemId: item.id, verdict: 'unknown', reasons: [`값이 없어 판단할 수 없음: ${missing.join(', ')}`], missing };
   const ok = check(item.works_when, normal).hit.map((c) => fill(c.why, normal));
   return { itemId: item.id, verdict: 'ok', reasons: ok };
 }
@@ -75,7 +76,7 @@ export const mergeScenario = (node: ProjectNode, computed?: Scenario): Scenario 
 
 export function judgeNode(node: ProjectNode, catalog: Map<string, CatalogItem>, computed?: Scenario): NodeJudgement {
   const s = mergeScenario(node, computed);
-  const ids = [node.primary, ...node.extras].filter((x): x is string => !!x);
+  const ids = itemIds(node);
   const items = ids.map((id) => {
     const item = catalog.get(id);
     if (!item) throw new Error(`${node.id}: 없는 카탈로그 항목 ${id}`);
@@ -99,7 +100,7 @@ export function checkRules(p: Project, rules: Rule[], tables: { target: string; 
   const run = (scope: Rule['scope'], target: string, vars: Vars) => {
     for (const r of rules.filter((x) => x.scope === scope)) {
       try {
-        if (test(compiled(r.if), vars)) hits.push({ ruleId: r.id, target, why: fill(r.why, vars), instead: r.instead });
+        if (test(r.if, vars)) hits.push({ ruleId: r.id, target, why: fill(r.why, vars), instead: r.instead });
       } catch (e) {
         // table 규칙은 서버 메모리처럼 노드마다 없을 수 있는 값을 쓴다. 값이 없으면 그 규칙만 건너뛴다
         if (!(e instanceof MissingVar && scope === 'table')) throw e;

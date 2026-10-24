@@ -2,7 +2,7 @@
 // 시스템별 오버헤드·채움률·압축은 카탈로그 저장 프로필과 켠 기능에서 가져온다. 가정값을 쓰면 assumptions에 남긴다.
 import type { Vars } from './expr';
 import { metric, type Metric } from './model';
-import { DEFAULT_STORAGE, selectedFeatures, storageProfileOf, type CatalogItem, type Column, type Project, type StorageProfile, type Table } from './schema';
+import { nodeStorageProfile, selectedFeatures, storageOf, type CatalogItem, type Column, type Project, type ProjectNode, type Table } from './schema';
 import type { Traffic } from './traffic';
 
 export type TableAnalysis = {
@@ -32,7 +32,7 @@ const DEFAULT_VAR_BYTES = 32;
 
 /** 값 하나의 바이트. 저장 형식이 크기를 정한다 (같은 시각도 정수 8바이트, ISO 문자열 24바이트) */
 export function valueBytes(c: Column, assume: (s: string) => void = () => {}): number {
-  const storage = c.storage ?? DEFAULT_STORAGE[c.type];
+  const storage = storageOf(c);
   const variable = () => {
     if (c.avg_bytes) return c.avg_bytes;
     if (c.max_length) { assume(`${c.name}: 평균 길이 없음 → 최대 길이의 절반 ${c.max_length / 2}바이트`); return c.max_length / 2; }
@@ -62,14 +62,13 @@ export const intPk = (t: Table) => {
 const utf8 = (s: string) => new TextEncoder().encode(s).length;
 
 export function tableSize(
-  p: Project, nodeId: string, t: Table, item: CatalogItem | undefined, byId: Map<string, CatalogItem>,
-  traffic: Traffic | undefined, factor = 1,
+  p: Project, node: ProjectNode, t: Table, byId: Map<string, CatalogItem>, traffic: Traffic | undefined, factor = 1,
 ): TableAnalysis {
-  const node = p.nodes.find((n) => n.id === nodeId)!;
+  const nodeId = node.id;
   const key = `${nodeId}.${t.name}`;
   const assumptions: string[] = [];
   const assume = (s: string) => assumptions.push(s);
-  const sp: StorageProfile | undefined = storageProfileOf(item, byId);
+  const sp = nodeStorageProfile(node, byId);
   if (!sp) assume('주 항목에 저장 프로필이 없음 → 오버헤드·압축 없이 값 크기만');
   const fx = sp ? selectedFeatures(sp, node, t).map((f) => f.effect) : [];
   const eff = <K extends keyof (typeof fx)[number]>(k: K) => fx.find((e) => e[k] !== undefined)?.[k];
@@ -149,5 +148,5 @@ export function tableSize(
 
 /** 프로젝트의 모든 테이블. factor = 사용자 배수(성장 타임라인) */
 export function tableSizes(p: Project, traffic: Traffic | undefined, byId: Map<string, CatalogItem>, factor = 1): TableAnalysis[] {
-  return p.nodes.flatMap((n) => n.tables.map((t) => tableSize(p, n.id, t, n.primary ? byId.get(n.primary) : undefined, byId, traffic, factor)));
+  return p.nodes.flatMap((n) => n.tables.map((t) => tableSize(p, n, t, byId, traffic, factor)));
 }

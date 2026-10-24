@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url';
 import { analyze } from './analyze';
 import { loadCatalog, loadLaws, loadPrices, loadProject } from './io';
 import { VERDICT_NAMES, type Metric } from './model';
+import { lawLine } from './regulation';
+import { STALE_DAYS } from './cost';
 
 const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 const [projectPath, catalogDir = here('../data/catalog'), pricesDir = here('../data/prices')] = process.argv.slice(2);
@@ -72,7 +74,7 @@ try {
     for (const [k, mt] of Object.entries(a.cost.parts)) console.log(`  ${project.nodes.some((n) => n.id === k) ? nameOf(k) : k}: ${fmt(mt.value)} ${mt.unit}`);
     if (a.cost.total) console.log(`  합계: ${fmt(a.cost.total.value)} ${a.cost.total.unit}`);
     if (a.cost.missing.length) console.log(`  ⚠️ 가격표에 없는 상품: ${a.cost.missing.join(', ')}`);
-    if (a.cost.stale.length) console.log(`  ⚠️ 기준일이 90일 넘은 가격: ${a.cost.stale.join(', ')}`);
+    if (a.cost.stale.length) console.log(`  ⚠️ 기준일이 ${STALE_DAYS}일 넘은 가격: ${a.cost.stale.join(', ')}`);
   }
 
   if (a.growth) {
@@ -103,7 +105,7 @@ try {
   if (a.regulation.length) console.log('\n## 확인 필요 조문 (법률 검토를 대신하지 않음)');
   for (const h of a.regulation) {
     const name = project.nodes.find((n) => n.id === h.nodeId)?.name ?? h.nodeId;
-    console.log(`⚖️  ${name}: ${h.law} ${h.article} 확인 필요 — ${h.reason}${h.verified ? '' : ' (조문 번호 미확인)'}`);
+    console.log(`⚖️  ${name}: ${lawLine(h)}`);
   }
 } catch (e) {
   console.error((e as Error).message);

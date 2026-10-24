@@ -208,6 +208,8 @@ export const DEFAULT_STORAGE: Record<(typeof COLUMN_TYPES)[number], (typeof STOR
   int: 'integer', bigint: 'integer', bool: 'integer', timestamp: 'integer', date: 'integer',
   float: 'real', numeric: 'real', uuid: 'blob', bytes: 'blob', text: 'text', json: 'text',
 };
+/** 컬럼의 저장 형식 (안 적었으면 타입별 기본값). 크기 계산과 SQLite 실험이 같이 쓴다 */
+export const storageOf = (c: { type: (typeof COLUMN_TYPES)[number]; storage?: (typeof STORAGE_FORMATS)[number] }) => c.storage ?? DEFAULT_STORAGE[c.type];
 export const TABLE_LAYERS = ['db', 'cache', 'analytics'] as const;
 
 export const Column = z.object({
@@ -472,7 +474,7 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
   const nodeIds = new Set(p.nodes.map((n) => n.id));
   const errors: string[] = [];
   for (const n of p.nodes) {
-    for (const id of [n.primary, ...n.extras].filter((x): x is string => !!x)) {
+    for (const id of itemIds(n)) {
       const it = byId.get(id);
       if (!it) errors.push(`${n.id}: 없는 카탈로그 항목 ${id}`);
       else if (!it.attaches_to.includes(n.layer)) errors.push(`${n.id}: ${id}는 ${n.layer} 노드에 붙일 수 없음`);
@@ -575,5 +577,8 @@ export function selectedFeatures(sp: StorageProfile, node: { storage_features?: 
 }
 
 /** 주 항목 바꾸기. 저장 기능 선택은 이전 시스템 것이라 지워서 새 시스템의 권장 기능으로 돌아가게 한다 */
+/** 노드에 붙은 카탈로그 항목 id: 주 항목, 그다음 보조 항목 */
+export const itemIds = (n: { primary?: string; extras: string[] }): string[] => (n.primary ? [n.primary, ...n.extras] : n.extras);
+
 export const withPrimary = (n: ProjectNode, primary: string | undefined): ProjectNode =>
   n.primary === primary ? n : { ...n, primary, storage_features: undefined, tables: n.tables.map((t) => ({ ...t, storage_features: undefined })) };

@@ -24,7 +24,6 @@ export type Plan = {
   score: number;
   metrics: PlanMetrics;
   violations: string[];
-  analysis: Analysis;
 };
 export type OptimizeResult = {
   /** 지금 설계 (비교 기준) */
@@ -110,7 +109,8 @@ export function optimize(p: Project, d: Data, today: string, opts: { beam?: numb
     // 지금 설계는 base와 같은 프로젝트다 (같은 항목이면 withPrimary가 노드를 그대로 돌려준다)
     const analysis = targets.every((n) => as[n.id] === current[n.id]) ? base : run(as);
     const metrics = metricsOf(analysis);
-    return { assignment: as, score, metrics, violations: violationsOf(p, metrics, analysis), analysis };
+    // 분석 전체는 들고 있지 않는다 (조합마다 수백 KB, 화면은 지표·위반만 쓴다)
+    return { assignment: as, score, metrics, violations: violationsOf(p, metrics, analysis) };
   });
   const feasible = evaluated.filter((x) => !x.violations.length);
   const pick = (cmp: (a: Plan, b: Plan) => number) => [...feasible].sort(cmp)[0];

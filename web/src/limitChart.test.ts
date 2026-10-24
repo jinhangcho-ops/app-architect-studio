@@ -37,7 +37,7 @@ describe('하루 기대 트래픽 (5분 칸)', () => {
 
 describe('하루 서버 사용률', () => {
   it('곡선의 피크는 엔진의 평소 피크 사용률 근처 (5분 평균이라 1시간 평균보다 조금 높을 수 있음)', () => {
-    const lines = dayUtilization(p, a, catalog.byId, dayCurve(p, 5)!.total);
+    const lines = dayUtilization(p, a, dayCurve(p, 5)!.total);
     expect(lines.length).toBeGreaterThan(0);
     for (const l of lines) {
       const peak = Math.max(...l.pts.map(([, v]) => v));

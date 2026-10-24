@@ -5,16 +5,17 @@ import { catalog } from './data';
 import { updateTable } from './edit';
 import { Section } from './fields';
 import { fmt, fmtMetric, howMetric } from './format';
+import { costTimeline, milestoneText } from './reportData';
 import { useState } from 'react';
 import { nodeStorageProfile, selectedFeatures, storageProfileOf } from '../../engine/schema';
 import { loadSqlJs, runSqliteLab, type LabResult } from './sqliteLab';
-import { useStore } from './store';
+import { usePick } from './store';
 
 const Line = ({ label, m }: { label: string; m?: Metric }) =>
   m ? <tr title={howMetric(m)}><td>{label}</td><td>{fmtMetric(m)}</td></tr> : null;
 
 export function ResultsPanel({ analysis: a }: { analysis?: Analysis }) {
-  const { project } = useStore();
+  const { project } = usePick('project');
   if (!a) return <p className="muted">입력을 고치면 결과가 나옵니다.</p>;
   const name = (id: string) => project.nodes.find((n) => n.id === id)?.name ?? id;
   const t = a.traffic;
@@ -92,11 +93,11 @@ ${howMetric(a.storage.personaGb)}`}>
           ? <p title={howMetric(a.bottleneck.limitUsers)}>첫 병목: <b>{name(a.bottleneck.nodeId)}</b> — {a.bottleneck.limitUsers.value === 0 ? '지금 구조에서 이미 안 됨' : `활성 사용자 약 ${fmt(a.bottleneck.limitUsers.value)}명에서 안 됨`}</p>
           : <p className="muted">한계를 계산할 노드가 없습니다.</p>}
         {a.growth && a.growth.monthlyCost.length > 0 && <p className="muted">
-          월 비용: {[0, 6, 12, 24].filter((mo) => mo < a.growth!.monthlyCost.length).map((mo) => `${mo}개월째 ${fmtMetric(a.growth!.monthlyCost[mo])}`).join(' · ')}
+          월 비용: {costTimeline(a.growth!.monthlyCost)}
           {a.cost && a.cost.missing.length > 0 && ' (계산하지 못한 항목이 있어 실제보다 작음)'}
         </p>}
         {a.growth && <ul>{a.growth.milestones.map((ms) => (
-          <li key={ms.nodeId}>{name(ms.nodeId)}: {ms.month === undefined ? '성장해도 닿지 않음' : `${ms.month}개월째 한계, ${ms.startMonth}개월째 착수`}</li>
+          <li key={ms.nodeId}>{name(ms.nodeId)}: {milestoneText(ms)}</li>
         ))}</ul>}
       </Section>
 
@@ -194,7 +195,7 @@ function PersonaTable({ t }: { t: Traffic }) {
 
 /** 테이블 하나를 브라우저 SQLite에 만들어 1만 행을 넣고 잰다. 주 항목이 SQLite 계열이면 실측값을 테이블에 넣을 수 있다 */
 export function TableLab({ nodeId, table }: { nodeId: string; table: string }) {
-  const { project, edit } = useStore();
+  const { project, edit } = usePick('project', 'edit');
   const [state, setState] = useState<{ running?: boolean; result?: LabResult; error?: string }>({});
   const node = project.nodes.find((n) => n.id === nodeId)!;
   const t = node.tables.find((x) => x.name === table)!;

@@ -70,6 +70,12 @@ export function perInstance(node: ProjectNode, catalog: Map<string, CatalogItem>
   return { rps, max: max?.value ?? Infinity };
 }
 
+/** 부하 rps를 받는 데 필요한 대수(목표 사용률, 최소·최대 대수 적용)와 그 대수에서의 p99. 결과 카드와 "사용자 증가 시 p99" 그래프가 같이 쓴다 */
+export function sizeAt(n: ProjectNode, perRps: number, maxInstances: number, rps: number, u: number) {
+  const N = instancesNeeded(rps, perRps, u, n.min_instances, maxInstances);
+  return { N, p99: n.perf && nodeP99(rps, n.perf.service_ms, N * n.perf.workers, n.perf.service_p99_ms) };
+}
+
 /** today = 'YYYY-MM-DD' (가격 기준일 경고용). reuse.traffic: 항목만 바꿔 여러 번 분석할 때 같은 트래픽을 재사용 */
 export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: Traffic | undefined }): Analysis {
   const t = reuse ? reuse.traffic : traffic(p);
@@ -92,20 +98,17 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     if (load && per.rps && enabled(p.deploy, 'scale')) {
       const at = (s: 'normal' | 'event') => {
         // 비용(hourlyOf)과 같은 최소 대수를 쓴다. 0대까지 줄어드는 노드는 부하가 0일 때 0대
-        const N = instancesNeeded(load.rps[s], per.rps!.value, u, n.min_instances, per.max);
+        const { N, p99 } = sizeAt(n, per.rps!.value, per.max, load.rps[s], u);
         return {
           N: m(N, '대', 'ceil(부하 / (대당 처리량 × 목표 사용률)), 최소·최대 대수로 자름', { 부하: load.rps[s], 대당: per.rps!.value, 목표사용률: u }),
           util: m(N ? load.rps[s] / (N * per.rps!.value) : 0, '비율', '부하 / (대수 × 대당 처리량)', { 부하: load.rps[s], 대수: N }),
-          N_value: N,
+          p99,
         };
       };
       const nn = at('normal'), ne = at('event');
       na.instances = { normal: nn.N, event: ne.N };
       na.utilization = { normal: nn.util, event: ne.util };
-      if (n.perf && enabled(p.deploy, 'latency')) {
-        const p99 = (s: 'normal' | 'event', N: number) => nodeP99(load.rps[s], n.perf!.service_ms, N * n.perf!.workers, n.perf!.service_p99_ms);
-        na.p99 = { normal: p99('normal', nn.N_value), event: p99('event', ne.N_value) };
-      }
+      if (nn.p99 && ne.p99 && enabled(p.deploy, 'latency')) na.p99 = { normal: nn.p99, event: ne.p99 };
     }
     nodes[n.id] = na;
   }

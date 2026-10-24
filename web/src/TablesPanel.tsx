@@ -4,9 +4,9 @@ import { useState } from 'react';
 import { COLUMN_TYPES, nodeStorageProfile, selectedFeatures, STORAGE_FORMATS, STORAGE_NAMES, type ProjectNode } from '../../engine/schema';
 import { parseSpec } from '../../engine/spec';
 import { catalog } from './data';
-import { addTable, importTables, removeTable, setFeature, updateNode, updateTable } from './edit';
+import { addTable, importTables, patchAt, removeTable, setFeature, updateNode, updateTable } from './edit';
 import { NumField, Row, Section } from './fields';
-import { useStore } from './store';
+import { usePick } from './store';
 
 type Table = ProjectNode['tables'][number];
 type Column = Table['columns'][number];
@@ -16,7 +16,7 @@ const csv = (xs: string[]) => xs.join(', ');
 const list = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean);
 
 export function TablesSection({ node }: { node: ProjectNode }) {
-  const { edit } = useStore();
+  const { edit } = usePick('edit');
   const [spec, setSpec] = useState('');
   const [report, setReport] = useState<{ ok?: string; errors: string[] }>({ errors: [] });
 
@@ -51,10 +51,10 @@ export function TablesSection({ node }: { node: ProjectNode }) {
 }
 
 export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t: Table; open?: boolean; onRename?: (name: string) => void }) {
-  const { edit } = useStore();
+  const { edit } = usePick('edit');
   const upd = (patch: Partial<Table>) => edit((p) => updateTable(p, node.id, t.name, patch));
-  const setCol = (i: number, patch: Partial<Column>) => upd({ columns: t.columns.map((c, k) => (k === i ? { ...c, ...patch } : c)) });
-  const setIx = (i: number, patch: Partial<Table['indexes'][number]>) => upd({ indexes: t.indexes.map((x, k) => (k === i ? { ...x, ...patch } : x)) });
+  const setCol = (i: number, patch: Partial<Column>) => upd({ columns: patchAt(t.columns, i, patch) });
+  const setIx = (i: number, patch: Partial<Table['indexes'][number]>) => upd({ indexes: patchAt(t.indexes, i, patch) });
 
   return (
     <details className="table-editor" open={open}>
@@ -118,7 +118,7 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
 
 /** 주 항목의 저장 프로필에서 기능 고르기. 아무것도 안 고르면 권장 기능이 켜진다 */
 export function StorageSection({ node }: { node: ProjectNode }) {
-  const { edit } = useStore();
+  const { edit } = usePick('edit');
   const sp = nodeStorageProfile(node, catalog.byId);
   if (!sp) return null;
   const on = selectedFeatures(sp, node).map((f) => f.id);

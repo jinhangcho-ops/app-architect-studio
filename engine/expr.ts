@@ -140,6 +140,14 @@ export function evaluate(ast: Ast, vars: Vars): Value {
   throw new ExprError('알 수 없는 식');
 }
 
+// 같은 식(카탈로그·규칙·법령 조건)을 계산마다 다시 해석하지 않는다. 틀린 식은 저장하지 않으므로 매번 같은 오류가 난다
+const astCache = new Map<string, Ast>();
+const compiled = (src: string) => {
+  let ast = astCache.get(src);
+  if (!ast) astCache.set(src, (ast = parse(src)));
+  return ast;
+};
+
 export function test(src: string | Ast, vars: Vars): boolean {
-  return bool(evaluate(typeof src === 'string' ? parse(src) : src, vars), '조건식');
+  return bool(evaluate(typeof src === 'string' ? compiled(src) : src, vars), '조건식');
 }

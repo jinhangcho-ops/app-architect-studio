@@ -4,7 +4,8 @@ import type { Analysis } from '../../engine/analyze';
 import { impactOf } from '../../engine/availability';
 import type { NodeJudgement } from '../../engine/judge';
 import { LAYER_NAMES, VERDICT_NAMES, type Metric, type Verdict } from '../../engine/model';
-import { nodeStorageProfile, selectedFeatures, type CatalogItem, type Project } from '../../engine/schema';
+import { itemIds, nodeStorageProfile, selectedFeatures, type CatalogItem, type Project } from '../../engine/schema';
+import { lawLine } from '../../engine/regulation';
 import { worstVerdict } from './edit';
 import { fmt, fmtMetric } from './format';
 
@@ -25,7 +26,7 @@ export function nodeCard(p: Project, a: Analysis, byId: Map<string, CatalogItem>
   const j: NodeJudgement | undefined = a.judgements.find((x) => x.nodeId === nodeId);
   const verdict = worstVerdict(j);
   const na = a.nodes[nodeId];
-  const ids = [n.primary, ...n.extras].filter((x): x is string => !!x);
+  const ids = itemIds(n);
   const items = ids.map((id) => byId.get(id)).filter((x): x is CatalogItem => !!x);
   const itemName = (id: string) => byId.get(id)?.name ?? id;
 
@@ -76,7 +77,7 @@ export function nodeCard(p: Project, a: Analysis, byId: Map<string, CatalogItem>
       lines: some([
         a.spof.includes(nodeId) && `단일 장애점 (이중화 ${n.replicas}대)`,
         impact.length > 0 && `멈추면: ${impact.join(', ')}`,
-        ...a.regulation.filter((h) => h.nodeId === nodeId).map((h) => `${h.law} ${h.article} 확인 필요 — ${h.reason}${h.verified ? '' : ' (조문 번호 미확인)'}`),
+        ...a.regulation.filter((h) => h.nodeId === nodeId).map((h) => lawLine(h)),
         ...unknown,
       ]),
     },
@@ -104,6 +105,13 @@ export function openIssues(p: Project, a: Analysis, byId: Map<string, CatalogIte
 
 /** 카탈로그 출처(12번째 절): 고른 항목의 출처와 계산에 쓴 가격 행 */
 export function sourcesOf(p: Project, byId: Map<string, CatalogItem>): { item: string; urls: string[] }[] {
-  const ids = [...new Set(p.nodes.flatMap((n) => [n.primary, ...n.extras]).filter((x): x is string => !!x))];
+  const ids = [...new Set(p.nodes.flatMap(itemIds))];
   return ids.map((id) => byId.get(id)).filter((x): x is CatalogItem => !!x).map((it) => ({ item: it.name, urls: it.sources }));
 }
+
+/** 성장 한계 한 줄 (결과 패널·설계서) */
+export const milestoneText = (ms: { month?: number; startMonth?: number }) =>
+  ms.month === undefined ? '성장해도 닿지 않음' : `${ms.month}개월째 한계, ${ms.startMonth}개월째 착수`;
+/** 월 비용을 0·6·12·24개월째로 (결과 패널·설계서) */
+export const costTimeline = (monthly: (Metric | undefined)[]) =>
+  [0, 6, 12, 24].filter((mo) => mo < monthly.length).map((mo) => `${mo}개월째 ${fmtMetric(monthly[mo])}`).join(' · ');

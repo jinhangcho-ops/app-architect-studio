@@ -4,13 +4,13 @@ import type { Analysis } from '../../engine/analyze';
 import { LAYER_NAMES, type Layer, type Verdict } from '../../engine/model';
 import { worstVerdict } from './edit';
 import { project3d, TIER_Z, worldPositions } from './projection';
-import { useStore } from './store';
+import { usePick } from './store';
 
 const COLOR: Record<Verdict | 'none', string> = { ok: '#1f9d55', conditional: '#d98a00', fail: '#d13b3b', unknown: '#7a7f8a', none: '#9aa3ae' };
 const W = 120, H = 34, D = 60; // 큐브 가로·높이·깊이
 
 export function View3D({ analysis, onSelect }: { analysis?: Analysis; onSelect: () => void }) {
-  const { project, select } = useStore();
+  const { project, select } = usePick('project', 'select');
   const [rot, setRot] = useState({ yaw: -32, pitch: 24 });
   const drag = useRef<{ x: number; y: number } | null>(null);
   const pos = worldPositions(project);

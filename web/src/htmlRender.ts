@@ -2,7 +2,7 @@
 // 스크립트는 돌리지 않고(sandbox에 allow-scripts 없음), 바깥 주소에서 아무것도 받지 않는다(CSP). 함께 고른 CSS 파일은 <link> 자리에 넣는다.
 // 화면 틀보다 긴 페이지는 틀 높이마다 한 장씩 나눈다. 그릴 수 없는 환경(레이아웃이 없는 테스트 DOM)에서는 undefined → 영역 규칙으로 배치(htmlToScreen).
 import type { Screen, WireItem } from '../../engine/schema';
-import { apiOf, dataApi, ROLE_KIND, roleOf } from './htmlImport';
+import { apiFor, clean, ROLE_KIND, roleOf } from './htmlImport';
 
 type Kind = WireItem['kind'];
 type Api = NonNullable<WireItem['api']>;
@@ -11,7 +11,6 @@ export type Entry = { kind: Kind; label: string; x: number; y: number; w: number
 
 const CONTROL = 'button, input:not([type=hidden]), select, textarea, a[href], img, svg, video, canvas';
 const TEXT_TAGS = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'P', 'LABEL', 'SPAN', 'LI', 'STRONG', 'EM', 'SMALL', 'DT', 'DD', 'FIGCAPTION', 'LEGEND', 'CAPTION', 'DIV']);
-const clean = (s: string | null | undefined, n = 40) => (s ?? '').trim().replace(/\s+/g, ' ').slice(0, n);
 const ownText = (el: Element) => clean([...el.childNodes].filter((c) => c.nodeType === 3).map((c) => c.textContent).join(' '));
 
 /** 요소 하나의 상자 종류와 글. 상자로 만들지 않으면 undefined */
@@ -56,11 +55,7 @@ export function measure(doc: Document): Entry[] {
     const w = r.width || Number(el.getAttribute('width')) || (c.kind === 'image' ? 160 : 0);
     const h = r.height || Number(el.getAttribute('height')) || (c.kind === 'image' ? 100 : 0);
     if (w < 2 || h < 2) continue;
-    const href = el.tagName === 'A' ? el.getAttribute('href') ?? '' : '';
-    let api = dataApi(el) ?? (href.startsWith('/api') ? apiOf('GET', href) : undefined);
-    // 폼 action은 그 폼의 첫 버튼이 가져간다
-    const fm = c.kind === 'button' ? el.closest('form[action]') : null;
-    if (!api && fm && !usedForms.has(fm)) { usedForms.add(fm); api = apiOf((fm.getAttribute('method') ?? 'GET').toUpperCase(), fm.getAttribute('action')!); }
+    const api = apiFor(el, c.kind === 'button', usedForms);
     out.push({ ...c, x: Math.round(r.left + view.scrollX), y: Math.round(r.top + view.scrollY), w: Math.round(w), h: Math.round(h), ...(api && { api }) });
   }
   return out;

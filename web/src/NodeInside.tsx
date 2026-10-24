@@ -4,7 +4,7 @@ import { Background, Controls, Handle, MarkerType, Position, ReactFlow, type Edg
 import { useState } from 'react';
 import type { Analysis } from '../../engine/analyze';
 import { LAYER_NAMES } from '../../engine/model';
-import { DEFAULT_STORAGE, nodeStorageProfile, selectedFeatures, STORAGE_NAMES, TABLE_LAYERS, type ProjectNode } from '../../engine/schema';
+import { nodeStorageProfile, selectedFeatures, STORAGE_NAMES, storageOf, TABLE_LAYERS, type ProjectNode } from '../../engine/schema';
 import { catalog } from './data';
 import { markDrag, overPalette } from './Palette';
 import type { TableAnalysis } from '../../engine/tables';
@@ -12,7 +12,7 @@ import { valueBytes } from '../../engine/tables';
 import { addAction, addTable, addWrite, dropItem, dropRemove, removeWrite, setFeature } from './edit';
 import { fmt, fmtMetric, howMetric } from './format';
 import { TableLab } from './ResultsPanel';
-import { useStore } from './store';
+import { usePick } from './store';
 import { TableEditor } from './TablesPanel';
 import { PART_LAYERS, PartsInside, READABLE } from './PartsInside';
 import { isOurDrag, readDrag, startDrag } from './Palette';
@@ -41,7 +41,7 @@ function TableBlock({ data, selected }: NodeProps<Node<TableData>>) {
           <tr key={c.name}>
             <td className="tblock-key">{t.primary_key.includes(c.name) ? '🔑' : indexed.has(c.name) ? '◆' : ''}</td>
             <td>{c.name}{c.nullable ? '?' : ''}</td>
-            <td className="muted">{c.type} · {STORAGE_NAMES[c.storage ?? DEFAULT_STORAGE[c.type]]}</td>
+            <td className="muted">{c.type} · {STORAGE_NAMES[storageOf(c)]}</td>
             <td className="muted num">{fmt(valueBytes(c))}B</td>
           </tr>
         ))}</tbody>
@@ -66,7 +66,7 @@ const nodeTypes = { table: TableBlock, action: ActionBlock };
 
 /** 카드를 누르면 열리는 세부 구성: 서버(로컬이면 기기) 구성 + 테이블 구성(DB·캐시·분석) · 부품 구성(백엔드·게이트웨이·워커) · 와이어프레임(화면) */
 export function NodeInside({ nodeId, analysis, onSelect }: { nodeId: string; analysis?: Analysis; onSelect: () => void }) {
-  const { project: p, setFocus, focusTab: tab, set, edit } = useStore();
+  const { project: p, setFocus, focusTab: tab, set, edit } = usePick('project', 'setFocus', 'focusTab', 'set', 'edit');
   const n = p.nodes.find((x) => x.id === nodeId);
   if (!n) return <p className="muted inside-empty">블록이 없습니다. <button onClick={() => setFocus(undefined)}>← 전체 구조</button></p>;
   const tabs: [DetailTab, string][] = [['servers', isLocal(p, n) ? '기기 구성' : '서버 구성']];
@@ -110,7 +110,7 @@ export function NodeInside({ nodeId, analysis, onSelect }: { nodeId: string; ana
 }
 
 function TablesInside({ nodeId, analysis, onSelect }: { nodeId: string; analysis?: Analysis; onSelect: () => void }) {
-  const { project: p, edit, select, selected } = useStore();
+  const { project: p, edit, select, selected } = usePick('project', 'edit', 'select', 'selected');
   // 안쪽 배치는 보는 동안만 기억한다 (저장 파일에는 바깥 노드 위치만 남긴다)
   const [moved, setMoved] = useState<Record<string, { x: number; y: number }>>({});
   const n = p.nodes.find((x) => x.id === nodeId)!;
@@ -180,7 +180,7 @@ function TablesInside({ nodeId, analysis, onSelect }: { nodeId: string; analysis
 
 /** 오른쪽 패널: 고른 테이블의 크기와 편집, SQLite 실험 */
 export function TableSidePanel({ nodeId, table, analysis }: { nodeId: string; table: string; analysis?: Analysis }) {
-  const { project, select } = useStore();
+  const { project, select } = usePick('project', 'select');
   const n = project.nodes.find((x) => x.id === nodeId);
   const t = n?.tables.find((x) => x.name === table);
   if (!n || !t) return <p className="muted">테이블이 없습니다.</p>;

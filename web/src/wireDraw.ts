@@ -144,10 +144,13 @@ function drawShape(c: Ctx, it: WireItem, col?: { fill: string; stroke: string })
   }
 }
 
+/** 글을 그리지 않는 도형 (화면 편집기와 PNG가 같이 씀) */
+export const NO_LABEL = new Set<WireItem['kind']>(['line', 'arrow', 'icon']);
+
 /** 글 자리: 영역·막대는 왼쪽 위, 표시가 있는 컨트롤(체크박스 등)은 표시 오른쪽, 나머지는 가운데 줄 */
 function drawLabel(c: Ctx, it: WireItem, col?: { fill: string; stroke: string }) {
   const { x, y, w, h, kind } = it;
-  if (!it.label || kind === 'line' || kind === 'arrow' || kind === 'icon') return;
+  if (!it.label || NO_LABEL.has(kind)) return;
   c.font = '12px "Pretendard", "Malgun Gothic", sans-serif';
   const top = REGION.has(kind) || BAR.has(kind);
   const mid = y + h / 2 - (it.api && h >= 28 ? 6 : 0);

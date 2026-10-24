@@ -2,7 +2,7 @@
 // 테이블만 있는 DB(A)와 인덱스까지 있는 DB(B)에 같은 행을 차례로 넣고, 페이지 수 차이로 행·인덱스 크기를 나눈다.
 // 인덱스를 나중에 한 번에 만들면 빽빽하게 채워져 실제(행이 하나씩 들어옴)보다 작게 나오므로 처음부터 만든다.
 import type { Database, SqlJsStatic, SqlValue } from 'sql.js';
-import { DEFAULT_STORAGE, type Column, type Table } from '../../engine/schema';
+import { storageOf, type Column, type Table } from '../../engine/schema';
 import { intPk, valueBytes } from '../../engine/tables';
 import { rng } from '../../engine/traffic';
 
@@ -24,7 +24,7 @@ const q = (name: string) => `"${name.replace(/"/g, '""')}"`;
 
 export function ddlFor(t: Table, withoutRowid = false): { table: string; indexes: string[] } {
   const inTable = intPk(t) || (withoutRowid && t.primary_key.length > 0);
-  const cols = t.columns.map((c) => `${q(c.name)} ${AFFINITY[c.storage ?? DEFAULT_STORAGE[c.type]]}${c.nullable ? '' : ' NOT NULL'}`);
+  const cols = t.columns.map((c) => `${q(c.name)} ${AFFINITY[storageOf(c)]}${c.nullable ? '' : ' NOT NULL'}`);
   const pk = inTable ? [`PRIMARY KEY (${t.primary_key.map(q).join(', ')})`] : [];
   const table = `CREATE TABLE ${q(t.name)} (${[...cols, ...pk].join(', ')})${inTable && withoutRowid && !intPk(t) ? ' WITHOUT ROWID' : ''}`;
   const indexes = [
@@ -36,7 +36,7 @@ export function ddlFor(t: Table, withoutRowid = false): { table: string; indexes
 
 /** 컬럼 하나의 가짜 값. 길이는 크기 계산(valueBytes)과 같은 값을 써서 실험과 계산이 같은 가정을 쓰게 한다 */
 function fakeValue(c: Column, r: () => number, i: number, sequential: boolean): SqlValue {
-  const storage = c.storage ?? DEFAULT_STORAGE[c.type];
+  const storage = storageOf(c);
   const len = Math.max(1, Math.round(valueBytes(c)));
   const text = (n: number) => Array.from({ length: n }, () => String.fromCharCode(97 + Math.floor(r() * 26))).join('');
   const bytes = (n: number) => Uint8Array.from({ length: n }, () => Math.floor(r() * 256));

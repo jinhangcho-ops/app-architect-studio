@@ -19,6 +19,16 @@ describe('관문: 노드 항목이나 사용자 수를 바꾸면 판정이 바�
     expect(more.peakRps.value).toBeGreaterThan(t0!.peakRps.value);
   });
 
+  it('페르소나 이름만 바꾸면 다시 돌리지 않고 이름만 바뀐 같은 결과 (처음부터 돌린 것과 같음)', () => {
+    run(base, today);
+    const renamed = { ...base, personas: base.personas.map((ps, i) => (i === 1 ? { ...ps, name: '새 이름' } : ps)) };
+    const fast = run(renamed, today).analysis!.traffic!;
+    expect(fast.personas.map((x) => x.name)).toContain('새 이름');
+    run({ ...renamed, scale: { ...renamed.scale! } }, today); // 기준값이 달라 처음부터 계산
+    const full = run(renamed, today).analysis!.traffic!;
+    expect(fast).toEqual(full);
+  });
+
   it('예시 프로젝트가 화면 데이터로 그대로 분석됨', () => {
     const r = run(base, today);
     expect(r.error).toBeUndefined();

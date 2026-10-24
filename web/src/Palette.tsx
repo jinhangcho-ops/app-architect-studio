@@ -7,7 +7,7 @@ import { VERDICT_NAMES, type Verdict } from '../../engine/model';
 import { nodeStorageProfile, selectedFeatures, type CatalogItem, type WireItem } from '../../engine/schema';
 import { catalog } from './data';
 import { dropRemove, type Drag } from './edit';
-import { useStore } from './store';
+import { usePick } from './store';
 
 const MIME = 'application/x-aas-drag';
 /** 끄는 동안 놓을 수 있는 곳을 강조한다 (body[data-drag]: add = 그림, ui = 화면 틀, remove = 왼편 목록) */
@@ -49,7 +49,7 @@ function Chip({ drag, children, verdict, note, on }: { drag?: Drag; children: Re
 }
 
 export function Palette({ nodeId, analysis }: { nodeId: string; analysis?: Analysis }) {
-  const { project: p, edit, focusTab } = useStore();
+  const { project: p, edit, focusTab } = usePick('project', 'edit', 'focusTab');
   const n = p.nodes.find((x) => x.id === nodeId);
   if (!n) return null;
   const s = analysis?.scenarios[nodeId];

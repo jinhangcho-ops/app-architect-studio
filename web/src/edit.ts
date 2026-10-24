@@ -10,11 +10,22 @@ import { catalog, engineData } from './data';
 
 export type RunResult = { analysis?: Analysis; error?: string };
 
-// 트래픽(시드 고정 무작위 하루)은 이 다섯 값으로만 정해진다. 이름·항목·연결만 바꾼 편집은 다시 돌리지 않는다 (편집은 바뀐 곳만 새 객체)
+/** 트래픽(시드 고정 무작위 하루)이 읽는 값 전부. 이것들이 그대로면 트래픽도 같다 (편집은 바뀐 곳만 새 객체). 하루 곡선 그래프도 이것으로 다시 계산할지 정한다 */
+export const trafficKey = (p: Project) => [p.personas, p.scale, p.deploy, p.actions, p.exchange];
+
+// 이름·항목·연결만 바꾼 편집은 트래픽을 다시 돌리지 않는다
 let lastTraffic: { key: unknown[]; traffic: Traffic | undefined } | undefined;
 function trafficOf(p: Project, parsed: Project) {
-  const key = [p.personas, p.scale, p.deploy, p.actions, p.exchange];
-  if (!lastTraffic || key.some((k, i) => k !== lastTraffic!.key[i])) lastTraffic = { key, traffic: traffic(parsed) };
+  const key = trafficKey(p), prev = lastTraffic;
+  if (prev && key.every((k, i) => k === prev.key[i])) return prev.traffic;
+  // 페르소나 이름만 바꿨으면(입력 칸에 한 글자씩) 숫자는 같다: 다시 돌리지 않고 이름만 바꿔 붙인다.
+  // 트래픽 결과의 페르소나는 인원이 0명인 페르소나를 뺀 순서 (traffic()과 같은 조건)
+  const before = prev?.key[0] as Project['personas'] | undefined;
+  if (prev?.traffic && before && key.every((k, i) => i === 0 || k === prev.key[i]) && before.length === p.personas.length
+    && p.personas.every((ps, i) => ps === before[i] || JSON.stringify({ ...ps, name: '' }) === JSON.stringify({ ...before[i], name: '' }))) {
+    const names = parsed.personas.filter((ps) => Math.round(parsed.scale!.users * ps.share) > 0).map((ps) => ps.name);
+    lastTraffic = { key, traffic: { ...prev.traffic, personas: prev.traffic.personas.map((x, i) => ({ ...x, name: names[i] })) } };
+  } else lastTraffic = { key, traffic: traffic(parsed) };
   return lastTraffic.traffic;
 }
 
@@ -53,6 +64,9 @@ export const removeNode = (p: Project, id: string): Project => {
   });
   return { ...cleared, nodes: cleared.nodes.filter((x) => x.id !== id).map(unbind), edges: cleared.edges.filter((e) => e.from !== id && e.to !== id) };
 };
+
+/** 목록의 i번째만 바꾼 새 목록 */
+export const patchAt = <T,>(xs: T[], i: number, patch: Partial<T>): T[] => xs.map((x, k) => (k === i ? { ...x, ...patch } : x));
 
 /** make(k)가 taken에 없는 가장 작은 k (from부터) */
 const freeK = (taken: string[], make: (k: number) => string, from = 1) => {
@@ -288,7 +302,7 @@ export function bindApi(p: Project, nodeId: string, screen: number, id: string, 
 /** 페르소나 고치기. 이름이 바뀌면 유입 모형의 "들어오는 페르소나"도 따라 바꾼다 */
 export function updatePersona(p: Project, i: number, patch: Partial<Project['personas'][number]>): Project {
   const old = p.personas[i]?.name;
-  const next = { ...p, personas: p.personas.map((x, k) => (k === i ? { ...x, ...patch } : x)) };
+  const next = { ...p, personas: patchAt(p.personas, i, patch) };
   const inflow = p.growth?.inflow;
   return patch.name !== undefined && inflow?.entry === old ? { ...next, growth: { ...p.growth!, inflow: { ...inflow, entry: patch.name } } } : next;
 }

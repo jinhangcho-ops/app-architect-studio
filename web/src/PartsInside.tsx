@@ -5,12 +5,12 @@ import { Background, Controls, Handle, MarkerType, Position, ReactFlow, type Edg
 import type { Analysis } from '../../engine/analyze';
 import { judgeItem } from '../../engine/judge';
 import { LAYER_NAMES, VERDICT_NAMES, type Verdict } from '../../engine/model';
-import type { CatalogItem, Project } from '../../engine/schema';
+import { itemIds, type CatalogItem, type Project } from '../../engine/schema';
 import { catalog } from './data';
 import { applyAlternative, dropRemove, updateNode } from './edit';
 import { markDrag, overPalette } from './Palette';
 import { useState } from 'react';
-import { useStore } from './store';
+import { usePick } from './store';
 
 /** 안쪽 다이어그램을 맞출 때 글자가 읽히는 크기 아래로는 줄이지 않는다 (좁은 화면에서는 끌어서 본다) */
 export const READABLE = { minZoom: 0.6 };
@@ -32,7 +32,7 @@ export function partsOf(p: Project, a: Analysis | undefined, byId: Map<string, C
   const used = new Set([n.primary, ...n.extras]);
   const s = a?.scenarios[nodeId];
   const j = a?.judgements.find((x) => x.nodeId === nodeId);
-  return [n.primary, ...n.extras].filter((x): x is string => !!x).map((id) => {
+  return itemIds(n).map((id) => {
     const item = byId.get(id)!;
     const role = id === n.primary ? '주' : '보조';
     const mine = j?.items.find((x) => x.itemId === id);
@@ -97,7 +97,7 @@ const nodeTypes = { part: PartBlock, alt: AltBlock, peer: PeerBlock };
 
 
 export function PartsInside({ nodeId, analysis }: { nodeId: string; analysis?: Analysis }) {
-  const { project: p, edit, select, setFocus } = useStore();
+  const { project: p, edit, select, setFocus } = usePick('project', 'edit', 'select', 'setFocus');
   const n = p.nodes.find((x) => x.id === nodeId)!;
   const parts = partsOf(p, analysis, catalog.byId, nodeId);
   // 끄는 동안만 옮긴 자리 (놓으면 제자리로)

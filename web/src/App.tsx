@@ -8,7 +8,6 @@ import { mergeCodeAnalysis } from './codeImport';
 import { addNode, findPlans, pasteNode, run } from './edit';
 import { readAutosaves, saveToFolder, scheduleAutosave, scheduleFolderAutosave, snapshotLabel, startNewSnapshot, writeManualSave, type Snapshot } from './autosave';
 import { baseName, desktop } from './desktop';
-import type { XY } from './layout';
 import { SaveHistory } from './SaveHistory';
 import { searchProject, type Hit } from './search';
 import type { OptimizeResult } from '../../engine/optimize';
@@ -22,7 +21,7 @@ import { OptimizePanel } from './OptimizePanel';
 import { View3D } from './View3D';
 import { ProjectPanel } from './ProjectPanel';
 import { ResultsPanel } from './ResultsPanel';
-import { exportProject, useStore } from './store';
+import { exportProject, importProject, useStore } from './store';
 
 // 사용자 PC의 날짜 (toISOString은 UTC라 한국에서는 오전 9시 전에 어제 날짜가 된다). sv-SE 형식이 YYYY-MM-DD
 const today = new Date().toLocaleDateString('sv-SE');
@@ -71,19 +70,17 @@ export function App() {
     setHistory(false);
   };
   const say = (msg: string, ms = 2500) => { setNotice(msg); setTimeout(() => setNotice(undefined), ms); };
+  /** 데스크톱 앱 저장: path가 없으면 "다른 이름으로 저장" 창. 저장한 파일로 이어서 작업한다 */
+  const saveDesktop = (path: string | undefined, extra = '') => saveToFolder(path, project, positions)
+    .then((saved) => { if (saved) { setFilePath(saved); say(`저장했습니다: ${baseName(saved)}${extra}`); } })
+    .catch((err: Error) => say(`저장하지 못했습니다: ${err.message}`, 8000));
   // 직접 저장(Ctrl+S). 데스크톱 앱: 프로젝트 파일 + 같은 폴더 .saves/ (최대 20개). 브라우저: 브라우저 저장소 (최대 20개)
   const save = () => {
-    if (desktop) {
-      saveToFolder(filePath, project, positions)
-        .then((saved) => { if (saved) { setFilePath(saved); say(`저장했습니다: ${baseName(saved)} · 시점은 .saves 폴더에`); } })
-        .catch((err: Error) => say(`저장하지 못했습니다: ${err.message}`, 8000));
-      return;
-    }
+    if (desktop) return void saveDesktop(filePath, ' · 시점은 .saves 폴더에');
     const dropped = writeManualSave(project, positions);
     const ok = dropped !== false;
-    setNotice(!ok ? '브라우저 저장소를 쓸 수 없어 저장하지 못했습니다. "파일로 내보내기"(Ctrl+Shift+S)를 쓰세요'
-      : `저장했습니다 · ${new Date().toLocaleTimeString('ko-KR')}${dropped ? ` · 저장소 공간이 모자라 오래된 직접 저장 시점 ${dropped}개를 지웠어요` : ''}`);
-    setTimeout(() => setNotice(undefined), ok && !dropped ? 2500 : 8000);
+    say(!ok ? '브라우저 저장소를 쓸 수 없어 저장하지 못했습니다. "파일로 내보내기"(Ctrl+Shift+S)를 쓰세요'
+      : `저장했습니다 · ${new Date().toLocaleTimeString('ko-KR')}${dropped ? ` · 저장소 공간이 모자라 오래된 직접 저장 시점 ${dropped}개를 지웠어요` : ''}`, ok && !dropped ? 2500 : 8000);
   };
   // 자동 저장이 실패하면(저장소가 꽉 참·폴더에 못 씀) 한 번 알린다. 복구 시점이 없는데 있다고 믿지 않게
   const warnedSave = useRef(false);
@@ -128,11 +125,7 @@ export function App() {
   /** JSON 파일로 내보내기 (Ctrl+Shift+S) */
   const exportFile = () => {
     // 데스크톱 앱: "다른 이름으로 저장" (새 파일을 고르고 그 파일로 이어서 작업)
-    if (desktop) {
-      saveToFolder(undefined, project, positions).then((saved) => { if (saved) { setFilePath(saved); say(`저장했습니다: ${baseName(saved)}`); } })
-        .catch((err: Error) => say(`저장하지 못했습니다: ${err.message}`, 8000));
-      return;
-    }
+    if (desktop) return void saveDesktop(undefined);
     const blob = new Blob([JSON.stringify(exportProject(project, positions), null, 2)], { type: 'application/json' });
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `${project.name || 'project'}.json` });
     a.click();
@@ -176,22 +169,34 @@ export function App() {
     if (!desktop) return fileRef.current?.click();
     desktop.openFile().then((r) => {
       if (!r) return;
-      const data = JSON.parse(r.text);
-      const pos = Object.fromEntries((data.nodes ?? []).filter((n: { pos?: unknown }) => n.pos).map((n: { id: string; pos: XY }) => [n.id, n.pos]));
-      load(parseProject(data, catalog.items, baseName(r.path)), pos);
+      const { project, positions } = importProject(JSON.parse(r.text), baseName(r.path));
+      load(project, positions);
       setFilePath(r.path);
     }).catch((err: Error) => say(err.message, 8000));
   };
 
   const open = async (file: File) => {
     try {
-      const data = JSON.parse(await file.text());
-      const pos = Object.fromEntries((data.nodes ?? []).filter((n: { pos?: unknown }) => n.pos).map((n: { id: string; pos: { x: number; y: number } }) => [n.id, n.pos]));
-      load(parseProject(data, catalog.items, file.name), pos);
+      const { project, positions } = importProject(JSON.parse(await file.text()), file.name);
+      load(project, positions);
     } catch (e) {
       say((e as Error).message, 8000);
     }
   };
+
+  // 노드를 끄는 동안 App은 위치 때문에 다시 그려지지만, 위치와 무관한 패널(KPI·왼쪽·그래프·오른쪽)은 그대로 둔다
+  const analysis = result.analysis;
+  const kpi = useMemo(() => <KpiStrip analysis={analysis} />, [analysis]);
+  const left = useMemo(() => (focus ? <Palette nodeId={focus} analysis={analysis} /> : <ProjectPanel />), [focus, analysis]);
+  const chart = useMemo(() => <LimitChart project={project} analysis={analysis} />, [project, analysis]);
+  const right = useMemo(() => <>
+    {tab === 'results' && <ResultsPanel analysis={analysis} />}
+    {tab === 'optimize' && <OptimizePanel today={today} />}
+    {tab === 'selected' && selected?.kind === 'node' && <NodePanel id={selected.id} analysis={analysis} />}
+    {tab === 'selected' && selected?.kind === 'edge' && <EdgePanel from={selected.from} to={selected.to} />}
+    {tab === 'selected' && selected?.kind === 'table' && <TableSidePanel nodeId={selected.node} table={selected.table} analysis={analysis} />}
+    {tab === 'selected' && !selected && <p className="muted">캔버스에서 노드나 연결선을 고르세요.</p>}
+  </>, [tab, selected, analysis]);
 
   return (
     <>
@@ -245,8 +250,8 @@ export function App() {
         {/* 최선 조합(7번째 절)은 설계서를 열 때 한 번 찾는다 */}
         <button className="primary" onClick={() => setReport({ plans: findPlans(project, today).result })}>설계서 PDF</button>
       </header>
-      <KpiStrip analysis={result.analysis} />
-      {!hide.left && <aside className="left">{focus ? <Palette nodeId={focus} analysis={result.analysis} /> : <ProjectPanel />}</aside>}
+      {kpi}
+      {!hide.left && <aside className="left">{left}</aside>}
       <main className="center">
         <div className="stage">
           {focus
@@ -255,7 +260,7 @@ export function App() {
             ? <Canvas analysis={result.analysis} onSelect={() => setTab('selected')} layout={`${hide.left}${hide.right}${hide.bottom}`} />
             : <View3D analysis={result.analysis} onSelect={() => setTab('selected')} />}
         </div>
-        {!focus && !hide.bottom && <LimitChart project={project} analysis={result.analysis} />}
+        {!focus && !hide.bottom && chart}
         {result.error && <pre className="error-banner">{result.error}</pre>}
         {recovery && (
           <div className="recovery">
@@ -294,12 +299,7 @@ export function App() {
           <button className={tab === 'results' ? 'on' : ''} onClick={() => setTab('results')}>전체 결과</button>
           <button className={tab === 'optimize' ? 'on' : ''} onClick={() => setTab('optimize')}>최선 조합</button>
         </nav>
-        {tab === 'results' && <ResultsPanel analysis={result.analysis} />}
-        {tab === 'optimize' && <OptimizePanel today={today} />}
-        {tab === 'selected' && selected?.kind === 'node' && <NodePanel id={selected.id} analysis={result.analysis} />}
-        {tab === 'selected' && selected?.kind === 'edge' && <EdgePanel from={selected.from} to={selected.to} />}
-        {tab === 'selected' && selected?.kind === 'table' && <TableSidePanel nodeId={selected.node} table={selected.table} analysis={result.analysis} />}
-        {tab === 'selected' && !selected && <p className="muted">캔버스에서 노드나 연결선을 고르세요.</p>}
+        {right}
       </aside>
       )}
     </div>

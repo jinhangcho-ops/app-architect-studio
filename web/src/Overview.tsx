@@ -1,14 +1,13 @@
 // 한눈에 보기: 위쪽 지표 줄과, 캔버스 아래 "활성 사용자가 늘면 어디가 먼저 막힐까요?" 그래프 (엔진 식으로 다시 계산한 사용률·p99 곡선)
 import { useMemo, useState } from 'react';
-import { perInstance, type Analysis } from '../../engine/analyze';
-import { instancesNeeded } from '../../engine/capacity';
+import { perInstance, sizeAt, type Analysis } from '../../engine/analyze';
 import { INDUSTRIES } from '../../engine/industry';
-import { nodeP99 } from '../../engine/latency';
 import { dayCurve } from '../../engine/traffic';
 import type { Metric } from '../../engine/model';
 import type { CatalogItem, Project } from '../../engine/schema';
 import { healthOf, type Health } from './Canvas';
 import { catalog } from './data';
+import { trafficKey } from './edit';
 import { fmt, howMetric } from './format';
 
 const Kpi = ({ label, m, value, unit }: { label: string; m?: Metric; value?: string; unit?: string }) => (
@@ -53,11 +52,11 @@ const dayPts = (vals: number[]): [number, number][] => vals.map((v, j) => [((j +
 
 /** 하루 시간대별 노드 사용률 (5분 칸): 평소 피크에 맞춘 대수를 그대로 두고, 페르소나 기대 트래픽이 시간마다 만드는 부하로 나눈다.
  *  노드 부하는 화면에서 연결선을 따라 같은 비율로 퍼지므로 노드 몫 = 노드 평소 피크 ÷ 전체 평소 피크 (비용 계산과 같은 가정) */
-export function dayUtilization(p: Project, a: Analysis, byId: Map<string, CatalogItem>, total: number[]): Series[] {
+export function dayUtilization(p: Project, a: Analysis, total: number[]): Series[] {
   const t = a.traffic;
   if (!t || !t.peakRps.value || !p.scale) return [];
   return p.nodes.flatMap((n) => {
-    const na = a.nodes[n.id], per = perInstance(n, byId).rps?.value, N = na?.instances?.normal.value;
+    const na = a.nodes[n.id], per = na?.perInstanceRps?.value, N = na?.instances?.normal.value;
     if (!na?.load || !per || !N) return [];
     const share = na.load.rps.normal / t.peakRps.value;
     return [{ id: n.id, name: `${n.name} (${N}대)`, color: COLOR[healthOf(a, p.scale!.users, n.id).health], pts: dayPts(total.map((r) => (share * r) / (N * per))) }];
@@ -75,8 +74,7 @@ export function p99Series(p: Project, a: Analysis, byId: Map<string, CatalogItem
     if (!load || !per.rps || !n.perf) return [];
     const pts = xs.map((u): [number, number] => {
       const rps = (load.rps.event * u) / users;
-      const N = instancesNeeded(rps, per.rps!.value, p.target_utilization, n.min_instances, per.max);
-      return [u, nodeP99(rps, n.perf!.service_ms, N * n.perf!.workers, n.perf!.service_p99_ms).value];
+      return [u, sizeAt(n, per.rps!.value, per.max, rps, p.target_utilization).p99!.value];
     });
     return [{ id: n.id, name: n.name, color: COLOR[healthOf(a, users, n.id).health], lim: a.nodes[n.id]?.limitUsers?.value, pts }];
   });
@@ -91,7 +89,7 @@ const HOURS = [0, 3, 6, 9, 12, 15, 18, 21, 24];
 export function LimitChart({ project: p, analysis: a }: { project: Project; analysis?: Analysis }) {
   const [kind, setKind] = useState<ChartKind>('traffic');
   // 5분 칸 기대 트래픽: 페르소나·데이터 주고받기가 바뀔 때만 다시 계산 (1분 해상도 합성이라 그릴 때마다 하지 않는다)
-  const curve = useMemo(() => dayCurve(p, STEP_MIN), [p.personas, p.scale, p.deploy, p.actions, p.exchange]);
+  const curve = useMemo(() => dayCurve(p, STEP_MIN), trafficKey(p));
   const users = p.scale?.users;
   const t = a?.traffic;
   if (!a || !t || !users || !curve) return null;
@@ -108,7 +106,7 @@ export function LimitChart({ project: p, analysis: a }: { project: Project; anal
   // 쌓는 그래프: 아래 것부터 누적, 큰 누적부터 칠해 띠가 보이게
   const stack = (layers: number[][]) => layers.map((_, k) => layers[0].map((__, j) => layers.slice(0, k + 1).reduce((s, l) => s + l[j], 0)));
   const personaStack = kind === 'traffic' ? stack(curve.personas.map((c) => c.rps)) : [];
-  const util = kind === 'util' ? dayUtilization(p, a, catalog.byId, curve.total) : [];
+  const util = kind === 'util' ? dayUtilization(p, a, curve.total) : [];
   const inflowStack = kind === 'inflow' && adoption ? stack([adoption.map((m) => m.external), adoption.map((m) => m.wordOfMouth)]) : [];
   const stageStack = kind === 'stages' && adoption ? stack(p.personas.map((_, i) => adoption.map((m) => m.byPersona[i]))) : [];
   const p99 = kind === 'p99' ? p99Series(p, a, catalog.byId, Array.from({ length: SAMPLES + 1 }, (_, i) => (uMax * i) / SAMPLES)) : [];

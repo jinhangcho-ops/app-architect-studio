@@ -3,16 +3,17 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import type { Analysis } from '../../engine/analyze';
 import { MODE_NAMES, SCOPE_NAMES } from '../../engine/deploy';
+import { lawLine } from '../../engine/regulation';
 import { INDUSTRIES } from '../../engine/industry';
 import { LAYER_NAMES, VERDICT_NAMES } from '../../engine/model';
 import type { OptimizeResult, Plan } from '../../engine/optimize';
-import { nodeStorageProfile, selectedFeatures, type Project, type Screen } from '../../engine/schema';
+import { itemIds, nodeStorageProfile, selectedFeatures, type Project, type Screen } from '../../engine/schema';
 import { PATTERNS } from '../../engine/traffic';
 import { catalog, laws, prices } from './data';
 import { worstVerdict } from './edit';
 import { fmt, fmtMetric, fmtShare } from './format';
 import type { XY } from './layout';
-import { nodeCard, openIssues, sourcesOf } from './reportData';
+import { costTimeline, milestoneText, nodeCard, openIssues, sourcesOf } from './reportData';
 import { drawScreen, screenFrame } from './wireDraw';
 
 const H = ({ n, children }: { n: number; children: ReactNode }) => <h2 className="r-h">{n}. {children}</h2>;
@@ -153,16 +154,16 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
             <ul>{a.paths.map((pa) => <li key={pa.nodes.join()}>{pa.nodes.map(name).join(' → ')}: 가용성 {fmtMetric(pa.availability)}, 월 중단 {fmtMetric(pa.downtime)}</li>)}</ul>
             {a.spof.length > 0 && <p>단일 장애점: {a.spof.map(name).join(', ')}</p>}
             {a.growth && <ul>
-              {a.growth.milestones.map((ms) => <li key={ms.nodeId}>{name(ms.nodeId)}: {ms.month === undefined ? '성장해도 닿지 않음' : `${ms.month}개월째 한계, ${ms.startMonth}개월째 착수`}</li>)}
+              {a.growth.milestones.map((ms) => <li key={ms.nodeId}>{name(ms.nodeId)}: {milestoneText(ms)}</li>)}
               {a.growth.tables.map((ms) => <li key={ms.nodeId}>{ms.nodeId}: {ms.month === undefined ? '서버 메모리에 닿지 않음' : `${ms.month}개월째 서버 메모리를 넘음, ${ms.startMonth}개월째 파티션 착수`}</li>)}
-              {a.growth.monthlyCost.length > 0 && <li>월 비용: {[0, 6, 12, 24].filter((mo) => mo < a.growth!.monthlyCost.length).map((mo) => `${mo}개월째 ${fmtMetric(a.growth!.monthlyCost[mo])}`).join(' · ')}</li>}
+              {a.growth.monthlyCost.length > 0 && <li>월 비용: {costTimeline(a.growth.monthlyCost)}</li>}
             </ul>}
           </section>
 
           <section>
             <H n={10}>확인 필요 조문</H>
             {!a.regulation.length ? <p className="muted">개인정보 노드가 없거나 걸린 조문이 없습니다.</p> : <ul>
-              {a.regulation.map((h) => <li key={h.nodeId + h.law + h.article}>{name(h.nodeId)} · {h.law} {h.article} 확인 필요 — {h.reason}{h.verified ? '' : ' (조문 번호 미확인)'}</li>)}
+              {a.regulation.map((h) => <li key={h.nodeId + h.law + h.article}>{name(h.nodeId)} · {lawLine(h)}</li>)}
             </ul>}
             <p className="muted">법률 검토를 대신하지 않습니다. 조문 내용은 원문에서 확인하세요.</p>
           </section>
@@ -177,7 +178,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
             <ul>{p.nodes.flatMap((n) => {
               const sp = nodeStorageProfile(n, catalog.byId);
               const feats = sp ? selectedFeatures(sp, n).map((f) => f.label) : [];
-              const tips = [n.primary, ...n.extras].flatMap((id) => (id ? catalog.byId.get(id)?.settings ?? [] : [])).map((s) => `${s.name}(${s.goal})`);
+              const tips = itemIds(n).flatMap((id) => catalog.byId.get(id)?.settings ?? []).map((s) => `${s.name}(${s.goal})`);
               return feats.length || tips.length ? [<li key={n.id}>{n.name}: {[feats.length && `저장 기능 ${feats.join(', ')}${n.storage_features ? '' : ' (권장)'}`, tips.length && `권장 설정 ${tips.join(', ')}`].filter(Boolean).join(' · ')}</li>] : [];
             })}</ul>
           </section>

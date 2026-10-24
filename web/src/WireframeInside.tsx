@@ -6,14 +6,14 @@ import type { Analysis } from '../../engine/analyze';
 import { routedCalls } from '../../engine/api';
 import { LAYER_NAMES } from '../../engine/model';
 import { HTTP_METHODS, WIRE_COLORS, WIRE_DEVICES, type Screen, type WireItem } from '../../engine/schema';
-import { addScreen, addWire, bindApi, dropRemove, mapScreens, screensOf, updateWire } from './edit';
+import { addScreen, addWire, bindApi, dropRemove, mapScreens, patchAt, screensOf, updateWire } from './edit';
 import { fmt } from './format';
 import { htmlToScreen } from './htmlImport';
 import { paginate, renderHtml } from './htmlRender';
 import { markDrag, overPalette, readDrag, WIRE_NAMES } from './Palette';
 import { Select } from './Select';
-import { useStore } from './store';
-import { COLORS, DEVICE_NAMES, DEVICES, deviceOf, drawOrder, fitItem, lineEnds, savePngs, SHAPES, toDevice, type Frame } from './wireDraw';
+import { usePick } from './store';
+import { COLORS, DEVICE_NAMES, DEVICES, deviceOf, drawOrder, fitItem, lineEnds, NO_LABEL, savePngs, screenFrame, SHAPES, toDevice, type Frame } from './wireDraw';
 
 const GRID = 8;
 const snap = (v: number) => Math.round(v / GRID) * GRID;
@@ -24,8 +24,6 @@ const SIZE: Record<WireItem['kind'], [number, number]> = {
   modal: [480, 320], footer: [1280, 56], text: [240, 28], image: [240, 160], button: [120, 40], input: [280, 40], select: [200, 40], tabs: [400, 40],
   rect: [200, 120], ellipse: [120, 120], line: [200, 16], arrow: [200, 16], icon: [32, 32], avatar: [48, 48], checkbox: [160, 28], radio: [160, 28], toggle: [160, 28],
 };
-/** 글을 그리지 않는 도형 (캔버스 그림과 같게) */
-const NO_LABEL = new Set<WireItem['kind']>(['line', 'arrow', 'icon']);
 
 /** 도형은 SVG로 그린다 (좌표는 상자 안 px, 틀 배율은 바깥 상자가 맞춘다) */
 function ShapeSvg({ it }: { it: WireItem }) {
@@ -75,7 +73,7 @@ function FrameView({ nodeId, s, screen, frame, k, left, top, caption, active, se
   nodeId: string; s: number; screen: Screen; frame: Frame; k: number; left: number; top: number; caption?: string; active: boolean;
   sel?: Sel; setSel: (x?: Sel) => void; editing?: string; setEditing: (x?: string) => void; nameOf: (id?: string) => string; onActivate: () => void;
 }) {
-  const { edit } = useStore();
+  const { edit } = usePick('edit');
   const [live, setLive] = useState<Live>();
   const key = (id: string) => `${s}:${id}`;
   const isSel = (id: string) => sel?.s === s && sel.id === id;
@@ -148,7 +146,7 @@ function FrameView({ nodeId, s, screen, frame, k, left, top, caption, active, se
 const GAP = 24, CAP = 22;
 
 export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis?: Analysis }) {
-  const { project: p, edit } = useStore();
+  const { project: p, edit } = usePick('project', 'edit');
   const n = p.nodes.find((x) => x.id === nodeId)!;
   const screens = screensOf(n);
   const [cur, setCur] = useState(0);
@@ -162,8 +160,8 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
   const [editing, setEditing] = useState<string>();
   const device = deviceOf(screen, p.deploy.mode);
   const frame = DEVICES[device];
-  const frames = shown.map((i) => DEVICES[deviceOf(screens[i], p.deploy.mode)]);
-  const setDevice = (d: NonNullable<Screen['device']>) => edit((x) => mapScreens(x, nodeId, (ss) => ss.map((y, j) => (j === si ? { ...y, device: d } : y))));
+  const frames = shown.map((i) => screenFrame(screens[i], p.deploy.mode));
+  const setDevice = (d: NonNullable<Screen['device']>) => edit((x) => mapScreens(x, nodeId, (ss) => patchAt(ss, si, { device: d })));
   const fileRef = useRef<HTMLInputElement>(null);
   const ps = sel && sel.s < screens.length ? sel.s : si;
   const picked = sel ? screens[ps]?.items.find((x) => x.id === sel.id) : undefined;
@@ -202,10 +200,10 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
       <div className="wtabbar" role="tablist" aria-label="화면">
         {screens.map((s, i) => (
           <div key={i} role="tab" aria-selected={i === si} className={`wtab ${i === si ? 'on' : ''} ${i === pair ? 'pair' : ''}`} onClick={() => setCur(i)}
-            title={`${s.name} · ${DEVICES[deviceOf(s, p.deploy.mode)].name}${i === pair ? ' · 나란히 보는 중' : ''} (두 번 누르면 이름 고치기)`}>
+            title={`${s.name} · ${screenFrame(s, p.deploy.mode).name}${i === pair ? ' · 나란히 보는 중' : ''} (두 번 누르면 이름 고치기)`}>
             <DeviceIcon d={deviceOf(s, p.deploy.mode)} />
             {editing === `screen:${i}`
-              ? <input autoFocus defaultValue={s.name} aria-label="화면 이름" onClick={(e) => e.stopPropagation()} onBlur={(e) => { const v = e.target.value.trim(); if (v && !screens.some((y, j) => j !== i && y.name === v)) edit((x) => mapScreens(x, nodeId, (ss) => ss.map((y, j) => (j === i ? { ...y, name: v } : y)))); setEditing(undefined); }}
+              ? <input autoFocus defaultValue={s.name} aria-label="화면 이름" onClick={(e) => e.stopPropagation()} onBlur={(e) => { const v = e.target.value.trim(); if (v && !screens.some((y, j) => j !== i && y.name === v)) edit((x) => mapScreens(x, nodeId, (ss) => patchAt(ss, i, { name: v }))); setEditing(undefined); }}
                 onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditing(undefined); }} />
               : <span className="name" onDoubleClick={() => setEditing(`screen:${i}`)}>{s.name}</span>}
             {screens.length > 1 && <button className="x" aria-label={`${s.name} 지우기`} onClick={(e) => { e.stopPropagation(); edit((x) => mapScreens(x, nodeId, (ss) => ss.filter((_, j) => j !== i))); setCur(0); setPair(undefined); setSel(undefined); }}>×</button>}

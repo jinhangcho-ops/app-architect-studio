@@ -8,7 +8,7 @@ import { catalog } from './data';
 import { updateNode } from './edit';
 import { fmt } from './format';
 import { Select } from './Select';
-import { useStore } from './store';
+import { usePick } from './store';
 
 /** 레이어마다 "서버"를 부르는 말 */
 const UNIT: Record<Layer, { name: string; unit: string; route: string }> = {
@@ -76,7 +76,7 @@ const SHOW = 8;
 const W = 840, H = 380;
 
 export function ServersInside({ nodeId, analysis }: { nodeId: string; analysis?: Analysis }) {
-  const { project: p, edit } = useStore();
+  const { project: p, edit } = usePick('project', 'edit');
   const n = p.nodes.find((x) => x.id === nodeId)!;
   const s = serverLayout(p, analysis, catalog.byId, nodeId);
   const target = p.target_utilization;

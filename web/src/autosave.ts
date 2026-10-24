@@ -2,12 +2,10 @@
 //  - 자동 저장: 고칠 때마다(잠깐 쉬었다가) 최신 시점을 덮어쓰고, 간격(기본 10분, 사용자 지정)이 지나면 새 시점을 만든다. 10개
 //  - 직접 저장: Ctrl+S·저장 버튼을 누를 때마다 새 시점. 20개
 // JSON 파일 내보내기(Ctrl+Shift+S)와는 따로다.
-import { parseProject } from '../../engine/data';
 import type { Project } from '../../engine/schema';
-import { catalog } from './data';
 import type { XY } from './layout';
 import { desktop, stamp, stampTime } from './desktop';
-import { exportProject } from './store';
+import { exportProject, importProject } from './store';
 
 const AUTO_KEY = 'app-architect-studio.autosave.v1';
 const MANUAL_KEY = 'app-architect-studio.saves.v1';
@@ -33,8 +31,7 @@ function rawList(storage: Store, key: string): Raw[] {
 /** 저장 기록 한 칸 → 시점. 깨졌거나 지금 카탈로그로 검증되지 않으면 undefined (그 시점만 뺀다) */
 function toSnapshot(r: Raw): Snapshot | undefined {
   try {
-    const positions = Object.fromEntries((r.project.nodes ?? []).filter((n) => n.pos).map((n) => [n.id, n.pos!]));
-    return { createdAt: r.createdAt ?? r.savedAt, savedAt: r.savedAt, project: parseProject(r.project, catalog.items, '저장 기록'), positions };
+    return { createdAt: r.createdAt ?? r.savedAt, savedAt: r.savedAt, ...importProject(r.project, '저장 기록') };
   } catch {
     return undefined;
   }

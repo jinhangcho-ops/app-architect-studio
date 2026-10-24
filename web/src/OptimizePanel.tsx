@@ -6,12 +6,12 @@ import { catalog } from './data';
 import { applyPlan, findPlans } from './edit';
 import { NumField, Section } from './fields';
 import { fmt, fmtShare } from './format';
-import { useStore } from './store';
+import { usePick } from './store';
 
 const GOALS = [...new Set(catalog.items.flatMap((i) => Object.keys(i.goals)))].sort();
 
 export function OptimizePanel({ today }: { today: string }) {
-  const { project: p, edit } = useStore();
+  const { project: p, edit } = usePick('project', 'edit');
   const [found, setFound] = useState<{ for: Project; result?: OptimizeResult; error?: string }>();
   const o = p.optimize;
   const setOpt = (patch: Partial<Project['optimize']>) => edit((x) => ({ ...x, optimize: { ...x.optimize, ...patch } }));

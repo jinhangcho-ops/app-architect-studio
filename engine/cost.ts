@@ -37,7 +37,10 @@ export function findPrice(prices: PriceRow[], product: string, region?: string):
 }
 
 /** today는 'YYYY-MM-DD'. missingInputs는 계량값을 못 구한 이유(분석 단계에서 넘김) */
-export function monthlyCost(lines: LineItem[], prices: PriceRow[], today: string, missingInputs: string[] = [], staleDays = 90): CostResult {
+/** 가격 기준일이 이만큼 지나면 오래된 가격으로 알린다 */
+export const STALE_DAYS = 90;
+
+export function monthlyCost(lines: LineItem[], prices: PriceRow[], today: string, missingInputs: string[] = []): CostResult {
   const parts: Record<string, Metric> = {};
   const missing = [...missingInputs];
   const used: PriceRow[] = [];
@@ -61,7 +64,7 @@ export function monthlyCost(lines: LineItem[], prices: PriceRow[], today: string
 
   const currencies = new Set(used.map((r) => r.currency));
   if (currencies.size > 1) throw new Error(`가격표 통화가 섞여 있어 합칠 수 없음: ${[...currencies].join(', ')}`);
-  const cutoff = Date.parse(today) - staleDays * DAY_MS;
+  const cutoff = Date.parse(today) - STALE_DAYS * DAY_MS;
   const stale = [...new Set(used.filter((r) => Date.parse(r.as_of) < cutoff).map((r) => `${r.id} (${r.as_of})`))];
 
   const values = Object.values(parts);

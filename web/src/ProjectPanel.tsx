@@ -8,11 +8,11 @@ import { PATTERNS } from '../../engine/traffic';
 import { enabled, MODE_NAMES, SCOPE_NAMES } from '../../engine/deploy';
 import { STANDARD_OFFSET } from '../../engine/timezones';
 import { NumField, Row, Section, TextField } from './fields';
-import { addAction, removeAction, removePersona, setActionRate, updateAction, updatePersona } from './edit';
-import { useStore } from './store';
+import { addAction, patchAt, removeAction, removePersona, setActionRate, updateAction, updatePersona } from './edit';
+import { usePick } from './store';
 
 export function ProjectPanel() {
-  const { project: p, edit } = useStore();
+  const { project: p, edit } = usePick('project', 'edit');
   const [editPersonas, setEditPersonas] = useState(false);
   const set = (patch: Partial<Project>) => edit((x) => ({ ...x, ...patch }));
   const setScale = (patch: Partial<NonNullable<Project['scale']>>) => p.scale && set({ scale: { ...p.scale, ...patch } });
@@ -197,7 +197,7 @@ const productsOf = (unit: PriceRow['unit']) => [...new Set(prices.filter((r) => 
 
 /** 행동: 한 번 일어나면 어느 테이블에 몇 행을 쓰는지, 접속당 빈도. 아래 표는 페르소나별 빈도(비우면 기본값) */
 function ActionsSection() {
-  const { project: p, edit } = useStore();
+  const { project: p, edit } = usePick('project', 'edit');
   const targets = p.nodes.flatMap((n) => n.tables.map((t) => ({ key: `${n.id}.${t.name}`, node: n.id, table: t.name, label: `${n.name}.${t.name}` })));
   if (!targets.length && !p.actions.length) {
     return <Section title="행동"><p className="muted">DB·캐시·분석 노드에 테이블을 넣으면 행동(주문, 리뷰 …)으로 테이블에 쓰는 양을 정할 수 있습니다.</p></Section>;
@@ -206,7 +206,7 @@ function ActionsSection() {
     <Section title={`행동 (${p.actions.length})`}>
       {p.actions.map((a) => {
         const upd = (patch: Parameters<typeof updateAction>[2]) => edit((x) => updateAction(x, a.name, patch));
-        const setWrite = (i: number, patch: Partial<(typeof a.writes)[number]>) => upd({ writes: a.writes.map((w, k) => (k === i ? { ...w, ...patch } : w)) });
+        const setWrite = (i: number, patch: Partial<(typeof a.writes)[number]>) => upd({ writes: patchAt(a.writes, i, patch) });
         return (
           <div key={a.name} className="action">
             <div className="inline">
@@ -254,7 +254,7 @@ function ActionsSection() {
 
 /** 로컬 실행 메모리 입력: 런타임 + 시작할 때 올리는 라이브러리 합 + 필요할 때 올리는 것 중 가장 큰 하나 + 캐시 */
 function LocalMemory() {
-  const { project: p, edit } = useStore();
+  const { project: p, edit } = usePick('project', 'edit');
   const mem = p.deploy.memory ?? { runtime_mb: 0, eager_mb: [], lazy_mb: [] };
   const setMem = (patch: Partial<typeof mem>) => edit((x) => ({ ...x, deploy: { ...x.deploy, memory: { ...mem, ...patch } } }));
   const nums = (s: string) => s.split(',').map((v) => Number(v.trim())).filter((v) => Number.isFinite(v) && v >= 0 && s.trim() !== '');
