@@ -9,6 +9,7 @@ import { WIRE_COLORS, WIRE_DEVICES, type Screen, type WireItem } from '../../eng
 import { addScreen, addWire, bindApi, dropRemove, mapScreens, updateWire } from './edit';
 import { fmt } from './format';
 import { htmlToScreen } from './htmlImport';
+import { paginate, renderHtml } from './htmlRender';
 import { markDrag, overPalette, readDrag, WIRE_NAMES } from './Palette';
 import { Select } from './Select';
 import { useStore } from './store';
@@ -217,15 +218,22 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
           <option value="">한 장만 보기</option>
           {screens.map((s, i) => (i === si ? null : <option key={i} value={String(i)}>나란히: {s.name} ({DEVICE_NAMES[deviceOf(s, p.deploy.mode)]})</option>))}
         </Select>}
-        <button onClick={() => fileRef.current?.click()} title="HTML 파일의 헤더·폼·버튼 등을 새 화면으로 가져옵니다">HTML 가져오기</button>
-        <input ref={fileRef} type="file" accept=".html,.htm" hidden onChange={async (e) => {
-          const f = e.target.files?.[0];
+        <button onClick={() => fileRef.current?.click()} title="HTML 파일을 지금 기기 너비로 그려 요소마다 상자로 가져옵니다. CSS 파일을 함께 고르면 그 모양대로 배치합니다">HTML 가져오기</button>
+        <input ref={fileRef} type="file" accept=".html,.htm,.css" multiple hidden onChange={async (e) => {
+          const files = [...(e.target.files ?? [])];
           e.target.value = '';
-          if (!f) return;
-          const sc = htmlToScreen(await f.text(), frame, f.name.replace(/\.html?$/i, ''));
-          // 빈 화면 한 장뿐이면 그 자리를 바꾸고, 아니면 지금 기기로 한 장 더한다 (이름은 겹치지 않게)
+          const html = files.find((x) => /\.html?$/i.test(x.name));
+          if (!html) return;
+          const css = Object.fromEntries(await Promise.all(files.filter((x) => /\.css$/i.test(x.name)).map(async (x) => [x.name, await x.text()] as const)));
+          const text = await html.text();
+          const base = html.name.replace(/\.html?$/i, '');
+          // 실제로 그려 자리를 읽고(긴 페이지는 여러 장), 그릴 수 없으면 영역 규칙으로 배치한다
+          const entries = await renderHtml(text, frame, css);
+          const pages = entries ? paginate(entries, frame, base) : [htmlToScreen(text, frame, base)];
+          // 빈 화면 한 장뿐이면 그 자리를 바꾸고, 아니면 지금 기기로 이어 붙인다 (이름은 겹치지 않게)
           const replace = screens.length === 1 && !screen.items.length;
-          edit((x) => addScreen(replace ? mapScreens(x, nodeId, () => []) : x, nodeId, device, sc));
+          edit((x) => pages.reduce((acc, sc) => addScreen(acc, nodeId, device, sc), replace ? mapScreens(x, nodeId, () => []) : x));
+          setPair(undefined);
           setCur(replace ? 0 : screens.length);
         }} />
         <button onClick={() => savePngs([{ screen, name: `${n.name}-${screen.name}` }], p.deploy.mode)}>PNG 저장</button>

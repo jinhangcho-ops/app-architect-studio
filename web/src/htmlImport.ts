@@ -70,11 +70,11 @@ export function parseHtml(text: string, parser: DOMParser = new DOMParser()) {
 // shortcut: CSS 배치는 보지 않고 영역 종류로만 자리를 잡는다. 실제 모양이 필요하면 브라우저로 렌더링해 좌표를 읽는다
 type Kind = WireItem['kind'];
 type Api = NonNullable<WireItem['api']>;
-const ROLE_KIND: Record<string, Kind> = { '상단 헤더': 'header', '네비게이션': 'nav', '사이드바': 'sidebar', '메인': 'main', '입력 폼': 'form', '표': 'table', '모달': 'modal', '하단 푸터': 'footer' };
-const roleOf = (el: Element) => TAG_ROLE[el.tagName.toLowerCase()] ?? CLASS_ROLE.find(([re]) => re.test(`${el.id} ${el.className}`))?.[1];
+export const ROLE_KIND: Record<string, Kind> = { '상단 헤더': 'header', '네비게이션': 'nav', '사이드바': 'sidebar', '메인': 'main', '입력 폼': 'form', '표': 'table', '모달': 'modal', '하단 푸터': 'footer' };
+export const roleOf = (el: Element) => TAG_ROLE[el.tagName.toLowerCase()] ?? CLASS_ROLE.find(([re]) => re.test(`${el.id} ${el.className}`))?.[1];
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
-const apiOf = (method: string, path: string): Api => ({ method: (METHODS as readonly string[]).includes(method) ? (method as Api['method']) : 'GET', path, per_session: 1 });
-const dataApi = (el: Element): Api | undefined => {
+export const apiOf = (method: string, path: string): Api => ({ method: (METHODS as readonly string[]).includes(method) ? (method as Api['method']) : 'GET', path, per_session: 1 });
+export const dataApi = (el: Element): Api | undefined => {
   const v = el.getAttribute('data-api');
   if (!v) return undefined;
   const [a, b] = v.trim().split(/\s+/);
