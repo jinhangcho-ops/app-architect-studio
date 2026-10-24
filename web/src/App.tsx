@@ -27,6 +27,21 @@ import { exportProject, useStore } from './store';
 // 사용자 PC의 날짜 (toISOString은 UTC라 한국에서는 오전 9시 전에 어제 날짜가 된다). sv-SE 형식이 YYYY-MM-DD
 const today = new Date().toLocaleDateString('sv-SE');
 
+type Hidden = { left: boolean; right: boolean; bottom: boolean };
+const PANELS_KEY = 'aas.panels';
+const readHidden = (): Hidden => {
+  try { return { left: false, right: false, bottom: false, ...JSON.parse(localStorage.getItem(PANELS_KEY) ?? '{}') }; } catch { return { left: false, right: false, bottom: false }; }
+};
+/** 패널 단추 아이콘: 창 모양에서 그 쪽 칸을 칠한다 */
+const PanelIcon = ({ side }: { side: 'left' | 'right' | 'bottom' }) => (
+  <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden fill="none" stroke="currentColor" strokeWidth="1.3">
+    <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+    {side === 'left' && <rect x="1.5" y="2.5" width="4.5" height="11" fill="currentColor" stroke="none" opacity="0.7" />}
+    {side === 'right' && <rect x="10" y="2.5" width="4.5" height="11" fill="currentColor" stroke="none" opacity="0.7" />}
+    {side === 'bottom' && <rect x="1.5" y="9.5" width="13" height="4" fill="currentColor" stroke="none" opacity="0.7" />}
+  </svg>
+);
+
 export function App() {
   const { project, positions, selected, load, edit, relayout, select, focus, setFocus, undo, redo, past, future, clipboard, set, move } = useStore();
   // 위치를 끌어도 다시 계산하지 않도록 프로젝트가 바뀔 때만 분석한다
@@ -35,6 +50,10 @@ export function App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
   const [view, setView] = useState<'2d' | '3d'>('2d');
+  // 접은 패널 (왼쪽 설정·아래 그래프·오른쪽 결과). 다음에 열 때도 그대로 (이 기기에만 저장)
+  const [hide, setHide] = useState<Hidden>(readHidden);
+  const toggle = (patch: Partial<Hidden>) => setHide((h) => { const next = { ...h, ...patch }; try { localStorage.setItem(PANELS_KEY, JSON.stringify(next)); } catch { /* 저장소를 못 쓰면 이번 창에서만 */ } return next; });
+  const onlyDiagram = hide.left && hide.right && hide.bottom;
   const [report, setReport] = useState<{ plans?: OptimizeResult }>();
   const [find, setFind] = useState<{ q: string; at: number }>();
   // 앱을 열 때 남아 있던 임시 저장. 복구할지 정하기 전에는 임시 저장을 덮어쓰지 않는다
@@ -167,7 +186,7 @@ export function App() {
 
   return (
     <>
-    <div className="app">
+    <div className={`app ${hide.left ? 'hide-left' : ''} ${hide.right ? 'hide-right' : ''}`}>
       <header className="toolbar">
         <strong className="brand">App Architect Studio</strong>
         <Select aria-label="노드 추가" value="" onChange={(e) => e.target.value && add(e.target.value as Layer)}>
@@ -180,6 +199,13 @@ export function App() {
         <i className="sep" />
         <button onClick={relayout} disabled={view === '3d'}>자동 배치</button>
         <button onClick={() => setView(view === '2d' ? '3d' : '2d')}>{view === '2d' ? '3D 보기' : '2D 보기'}</button>
+        <i className="sep" />
+        <span className="panel-toggles" role="group" aria-label="패널 보이기">
+          <button aria-pressed={!hide.left} title="왼쪽 설정 패널" aria-label="왼쪽 설정 패널" onClick={() => toggle({ left: !hide.left })}><PanelIcon side="left" /></button>
+          <button aria-pressed={!hide.bottom} title="아래 그래프" aria-label="아래 그래프" onClick={() => toggle({ bottom: !hide.bottom })}><PanelIcon side="bottom" /></button>
+          <button aria-pressed={!hide.right} title="오른쪽 결과 패널" aria-label="오른쪽 결과 패널" onClick={() => toggle({ right: !hide.right })}><PanelIcon side="right" /></button>
+        </span>
+        <button className={onlyDiagram ? 'on' : ''} onClick={() => toggle(onlyDiagram ? { left: false, right: false, bottom: false } : { left: true, right: true, bottom: true })}>{onlyDiagram ? '패널 다시 보기' : '다이어그램만'}</button>
         <span className="spacer" />
         <Select aria-label="예시 불러오기" value="" onChange={(e) => {
           const ex = examples.find((x) => x.name === e.target.value);
@@ -211,16 +237,16 @@ export function App() {
         <button className="primary" onClick={() => setReport({ plans: findPlans(project, today).result })}>설계서 PDF</button>
       </header>
       <KpiStrip analysis={result.analysis} />
-      <aside className="left">{focus ? <Palette nodeId={focus} analysis={result.analysis} /> : <ProjectPanel />}</aside>
+      {!hide.left && <aside className="left">{focus ? <Palette nodeId={focus} analysis={result.analysis} /> : <ProjectPanel />}</aside>}
       <main className="center">
         <div className="stage">
           {focus
             ? <NodeInside key={focus} nodeId={focus} analysis={result.analysis} onSelect={() => setTab('selected')} />
             : view === '2d'
-            ? <Canvas analysis={result.analysis} onSelect={() => setTab('selected')} />
+            ? <Canvas analysis={result.analysis} onSelect={() => setTab('selected')} layout={`${hide.left}${hide.right}${hide.bottom}`} />
             : <View3D analysis={result.analysis} onSelect={() => setTab('selected')} />}
         </div>
-        {!focus && <LimitChart project={project} analysis={result.analysis} />}
+        {!focus && !hide.bottom && <LimitChart project={project} analysis={result.analysis} />}
         {result.error && <pre className="error-banner">{result.error}</pre>}
         {recovery && (
           <div className="recovery">
@@ -252,6 +278,7 @@ export function App() {
           </div>
         )}
       </main>
+      {!hide.right && (
       <aside className="right">
         <nav className="tabs">
           <button className={tab === 'selected' ? 'on' : ''} onClick={() => setTab('selected')}>선택한 것</button>
@@ -265,6 +292,7 @@ export function App() {
         {tab === 'selected' && selected?.kind === 'table' && <TableSidePanel nodeId={selected.node} table={selected.table} analysis={result.analysis} />}
         {tab === 'selected' && !selected && <p className="muted">캔버스에서 노드나 연결선을 고르세요.</p>}
       </aside>
+      )}
     </div>
     <Tooltip />
     {/* 인쇄할 때 .app은 숨기고 설계서만 남기므로 .app 밖에 둔다 */}

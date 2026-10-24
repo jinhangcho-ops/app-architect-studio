@@ -50,7 +50,8 @@ function Card({ data, selected }: NodeProps<Node<CardData>>) {
 const nodeTypes = { card: Card };
 const EDGE = { base: '#4c5870', bad: '#ff5a5a', read: '#2ec4a6', async: '#f5b301' };
 
-export function Canvas({ analysis, onSelect }: { analysis?: Analysis; onSelect: () => void }) {
+/** layout: 패널을 접거나 펼 때 바뀌는 값. 바뀌면 넓어진(좁아진) 칸에 다이어그램을 다시 맞춘다 */
+export function Canvas({ analysis, onSelect, layout }: { analysis?: Analysis; onSelect: () => void; layout?: string }) {
   const { project, positions, selected, edit, move, select, setFocus, flyTo, set } = useStore();
   const flow = useRef<ReactFlowInstance<Node<CardData>> | null>(null);
   // 찾기에서 고른 노드로 화면을 옮긴다
@@ -59,6 +60,13 @@ export function Canvas({ analysis, onSelect }: { analysis?: Analysis; onSelect: 
     flow.current.fitView({ nodes: [{ id: flyTo }], duration: 300, maxZoom: 1.2 });
     set({ flyTo: undefined });
   }, [flyTo, set]);
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    // 칸 크기가 바뀐 다음에 맞춘다
+    const id = setTimeout(() => flow.current?.fitView({ duration: 250 }), 50);
+    return () => clearTimeout(id);
+  }, [layout]);
 
   const users = project.scale?.users;
   const health = new Map(project.nodes.map((n) => [n.id, healthOf(analysis, users, n.id)]));

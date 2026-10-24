@@ -11,7 +11,10 @@
 * { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 *:hover { scrollbar-color: #3a4656 transparent; }
 body { margin: 0; background: var(--bg); }
-.app { display: grid; grid-template: 52px auto minmax(0, 1fr) / clamp(230px, 20vw, 280px) minmax(0, 1fr) clamp(300px, 24vw, 360px); height: 100vh; }
+.app { --lw: clamp(230px, 20vw, 280px); --rw: clamp(300px, 24vw, 360px); display: grid; grid-template: 52px auto minmax(0, 1fr) / var(--lw) minmax(0, 1fr) var(--rw); height: 100vh; }
+/* 접은 패널은 칸 너비를 0으로 (가운데 다이어그램이 그만큼 넓어진다) */
+.app.hide-left { --lw: 0px; } .app.hide-right { --rw: 0px; }
+.app.hide-left > .center { grid-column: 1 / 3; } .app.hide-right > .center { grid-column: 2 / 4; } .app.hide-left.hide-right > .center { grid-column: 1 / -1; }
 .toolbar { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .brand { margin-right: 8px; }
 /* 도구줄: 무리마다 세로 구분선, 버튼은 투명 (주 버튼만 흰색) */
@@ -401,3 +404,10 @@ body[data-drag='remove'] .palette::before { content: '여기에 놓으면 빠져
 .recovery > button { flex: none; }
 .recommend { margin: 4px 0 8px; padding: 8px 10px; border: 1px solid var(--line-2); border-left: 3px solid var(--accent); border-radius: 6px; background: var(--panel-2); font-size: 12px; }
 .recommend p { margin: 4px 0 6px; }
+
+/* 패널 접기 단추 */
+.panel-toggles { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; }
+.toolbar .panel-toggles button { display: grid; place-items: center; width: 28px; height: 26px; padding: 0; border: 0; background: none; color: var(--dim); }
+.toolbar .panel-toggles button[aria-pressed='true'] { color: var(--ink); background: var(--panel-2); }
+.toolbar .panel-toggles button:hover { color: var(--ink); }
+.toolbar > button.on { color: var(--ink); background: var(--panel-2); border-color: var(--line-2); }
