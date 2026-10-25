@@ -2,6 +2,7 @@ import { Select } from './Select';
 import { useState } from 'react';
 import { DEFAULT_DB_POOL, type Analysis } from '../../engine/analyze';
 import { DEFAULT_HIT_RATIO } from '../../engine/load';
+import { DEFAULT_MAX_LAG_S, flowLine } from '../../engine/pipeline';
 import { judgeItem } from '../../engine/judge';
 import { LAYERS, LAYER_NAMES, VERDICT_NAMES, type Layer } from '../../engine/model';
 import { REGIONS, TABLE_LAYERS } from '../../engine/schema';
@@ -108,6 +109,10 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
             <tr key={label} title={howMetric(m || undefined)}><td>{label}</td><td>{fmtMetric(m || undefined)}</td></tr>
           ))}
         </tbody></table>
+        {/* 이 노드가 보내거나 받는 데이터 파이프라인 (큐 지연·배치 실행) */}
+        {analysis?.pipeline.filter((f) => f.from === id || f.to === id).map((f) => (
+          <p key={`${f.from}>${f.to}`} className="muted pipe-line" title={howMetric(f.lag?.event ?? f.capacity)}>{flowLine(f, (x) => project.nodes.find((y) => y.id === x)?.name ?? x)}</p>
+        ))}
       </Section>
 
       {(TABLE_LAYERS as readonly string[]).includes(n.layer) && <>
@@ -141,6 +146,14 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
         <NumField label="평균 처리(ms)" value={n.perf?.service_ms} onChange={(v) => upd({ perf: v ? { workers: n.perf?.workers ?? 8, ...n.perf, service_ms: v } : undefined })} />
         <NumField label="대당 동시 처리" value={n.perf?.workers} step={1} onChange={(v) => n.perf && upd({ perf: { ...n.perf, workers: v ?? 1 } })} />
         {n.layer === 'cache' && <NumField label="캐시 적중률" value={n.hit_ratio} step={0.05} hint={`읽기 중 캐시에서 끝나는 몫. 이 캐시를 부르는 노드가 DB로 보내는 읽기가 (1 − 적중률)로 줄어요. 비우면 ${DEFAULT_HIT_RATIO} (예시값) — 실측 적중률로 바꾸세요`} onChange={(v) => upd({ hit_ratio: v === undefined ? undefined : Math.min(1, Math.max(0, v)) })} />}
+        {n.layer === 'queue' && <>
+          <NumField label="파티션 수" value={n.partitions} step={1} hint="Kafka·Redpanda처럼 파티션으로 나누는 큐: 소비자 병렬 수가 이 수를 넘지 못해요. 비우면 제한 없음" onChange={(v) => upd({ partitions: v && v > 0 ? Math.round(v) : undefined })} />
+          <NumField label="허용 지연(초)" value={n.max_lag_s} step={10} hint={`메시지가 들어와 처리될 때까지 허용하는 시간. 넘으면 평소엔 안 됨, 이벤트 때만이면 조건부. 비우면 ${DEFAULT_MAX_LAG_S}초 (예시값)`} onChange={(v) => upd({ max_lag_s: v && v > 0 ? v : undefined })} />
+        </>}
+        {(n.layer === 'batch' || n.layer === 'analytics' || n.batch) && <>
+          <NumField label="배치 주기(분)" value={n.batch?.every_min} step={5} hint="정해진 주기마다 그동안 들어온 양을 한 번에 처리해요. 비우면 들어오는 대로 처리 (큐 소비자)" onChange={(v) => upd({ batch: v && v > 0 ? { ...n.batch, every_min: v } : undefined })} />
+          {n.batch && <NumField label="실행 창(분)" value={n.batch.window_min} step={5} hint="1회 실행이 이 시간 안에 끝나야 해요. 비우면 주기와 같음" onChange={(v) => upd({ batch: { ...n.batch!, window_min: v && v > 0 ? v : undefined } })} />}
+        </>}
         {project.edges.some((e) => e.from === n.id && project.nodes.find((x) => x.id === e.to)?.layer === 'db') && <NumField label="DB 연결 풀(대당)" value={n.db_pool} step={1} hint={`이 노드 1대가 DB에 여는 연결 수. DB 연결 수 = 대수 × 이 값. 비우면 ${DEFAULT_DB_POOL} (HikariCP·node-postgres 기본값)`} onChange={(v) => upd({ db_pool: v && v > 0 ? Math.round(v) : undefined })} />}
         {(() => {
           const b = n.primary ? catalog.byId.get(n.primary)?.billing : undefined;

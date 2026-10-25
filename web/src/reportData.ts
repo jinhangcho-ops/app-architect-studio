@@ -5,6 +5,7 @@ import { impactOf } from '../../engine/availability';
 import type { NodeJudgement } from '../../engine/judge';
 import { LAYER_NAMES, VERDICT_NAMES, VERDICT_RANK, type Metric, type Verdict } from '../../engine/model';
 import { itemIds, nodeStorageProfile, selectedFeatures, type CatalogItem, type Project } from '../../engine/schema';
+import { flowLine } from '../../engine/pipeline';
 import { lawLine } from '../../engine/regulation';
 import { worstVerdict } from './edit';
 import { fmt, fmtMetric } from './format';
@@ -54,6 +55,8 @@ export function nodeCard(p: Project, a: Analysis, byId: Map<string, CatalogItem>
         withHow('가용성', na?.availability),
         withHow('월 비용', cost),
         withHow('한계 사용자', na?.limitUsers),
+        pair('DB 연결 수 평소/이벤트', na?.connections?.normal, na?.connections?.event),
+        ...a.pipeline.filter((f) => f.from === nodeId || f.to === nodeId).map((f) => flowLine(f, name)),
         ...tables.map((x) => `테이블 ${x.table}: 하루 ${fmt(x.newRowsPerDay.value)}행 · 행 ${fmt(x.rowBytes.value)}B + 인덱스 ${fmt(x.indexBytesPerRow.value)}B · ${fmt(x.storedGb.value)}GB${x.partitions ? ` (파티션 ${x.partitions.count}개)` : ''}`),
       ]),
     },

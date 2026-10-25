@@ -356,6 +356,12 @@ export const Project = z.object({
     hit_ratio: z.number().min(0).max(1).optional(),
     /** 이 노드 1대가 DB에 여는 연결 풀 크기. 없으면 10 (HikariCP·node-postgres 기본값) */
     db_pool: z.number().int().positive().optional(),
+    /** 큐 노드의 파티션 수 (Kafka·Redpanda). 소비자 병렬 수가 이것을 넘지 못한다. 없으면 제한 없음 */
+    partitions: z.number().int().positive().optional(),
+    /** 큐 지연 허용(초): 메시지가 들어와 처리될 때까지. 큐 노드나 소비자 노드에 둔다. 없으면 300초 (예시값) */
+    max_lag_s: z.number().positive().optional(),
+    /** 정해진 주기로 도는 배치: every_min분마다 그동안 들어온 양을 한 번에 처리하고, window_min분(없으면 주기) 안에 끝나야 한다 */
+    batch: z.object({ every_min: z.number().positive(), window_min: z.number().positive().optional() }).optional(),
     /** 13절 1대의 가용성. 없으면 project.default_availability */
     availability: z.number().min(0).max(1).optional(),
     /** 9절 가격표의 인스턴스 상품 id (시간당 과금 또는 월 정액) */

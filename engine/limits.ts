@@ -1,7 +1,7 @@
 // 8절 확장성: 부하가 지금의 몇 배가 되면 노드의 항목이 '안 됨'이 되는지 이분 탐색으로 찾는다.
 // 부하 변수는 사용자 수에 비례하므로 한계 사용자 = 현재 사용자 × 배수다.
 import type { Vars } from './expr';
-import { failsWith, type Scenario } from './judge';
+import { failsWith, nodeIssues, type Scenario } from './judge';
 import { itemIds, type CatalogItem, type ProjectNode } from './schema';
 
 // db_connections처럼 부하에 비례하지 않는 값은 at(배수)로 그 배수에서 다시 계산해 받는다
@@ -24,8 +24,8 @@ export function limitFactor(node: ProjectNode, catalog: Map<string, CatalogItem>
   if (!items.length || !LOAD_VARS.some((k) => typeof s.event[k] === 'number')) return undefined;
   const fails = (f: number) => {
     const ev = { ...scaled(s.event, f), ...at?.(f) };
-    // 주 항목의 사용률이 100%를 넘으면 안 됨 (판정과 같은 규칙)
-    return (typeof ev.utilization === 'number' && ev.utilization > 1) || tests.some((t) => t(ev));
+    // 노드 문제(사용률 넘침·큐 지연·배치 창)도 판정과 같은 규칙으로 본다
+    return !!nodeIssues({ normal: ev, event: ev }) || tests.some((t) => t(ev));
   };
   if (fails(0)) return 0;
   let hi = 1;

@@ -511,3 +511,4 @@ body[data-drag='remove'] .palette::before { content: '여기에 놓으면 빠져
 .legend i.wire { width: 12px; height: 3px; border-radius: 0; background: #53627b; }
 .sbody input[type=number] { width: 180px; }
 .sbody .row > input[type=checkbox] { justify-self: start; }
+.pipe-line { margin: 6px 0 0; font-size: 12px; line-height: 1.5; }

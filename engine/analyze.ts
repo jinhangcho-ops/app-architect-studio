@@ -8,12 +8,14 @@ import { costLines } from './meters';
 import { enabled, localMemoryMb } from './deploy';
 import { adoption, monthReaching, type AdoptionMonth } from './adoption';
 import { timeline, usersAt, type Milestone } from './growth';
+import type { Vars } from './expr';
 import { checkRules, judgeNode, mergeScenario, type NodeJudgement, type RuleHit, type Scenario } from './judge';
 import { nodeP99, pathP99, syncPaths } from './latency';
 import { limitFactor } from './limits';
 import { apiLoads, type ApiLoad } from './api';
 import { computedScenarios, nodeLoads, type NodeLoad } from './load';
 import { metric, type Metric } from './model';
+import { pipelineFlows, type PipelineFlow } from './pipeline';
 import { checkRegulation, type LawHit } from './regulation';
 import type { CatalogItem, LawRow, PriceRow, Project, ProjectNode, Rule } from './schema';
 import { tableSizes, type TableAnalysis } from './tables';
@@ -61,6 +63,8 @@ export type Analysis = {
   rules: RuleHit[];
   /** 15절 "법령명 제N조 확인 필요" 목록 */
   regulation: LawHit[];
+  /** 데이터 파이프라인: 큐 → 소비자 적체·지연, 배치 1회 실행 */
+  pipeline: PipelineFlow[];
   /** 노드별 판정 변수(계산값 + 직접 넣은 값). 화면이 후보 항목을 다시 계산 없이 판정하는 데 쓴다 */
   scenarios: Record<string, Scenario>;
 };
@@ -209,7 +213,30 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     nodes[n.id].connections = { normal: at('normal'), event: at('event') };
   }
 
-  // 판정 변수에 계산값을 더한다: 사용률, 노드 p99, 이 노드를 지나는 경로 중 가장 낮은 가용성, DB 연결 수
+  // 데이터 파이프라인: 큐 적체·지연, 배치 1회 실행. 배수 f에서는 대수를 계산하는 노드만 그 부하로 다시 센다
+  const eventFactor = t && t.peakRps.value > 0 ? t.peakRpsEvent.value / t.peakRps.value : 1;
+  const instAt = (f: number) => (id: string, s: 'normal' | 'event') => {
+    if (f === 1) return nodes[id].instances?.[s].value;
+    const c = p.nodes.find((x) => x.id === id)!, cl = loads?.get(id), per = perOf.get(id)!;
+    return cl && per.rps && enabled(p.deploy, 'scale') ? sizeAt(c, per.rps.value, per.max, cl.rps[s] * f, u, primaryShape(c, d.catalog, cl)).N : undefined;
+  };
+  const flowsAt = (f: number) => (loads && shape ? pipelineFlows(p, loads, shape, eventFactor, instAt(f), f) : []);
+  const pipeline = flowsAt(1);
+  /** 받는 노드의 파이프라인 판정 변수: 큐 지연·허용 지연, 배치 실행·실행 창 (여럿이면 가장 나쁜 것) */
+  const pipeVars = (flows: PipelineFlow[], id: string, s: 'normal' | 'event'): Vars => {
+    const q = flows.filter((x) => x.to === id && x.kind === 'queue' && x.lag), b = flows.filter((x) => x.to === id && x.kind === 'batch' && x.run);
+    return {
+      ...(q.length && { queue_lag_s: Math.max(...q.map((x) => x.lag![s].value)), max_lag_s: Math.min(...q.map((x) => x.limit)) }),
+      ...(b.length && { batch_run_s: Math.max(...b.map((x) => x.run![s].value)), batch_window_s: Math.min(...b.map((x) => x.limit)) }),
+    };
+  };
+  // 신선도가 필요한 항목(마이크로 배치·Flink)은 허용 지연을 요구 신선도로 쓴다
+  const freshness = (id: string): Vars => {
+    const lim = pipeline.filter((x) => x.from === id || x.to === id).map((x) => x.limit);
+    return lim.length ? { required_freshness_s: Math.min(...lim) } : {};
+  };
+
+  // 판정 변수에 계산값을 더한다: 사용률, 노드 p99, 이 노드를 지나는 경로 중 가장 낮은 가용성, DB 연결 수, 파이프라인
   const judged = new Map<string, Scenario>();
   for (const n of p.nodes) {
     const base = scenarios.get(n.id)!;
@@ -221,6 +248,8 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
       ...(na.p99 && { node_p99_ms: na.p99[s].value }),
       ...(Number.isFinite(pathAv) && { path_availability: pathAv }),
       ...(na.connections && { db_connections: na.connections[s].value }),
+      ...freshness(n.id),
+      ...pipeVars(pipeline, n.id, s),
     });
     judged.set(n.id, mergeScenario(n, { normal: add('normal'), event: add('event') }));
   }
@@ -234,8 +263,10 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
       const load = loads?.get(n.id), per = perOf.get(n.id)!, db = primaryShape(n, d.catalog, load);
       const util = nodes[n.id].utilization && load && per.rps && n.vars.event.utilization === undefined
         ? (x: number) => sizeAt(n, per.rps!.value, per.max, load.rps.event * x, u, db).util : undefined;
-      const f = limitFactor(n, d.catalog, judged.get(n.id)!, conn || util
-        ? (x) => ({ ...(conn && { db_connections: conn(x, 'event').total }), ...(util && { utilization: util(x) }) }) : undefined);
+      // 이 노드로 들어오는 파이프라인이 있으면 배수마다 적체·실행 시간을 다시 계산한다
+      const piped = pipeline.some((x) => x.to === n.id && (x.lag || x.run)) && n.vars.event.queue_lag_s === undefined;
+      const f = limitFactor(n, d.catalog, judged.get(n.id)!, conn || util || piped
+        ? (x) => ({ ...(conn && { db_connections: conn(x, 'event').total }), ...(util && { utilization: util(x) }), ...(piped && pipeVars(flowsAt(x), n.id, 'event')) }) : undefined);
       if (f === undefined) continue;
       const lim = m(p.scale.users * f, '명', '현재 활성 사용자 × 이벤트 피크에서 안 됨이 되기 직전 배수', { 활성사용자: p.scale.users, 배수: f });
       nodes[n.id].limitUsers = lim;
@@ -296,5 +327,6 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
       };
     })()),
     scenarios: Object.fromEntries(judged),
+    pipeline,
   };
 }

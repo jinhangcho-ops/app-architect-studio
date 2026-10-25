@@ -2,6 +2,7 @@
 import { MissingVar, test, type Value, type Vars } from './expr';
 import { calibrate } from './calibrate';
 import { LAYER_TIER, VERDICT_RANK, type Layer, type Verdict } from './model';
+import { secs } from './pipeline';
 import { itemIds, type CatalogItem, type Project, type ProjectNode, type Rule } from './schema';
 
 export type Scenario = { normal: Vars; event: Vars };
@@ -73,16 +74,26 @@ export const mergeScenario = (node: ProjectNode, computed?: Scenario): Scenario 
   event: { ...computed?.event, ...node.vars.event },
 });
 
-/** 주 항목은 사용률이 100%를 넘으면(늘릴 수 있는 대수를 다 써도 못 받음) 다른 조건과 상관없이 안 됨. 평소 피크를 먼저 본다 */
-function overloaded(s: Scenario | undefined): Omit<ItemJudgement, 'alternatives'> | undefined {
-  if (!s) return undefined;
+const num = (v: Value | undefined) => (typeof v === 'number' ? v : undefined);
+
+/** 항목 조건과 별개로 노드의 주 항목에 거는 문제: 사용률 100% 초과, 큐 지연이 허용을 넘음, 배치가 실행 창 안에 안 끝남.
+ *  평소 피크에서 걸리면 안 됨, 이벤트 피크에서만 걸리면 조건부 (사용률 초과는 어느 쪽이든 안 됨: 늘릴 대수가 없어 요청이 끝없이 쌓인다) */
+export function nodeIssues(s: Scenario): { verdict: Verdict; reasons: string[] } | undefined {
+  const reasons: string[] = [];
+  let verdict: Verdict | undefined;
+  const hit = (v: Verdict, why: string) => { reasons.push(why); if (!verdict || VERDICT_RANK[v] > VERDICT_RANK[verdict]) verdict = v; };
   for (const [k, name] of [['normal', '평소 피크'], ['event', '이벤트 피크']] as const) {
-    const u = s[k].utilization;
-    if (typeof u === 'number' && u > 1) {
-      return { itemId: '', verdict: 'fail', reasons: [`${name}에서 사용률 ${Math.round(u * 100)}% — 늘릴 수 있는 대수를 다 써도 받지 못합니다 (100%를 넘으면 요청이 쌓여 응답이 끝없이 늦어집니다)`] };
+    const x = s[k], soft: Verdict = k === 'normal' ? 'fail' : 'conditional';
+    const u = num(x.utilization), lag = num(x.queue_lag_s), max = num(x.max_lag_s), run = num(x.batch_run_s), win = num(x.batch_window_s);
+    if (u !== undefined && u > 1) hit('fail', `${name}에서 사용률 ${Math.round(u * 100)}% — 늘릴 수 있는 대수를 다 써도 받지 못합니다 (100%를 넘으면 요청이 쌓여 응답이 끝없이 늦어집니다)`);
+    if (lag !== undefined && max !== undefined && lag > max) {
+      hit(soft, Number.isFinite(lag) ? `${name}에 큐 지연이 최대 ${secs(lag)}로 허용 ${secs(max)}를 넘습니다 (소비자 처리량이 도착을 따라가지 못하는 시간대가 있음)`
+        : `${name}에 소비자가 하루 도착량을 따라잡지 못해 큐 적체가 끝없이 늘어납니다`);
     }
+    if (run !== undefined && win !== undefined && run > win) hit(soft, `${name}에 배치 1회 실행이 ${secs(run)}로 실행 창 ${secs(win)} 안에 끝나지 않습니다`);
+    if (verdict === 'fail') break;
   }
-  return undefined;
+  return verdict && { verdict, reasons: [...new Set(reasons)] };
 }
 
 export function judgeNode(node: ProjectNode, catalog: Map<string, CatalogItem>, computed?: Scenario): NodeJudgement {
@@ -91,9 +102,11 @@ export function judgeNode(node: ProjectNode, catalog: Map<string, CatalogItem>, 
   const items = ids.map((id) => {
     const item = catalog.get(id);
     if (!item) throw new Error(`${node.id}: 없는 카탈로그 항목 ${id}`);
-    // 넘친 이유를 맨 앞에 두고, 항목 조건에 걸린 이유(연결 한도 등)도 같이 남긴다
-    const base = judgeItem(item, node, s), over = overloaded(id === node.primary ? s : undefined);
-    const j = over ? { ...base, verdict: over.verdict, reasons: [...over.reasons, ...(base.verdict === 'ok' ? [] : base.reasons)] } : base;
+    // 노드 문제(넘침·큐 지연·배치 창)를 주 항목에 걸고 이유를 맨 앞에 둔다. 항목 조건에 걸린 이유(연결 한도 등)도 같이 남긴다
+    const base = judgeItem(item, node, s), issue = id === node.primary ? nodeIssues(s) : undefined;
+    const j = issue && VERDICT_RANK[issue.verdict] >= VERDICT_RANK[base.verdict]
+      ? { ...base, verdict: issue.verdict, reasons: [...issue.reasons, ...(base.verdict === 'ok' ? [] : base.reasons)] }
+      : issue ? { ...base, reasons: [...base.reasons, ...issue.reasons] } : base;
     // 됨이 아니면 같은 노드·같은 변수로 대안을 판정해, 안 됨이 아닌 것만 좋은 순서로 남긴다
     const alternatives = j.verdict === 'ok' ? [] : item.alternatives
       .map((a) => ({ id: a.id, note: a.note, verdict: judgeItem(catalog.get(a.id)!, node, s).verdict }))

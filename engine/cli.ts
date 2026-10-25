@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { analyze } from './analyze';
 import { loadCatalog, loadLaws, loadPrices, loadProject } from './io';
 import { VERDICT_NAMES, type Metric } from './model';
+import { flowLine } from './pipeline';
 import { lawLine } from './regulation';
 import { STALE_DAYS } from './cost';
 
@@ -62,6 +63,9 @@ try {
     console.log(`  → 첫 병목: ${nameOf(b.nodeId)} (${b.limitUsers.value === 0 ? '지금 구조에서 이미 안 됨' : `활성 사용자 ${fmt(b.limitUsers.value)}명에서 안 됨`})`);
   }
   if (a.spof.length) console.log(`  → 단일 장애점: ${a.spof.map(nameOf).join(', ')}`);
+
+  if (a.pipeline.length) console.log('\n## 데이터 파이프라인 (평소 / 이벤트)');
+  for (const f of a.pipeline) console.log(`  ${flowLine(f, nameOf)}`);
 
   if (a.paths.length) console.log('\n## 동기 경로 (12·13절)');
   for (const path of a.paths) {
