@@ -150,6 +150,44 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     nodes[n.id] = na;
   }
 
+  // 데이터 파이프라인: 큐 적체·지연, 배치 1회 실행. 배수 f에서는 대수를 계산하는 노드만 그 부하로 다시 센다
+  const eventFactor = t && t.peakRps.value > 0 ? t.peakRpsEvent.value / t.peakRps.value : 1;
+  const instAt = (f: number) => (id: string, s: 'normal' | 'event') => {
+    if (f === 1) return nodes[id].instances?.[s].value;
+    const c = p.nodes.find((x) => x.id === id)!, cl = loads?.get(id), per = perOf.get(id)!;
+    return cl && per.rps && enabled(p.deploy, 'scale') ? sizeAt(c, per.rps.value, per.max, cl.rps[s] * f, u, primaryShape(c, d.catalog, cl)).N : undefined;
+  };
+  const flowCache = new Map<number, PipelineFlow[]>();
+  const flowsAt = (f: number) => {
+    if (!flowCache.has(f)) flowCache.set(f, loads && shape ? pipelineFlows(p, loads, shape, eventFactor, instAt(f), f) : []);
+    return flowCache.get(f)!;
+  };
+  const pipeline = flowsAt(1);
+  /** 자동 확장 소비자의 0~23시 대수 (큐를 여럿 받으면 시간마다 가장 많은 것). 배수 f에서 다시 계산한다 */
+  const autoHourly = (id: string, f: number, s: 'normal' | 'event') => {
+    const hs = flowsAt(f).filter((x) => x.to === id && x.hourly).map((x) => x.hourly![s]);
+    return hs.length ? hs[0].map((_, h) => Math.max(...hs.map((x) => x[h]))) : undefined;
+  };
+  for (const n of p.nodes) {
+    const hn = autoHourly(n.id, 1, 'normal'), he = autoHourly(n.id, 1, 'event');
+    if (!hn || !he || nodes[n.id].instances) continue;
+    const how = '시간대마다 ceil(도착 × 처리 초 / (대당 동시 처리 × 목표 사용률)), 최소·최대 대수(파티션 수)로 자름 — 이 중 가장 많은 시간';
+    nodes[n.id].instances = { normal: m(Math.max(...hn), '대', how, { 최소: Math.min(...hn) }), event: m(Math.max(...he), '대', how, { 최소: Math.min(...he) }) };
+  }
+  /** 받는 노드의 파이프라인 판정 변수: 큐 지연·허용 지연, 배치 실행·실행 창 (여럿이면 가장 나쁜 것) */
+  const pipeVars = (flows: PipelineFlow[], id: string, s: 'normal' | 'event'): Vars => {
+    const q = flows.filter((x) => x.to === id && x.kind === 'queue' && x.lag), b = flows.filter((x) => x.to === id && x.kind === 'batch' && x.run);
+    return {
+      ...(q.length && { queue_lag_s: Math.max(...q.map((x) => x.lag![s].value)), max_lag_s: Math.min(...q.map((x) => x.limit)) }),
+      ...(b.length && { batch_run_s: Math.max(...b.map((x) => x.run![s].value)), batch_window_s: Math.min(...b.map((x) => x.limit)) }),
+    };
+  };
+  // 신선도가 필요한 항목(마이크로 배치·Flink)은 허용 지연을 요구 신선도로 쓴다
+  const freshness = (id: string): Vars => {
+    const lim = pipeline.filter((x) => x.from === id || x.to === id).map((x) => x.limit);
+    return lim.length ? { required_freshness_s: Math.min(...lim) } : {};
+  };
+
   // 경로별 p99·가용성, 단일 장애점
   // 로컬 exe처럼 서버 가용성을 따지지 않는 방식이면 경로·단일 장애점도 만들지 않는다
   const paths = enabled(p.deploy, 'availability') ? syncPaths(p) : [];
@@ -172,9 +210,9 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     // 이중화(replicas > 1)는 부하와 무관하게 늘 떠 있어야 하는 대수다. 1이면 0대까지 줄어드는 워커를 막지 않도록 하한으로 쓰지 않는다
     const floor = n.replicas > 1 ? n.replicas : 0;
     const db = primaryShape(n, d.catalog, load);
-    const hourly = load && per.rps && shape
+    const hourly = autoHourly(n.id, factor, 'normal') ?? (load && per.rps && shape
       ? shape.map((s) => sizeAt(n, per.rps!.value, per.max, load.rps.normal * factor * s, u, db).N)
-      : Array<number>(24).fill(n.min_instances);
+      : Array<number>(24).fill(n.min_instances));
     return hourly.map((x) => Math.max(x, floor));
   };
   const tablesAt = (factor: number) => tableSizes(p, t, d.catalog, factor);
@@ -199,7 +237,8 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     const count = (f: number, s: 'normal' | 'event') => {
       const parts = callers.map((c) => {
         const cl = loads?.get(c.id), per = perOf.get(c.id)!;
-        const N = cl && per.rps && enabled(p.deploy, 'scale')
+        const auto = autoHourly(c.id, f, s);
+        const N = auto ? Math.max(...auto) : cl && per.rps && enabled(p.deploy, 'scale')
           ? sizeAt(c, per.rps.value, per.max, cl.rps[s] * f, u, primaryShape(c, d.catalog, cl)).N
           : Math.max(1, c.replicas, c.min_instances);
         return N * (c.db_pool ?? DEFAULT_DB_POOL);
@@ -215,29 +254,6 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     };
     nodes[n.id].connections = { normal: at('normal'), event: at('event') };
   }
-
-  // 데이터 파이프라인: 큐 적체·지연, 배치 1회 실행. 배수 f에서는 대수를 계산하는 노드만 그 부하로 다시 센다
-  const eventFactor = t && t.peakRps.value > 0 ? t.peakRpsEvent.value / t.peakRps.value : 1;
-  const instAt = (f: number) => (id: string, s: 'normal' | 'event') => {
-    if (f === 1) return nodes[id].instances?.[s].value;
-    const c = p.nodes.find((x) => x.id === id)!, cl = loads?.get(id), per = perOf.get(id)!;
-    return cl && per.rps && enabled(p.deploy, 'scale') ? sizeAt(c, per.rps.value, per.max, cl.rps[s] * f, u, primaryShape(c, d.catalog, cl)).N : undefined;
-  };
-  const flowsAt = (f: number) => (loads && shape ? pipelineFlows(p, loads, shape, eventFactor, instAt(f), f) : []);
-  const pipeline = flowsAt(1);
-  /** 받는 노드의 파이프라인 판정 변수: 큐 지연·허용 지연, 배치 실행·실행 창 (여럿이면 가장 나쁜 것) */
-  const pipeVars = (flows: PipelineFlow[], id: string, s: 'normal' | 'event'): Vars => {
-    const q = flows.filter((x) => x.to === id && x.kind === 'queue' && x.lag), b = flows.filter((x) => x.to === id && x.kind === 'batch' && x.run);
-    return {
-      ...(q.length && { queue_lag_s: Math.max(...q.map((x) => x.lag![s].value)), max_lag_s: Math.min(...q.map((x) => x.limit)) }),
-      ...(b.length && { batch_run_s: Math.max(...b.map((x) => x.run![s].value)), batch_window_s: Math.min(...b.map((x) => x.limit)) }),
-    };
-  };
-  // 신선도가 필요한 항목(마이크로 배치·Flink)은 허용 지연을 요구 신선도로 쓴다
-  const freshness = (id: string): Vars => {
-    const lim = pipeline.filter((x) => x.from === id || x.to === id).map((x) => x.limit);
-    return lim.length ? { required_freshness_s: Math.min(...lim) } : {};
-  };
 
   // 장애 시나리오: 존·리전 장애, 백업에서 되살리기 (서버 가용성을 따지지 않는 방식이면 만들지 않는다)
   const dataGb = (id: string) => {

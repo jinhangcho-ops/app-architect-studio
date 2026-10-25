@@ -9,7 +9,9 @@ const root = (p: string) => fileURLToPath(new URL(`../../${p}`, import.meta.url)
 const catalog = loadCatalog(root('data/catalog'));
 const d = { catalog: catalog.byId, rules: catalog.rules, prices: loadPrices(root('data/prices')), laws: loadLaws(root('data/laws')) };
 // global-commerce: api → Kafka(N-04, 파티션 24) → 정산 워커(N-05, 6대 × 4, 40ms) / 레이크하우스(N-10, 60분마다 배치)
-const base = loadProject(root('examples/global-commerce.json'), catalog.items);
+// 자동 확장을 끈 고정 6대 워커로 본다 (자동 확장은 따로 시험)
+const gc = loadProject(root('examples/global-commerce.json'), catalog.items);
+const base: Project = { ...gc, nodes: gc.nodes.map((n) => (n.id === 'N-05' ? { ...n, autoscale: undefined, min_instances: 6 } : n)) };
 const run = (p: Project) => analyze(p, d, '2026-10-25');
 const node = (p: Project, id: string, patch: Partial<Project['nodes'][number]>): Project => ({ ...p, nodes: p.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)) });
 const flow = (a: ReturnType<typeof run>, to: string) => a.pipeline.find((f) => f.to === to)!;

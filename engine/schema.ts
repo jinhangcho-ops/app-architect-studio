@@ -362,6 +362,8 @@ export const Project = z.object({
     max_lag_s: z.number().positive().optional(),
     /** 정해진 주기로 도는 배치: every_min분마다 그동안 들어온 양을 한 번에 처리하고, window_min분(없으면 주기) 안에 끝나야 한다 */
     batch: z.object({ every_min: z.number().positive(), window_min: z.number().positive().optional() }).optional(),
+    /** 큐 소비자 자동 확장(KEDA 같은 것): 시간대 도착에 맞춰 대수를 정한다. 최소 = min_instances(0이면 한가할 때 끔), max = 최대 대수, delay_s = 늘리는 데 걸리는 시간 */
+    autoscale: z.object({ max: z.number().int().positive().optional(), delay_s: z.number().nonnegative().optional() }).optional(),
     /** 서버를 나눠 둔 가용 영역(존) 수. 없으면 1 (존 하나가 멈추면 이 노드도 멈춤) */
     zones: z.number().int().positive().optional(),
     /** 다른 리전 복사본. active = 두 리전이 같이 받음, standby = 대기 중인 복사본으로 넘김, backup = 다른 리전에 둔 백업에서 되살림.

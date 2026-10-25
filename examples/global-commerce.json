@@ -30,7 +30,7 @@
     { "id": "N-09", "name": "세금·환율 정책 엔진 (N-09)", "layer": "backend", "primary": "spring_boot",
       "extras": ["grpc"], "replicas": 2, "zones": 2, "perf": { "service_ms": 5, "workers": 16 } },
     { "id": "N-04", "name": "Kafka 이벤트 브로커 (N-04)", "layer": "queue", "primary": "kafka", "replicas": 3, "zones": 3, "partitions": 24, "max_lag_s": 60 },
-    { "id": "N-05", "name": "멀티마켓 정산 워커 (N-05)", "layer": "batch", "primary": "on_demand_worker", "min_instances": 6, "zones": 3, "perf": { "service_ms": 40, "workers": 4 },
+    { "id": "N-05", "name": "멀티마켓 정산 워커 (N-05)", "layer": "batch", "primary": "on_demand_worker", "min_instances": 1, "autoscale": {}, "zones": 3, "perf": { "service_ms": 40, "workers": 4 },
       "vars": { "normal": { "cold_start_s": 20, "max_start_delay_s": 300 }, "event": { "cold_start_s": 20, "max_start_delay_s": 300 } } },
     { "id": "N-06", "name": "정산·원장 DB (N-06)", "layer": "db", "primary": "postgresql",
       "extras": ["range_partitioning", "read_replica", "uuidv7_keys"], "replicas": 2, "zones": 2, "region": "aws:ap-northeast-1",
