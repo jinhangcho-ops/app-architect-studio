@@ -6,6 +6,7 @@
 //     데이터가 늦어지는 최대 시간(신선도) = 주기 + 1회 실행.
 // 자동 확장 소비자(autoscale): 시간대마다 대수 = ceil(그 시간 도착 × 처리 초 / (대당 동시 처리 × 목표 사용률)), 최소 대수 ~ 최대 대수(없으면 파티션 수 / 대당 동시 처리)로 자른다.
 //     도착 곡선은 페르소나·하루 피크 시뮬레이션에서 오므로 사용자 패턴이 바뀌면 대수도 바뀐다. 대수가 느는 시간에는 처음 delay_s 동안 이전 대수로 처리한다.
+//     shortcut: 대수는 시간 칸마다 한 번 바꾸고, 줄일 때 기다리는 시간(KEDA cooldownPeriod)은 세지 않는다. 몇 분 사이 급증의 지연·비용이 필요해지면 dayCurve(5분 칸)로 대수를 정한다
 // shortcut: 1시간 칸으로 돌고, 이벤트 날은 하루 내내 평소 × 이벤트 배수로 본다. 몇 분짜리 몰림이 만드는 적체는 작게(이벤트는 크게) 나온다. 분 단위가 필요해지면 dayCurve(5분 칸)로 돈다
 import { edgeFlow, type NodeLoad } from './load';
 import { metric as m, type Metric } from './model';
@@ -46,17 +47,16 @@ export function backlogDay(lambda: number[], mu: number | number[], serviceS: nu
   const mus = typeof mu === 'number' ? lambda.map(() => mu) : mu;
   if (sum(lambda) >= sum(mus)) return { backlog: Infinity, lag: Infinity };
   let b = 0, max = 0, lag = 0;
-  const step = (l: number, rate: number, s: number, wait: number) => {
-    b = Math.max(0, b + (l - rate) * s);
-    return { b, lag: wait + (b > 0 ? b / rate : 0) };
-  };
   for (let day = 0; day < 2; day++) {
     lambda.forEach((l, h) => {
       const prev = mus[(h + mus.length - 1) % mus.length], cur = mus[h];
       const d = cur > prev ? Math.min(delayS, 3600) : 0;
-      // 이전 처리량이 0이면(0대) 그동안 들어온 메시지는 새 소비자가 뜰 때까지 기다린다
-      const parts = [d && step(l, prev, d, 0), step(l, cur, 3600 - d, prev === 0 && d && l > 0 ? d : 0)];
-      if (day) for (const x of parts) if (x) { max = Math.max(max, x.b); lag = Math.max(lag, x.lag); }
+      // 늘리는 동안(d초)은 이전 처리량. 그 끝에 쌓인 적체는 새 처리량으로 빠진다. 이전이 0대면 처음 온 메시지는 d초를 기다린다
+      b = Math.max(0, b + (l - prev) * d);
+      const afterScale = { b, lag: Math.max(prev === 0 && d && l > 0 ? d : 0, cur > 0 ? b / cur : 0) };
+      b = Math.max(0, b + (l - cur) * (3600 - d));
+      const end = { b, lag: b > 0 ? b / cur : 0 };
+      if (day) for (const x of [afterScale, end]) { max = Math.max(max, x.b); lag = Math.max(lag, x.lag); }
     });
   }
   return { backlog: max, lag: lag + serviceS };
@@ -122,6 +122,7 @@ export function pipelineFlows(p: Project, loads: Map<string, NodeLoad>, shape: n
 
 /** 초 → 읽기 쉬운 시간 (끝없이 늘면 "끝없음") */
 export const secs = (x: number) => (!Number.isFinite(x) ? '끝없음' : x < 1 ? `${Math.round(x * 1000)}ms` : x < 120 ? `${Math.round(x)}초` : x < 7200 ? `${Math.round(x / 60)}분` : `${(x / 3600).toFixed(1)}시간`);
+const range = (xs: number[]) => (Math.min(...xs) === Math.max(...xs) ? `${xs[0]}` : `${Math.min(...xs)}~${Math.max(...xs)}`);
 const rate = (x: number) => (x >= 100 ? Math.round(x).toLocaleString('en-US') : x.toFixed(1));
 
 /** 파이프라인 연결 한 줄 (CLI·화면·설계서): 평소 / 이벤트 */
@@ -129,7 +130,8 @@ export function flowLine(f: PipelineFlow, nameOf: (id: string) => string): strin
   const head = `${nameOf(f.from)} → ${nameOf(f.to)} (${f.kind === 'queue' ? '큐' : '배치'}): 피크 도착 ${rate(f.arrival.normal)} / ${rate(f.arrival.event)}건/초`;
   if (!f.capacity) return `${head} · 처리 시간(평균 처리 ms·대당 동시 처리)을 넣으면 ${f.kind === 'queue' ? '지연' : '실행 시간'}을 계산해요`;
   if (f.kind === 'queue') {
-    return `${head} · 처리량 ${rate(f.capacity.value)}건/초 · 최대 지연 ${secs(f.lag!.normal.value)} / ${secs(f.lag!.event.value)} (허용 ${secs(f.limit)}) · 최대 적체 ${Number.isFinite(f.backlog!.event.value) ? Math.round(f.backlog!.event.value).toLocaleString('en-US') + '건' : '끝없음'}`;
+    const auto = f.hourly ? ` · 소비자 ${range(f.hourly.normal)} / ${range(f.hourly.event)}대 (시간대별 자동 확장)` : '';
+    return `${head}${auto} · 처리량 ${rate(f.capacity.value)}건/초 · 최대 지연 ${secs(f.lag!.normal.value)} / ${secs(f.lag!.event.value)} (허용 ${secs(f.limit)}) · 최대 적체 ${Number.isFinite(f.backlog!.event.value) ? Math.round(f.backlog!.event.value).toLocaleString('en-US') + '건' : '끝없음'}`;
   }
   return `${head} · 처리량 ${rate(f.capacity.value)}건/초 · 1회 실행 ${secs(f.run!.normal.value)} / ${secs(f.run!.event.value)} (실행 창 ${secs(f.limit)}) · 반영까지 최대 ${secs(f.lag!.event.value)}`;
 }

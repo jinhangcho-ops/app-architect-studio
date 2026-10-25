@@ -2,7 +2,7 @@ import { Select } from './Select';
 import { useState } from 'react';
 import { DEFAULT_DB_POOL, type Analysis } from '../../engine/analyze';
 import { DEFAULT_HIT_RATIO } from '../../engine/load';
-import { DEFAULT_MAX_LAG_S, flowLine } from '../../engine/pipeline';
+import { DEFAULT_MAX_LAG_S, DEFAULT_SCALE_DELAY_S, flowLine } from '../../engine/pipeline';
 import { failureLines } from '../../engine/failure';
 import { judgeItem } from '../../engine/judge';
 import { LAYERS, LAYER_NAMES, VERDICT_NAMES, type Layer } from '../../engine/model';
@@ -142,7 +142,7 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
         <NumField label="vCPU" value={n.spec?.vcpu} onChange={(v) => upd({ spec: { ...n.spec, vcpu: v } })} />
         <NumField label="메모리(GB)" value={n.spec?.memGb} onChange={(v) => upd({ spec: { ...n.spec, memGb: v } })} />
         <NumField label="이중화 대수" value={n.replicas} step={1} onChange={(v) => upd({ replicas: v ?? 1 })} />
-        <NumField label="최소 대수" value={n.min_instances} step={1} onChange={(v) => upd({ min_instances: v ?? 1 })} />
+        <NumField label="최소 대수" value={n.min_instances} step={1} onChange={(v) => upd({ min_instances: v === undefined || v < 0 ? 1 : Math.round(v) })} />
         <NumField label="1대 가용성" value={n.availability} step={0.0001} hint="비우면 프로젝트 기본값" onChange={(v) => upd({ availability: v })} />
         <NumField label="평균 처리(ms)" value={n.perf?.service_ms} onChange={(v) => upd({ perf: v ? { workers: n.perf?.workers ?? 8, ...n.perf, service_ms: v } : undefined })} />
         <NumField label="대당 동시 처리" value={n.perf?.workers} step={1} onChange={(v) => n.perf && upd({ perf: { ...n.perf, workers: v ?? 1 } })} />
@@ -150,6 +150,15 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
         {n.layer === 'queue' && <>
           <NumField label="파티션 수" value={n.partitions} step={1} hint="Kafka·Redpanda처럼 파티션으로 나누는 큐: 소비자 병렬 수가 이 수를 넘지 못해요. 비우면 제한 없음" onChange={(v) => upd({ partitions: v && v > 0 ? Math.round(v) : undefined })} />
           <NumField label="허용 지연(초)" value={n.max_lag_s} step={10} hint={`메시지가 들어와 처리될 때까지 허용하는 시간. 넘으면 평소엔 안 됨, 이벤트 때만이면 조건부. 비우면 ${DEFAULT_MAX_LAG_S}초 (예시값)`} onChange={(v) => upd({ max_lag_s: v && v > 0 ? v : undefined })} />
+        </>}
+        {project.edges.some((e) => e.to === n.id && project.nodes.find((x) => x.id === e.from)?.layer === 'queue') && <>
+          <Row label="자동 확장" hint="큐 소비자 대수를 시간대 도착(페르소나·하루 피크 시뮬레이션)에 맞춰 정해요: ceil(도착 × 처리 시간 / (대당 동시 처리 × 목표 사용률)). 최소는 '최소 대수'(0이면 한가할 때 끔)">
+            <input type="checkbox" checked={!!n.autoscale} onChange={(e) => upd({ autoscale: e.target.checked ? {} : undefined })} />
+          </Row>
+          {n.autoscale && <>
+            <NumField label="최대 대수" value={n.autoscale.max} step={1} hint="비우면 파티션 수 / 대당 동시 처리 (파티션이 없으면 제한 없음)" onChange={(v) => upd({ autoscale: { ...n.autoscale, max: v && v > 0 ? Math.round(v) : undefined } })} />
+            <NumField label="늘리는 시간(초)" value={n.autoscale.delay_s} step={10} hint={`적체를 보고 새 소비자가 처리를 시작하기까지. 이 동안은 이전 대수로 받아 적체가 생겨요. 비우면 ${DEFAULT_SCALE_DELAY_S}초 (예시값)`} onChange={(v) => upd({ autoscale: { ...n.autoscale, delay_s: v === undefined || v < 0 ? undefined : v } })} />
+          </>}
         </>}
         {(n.layer === 'batch' || n.layer === 'analytics' || n.batch) && <>
           <NumField label="배치 주기(분)" value={n.batch?.every_min} step={5} hint="정해진 주기마다 그동안 들어온 양을 한 번에 처리해요. 비우면 들어오는 대로 처리 (큐 소비자)" onChange={(v) => upd({ batch: v && v > 0 ? { ...n.batch, every_min: v } : undefined })} />

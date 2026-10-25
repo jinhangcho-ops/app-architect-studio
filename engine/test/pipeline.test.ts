@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { analyze } from '../analyze';
 import { loadCatalog, loadLaws, loadPrices, loadProject } from '../io';
-import { backlogDay } from '../pipeline';
+import { backlogDay, DEFAULT_SCALE_DELAY_S } from '../pipeline';
 import type { Project } from '../schema';
 
 const root = (p: string) => fileURLToPath(new URL(`../../${p}`, import.meta.url));
@@ -82,5 +82,41 @@ describe('배치', () => {
     const j = primaryOf(run(node(base, 'N-10', { batch: { every_min: 60, window_min: 1 } })), 'N-10');
     expect(j.verdict).toBe('fail');
     expect(j.reasons[0]).toContain('실행 창');
+  });
+});
+
+describe('소비자 자동 확장', () => {
+  const auto = run(gc), af = flow(auto, 'N-05');
+  it('시간대마다 대수 = ceil(도착 × 처리 초 / (대당 동시 처리 × 목표 사용률)), 최소·파티션 상한으로 자름', () => {
+    const shape = auto.traffic!.hourlyRps.map((x) => x / auto.traffic!.peakRps.value);
+    const want = shape.map((x) => Math.min(Math.ceil(24 / 4), Math.max(1, Math.ceil((af.arrival.normal * x * 0.04) / (4 * gc.target_utilization)))));
+    expect(af.hourly!.normal).toEqual(want);
+    expect(Math.max(...af.hourly!.event)).toBe(6);
+    expect(Math.min(...af.hourly!.normal)).toBeLessThan(Math.max(...af.hourly!.normal));
+  });
+
+  it('사용자 패턴(이벤트 배수)이 바뀌면 대수도 바뀜', () => {
+    const calm = run({ ...gc, scale: { ...gc.scale!, event_multiplier: 1 } });
+    expect(Math.max(...flow(calm, 'N-05').hourly!.event)).toBeLessThan(6);
+  });
+
+  it('비용은 시간대별 대수로, 고정 6대보다 쌈', () => {
+    expect(auto.cost!.parts['N-05'].value).toBeLessThan(run(base).cost!.parts['N-05'].value);
+    const qty = Object.entries(auto.cost!.parts['N-05'].inputs).find(([k]) => k.endsWith('수량'))![1];
+    expect(qty).toBe(af.hourly!.normal.reduce((a, x) => a + x, 0) * 30);
+    expect(auto.nodes['N-05'].instances!.event.value).toBe(6);
+  });
+
+  it('대수를 늘리는 동안 이전 처리량으로 받아 적체가 생김: 0대에서 늘면 뜨는 시간만큼 기다림', () => {
+    // 0시는 0건, 1시는 10건/초. 처리량 0 → 20건/초, 늘리는 데 60초 → 600건 쌓이고, 처음 온 메시지는 60초 기다림 (뒤에 온 것은 600 / 20 = 30초)
+    const lambda = [0, 10, ...Array(22).fill(0)], mu = [0, 20, ...Array(22).fill(0)];
+    const r = backlogDay(lambda, mu, 0, DEFAULT_SCALE_DELAY_S);
+    expect(r.backlog).toBeCloseTo(600);
+    expect(r.lag).toBeCloseTo(60);
+    // 이미 5건/초로 돌던 중에 늘리면 60초 동안 (10 − 5) × 60 = 300건, 지연 300 / 20 = 15초
+    const warm = backlogDay(lambda, [5, 20, ...Array(22).fill(5)], 0, DEFAULT_SCALE_DELAY_S);
+    expect(warm.backlog).toBeCloseTo(300);
+    expect(warm.lag).toBeCloseTo(15);
+    expect(backlogDay(lambda, mu, 0, 0).backlog).toBe(0);
   });
 });
