@@ -3,6 +3,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import type { Analysis } from '../../engine/analyze';
 import { MODE_NAMES, SCOPE_NAMES } from '../../engine/deploy';
+import { regionLines } from '../../engine/failure';
 import { lawLine } from '../../engine/regulation';
 import { dayLabel } from '../../engine/industry';
 import { LAYER_NAMES, VERDICT_NAMES } from '../../engine/model';
@@ -153,6 +154,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
             <H n={9}>가용성 · 성장 타임라인</H>
             <ul>{a.paths.map((pa) => <li key={pa.nodes.join()}>{pa.nodes.map(name).join(' → ')}: 가용성 {fmtMetric(pa.availability)}, 월 중단 {fmtMetric(pa.downtime)}</li>)}</ul>
             {a.spof.length > 0 && <p>단일 장애점: {a.spof.map(name).join(', ')}</p>}
+            {a.failure && a.failure.regions.length > 0 && <ul>{regionLines(a.failure, name).map((l) => <li key={l}>{l}</li>)}</ul>}
             {a.growth && <ul>
               {a.growth.milestones.map((ms) => <li key={ms.nodeId}>{name(ms.nodeId)}: {milestoneText(ms)}</li>)}
               {a.growth.tables.map((ms) => <li key={ms.nodeId}>{ms.nodeId}: {ms.month === undefined ? '서버 메모리에 닿지 않음' : `${ms.month}개월째 서버 메모리를 넘음, ${ms.startMonth}개월째 파티션 착수`}</li>)}

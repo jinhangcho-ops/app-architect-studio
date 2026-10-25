@@ -1,4 +1,5 @@
 import type { Analysis } from '../../engine/analyze';
+import { regionLines } from '../../engine/failure';
 import type { Traffic } from '../../engine/traffic';
 import type { Metric } from '../../engine/model';
 import { catalog } from './data';
@@ -111,6 +112,7 @@ ${howMetric(a.storage.personaGb)}`}>
           </div>
         ))}
         {a.spof.length > 0 && <p className="warn">단일 장애점: {a.spof.map(name).join(', ')}</p>}
+        {a.failure && regionLines(a.failure, name).map((l) => <p key={l} className="muted">{l}</p>)}
       </Section>
 
       <Section title="월 비용">

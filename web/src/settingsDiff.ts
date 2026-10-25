@@ -18,6 +18,7 @@ export const SETTINGS: { id: string; title: string; fields: (p: Project) => Reco
   { id: 's-ex', title: '데이터 주고받기', fields: (p) => ({ ...flat(p.exchange), has: !!p.exchange }) },
   { id: 's-growth', title: '성장', fields: (p) => ({ ...flat(p.growth), ...flat(p.growth?.inflow, 'in.'), has: !!p.growth }) },
   { id: 's-cost', title: '비용 기준', fields: (p) => flat(p.cost) },
+  { id: 's-rec', title: '장애 목표', fields: (p) => ({ ...flat(p.recovery), has: !!p.recovery }) },
 ];
 
 /** 칸마다 불러온 값과 다른 항목 수 */
@@ -33,5 +34,5 @@ export function changedCounts(now: Project, base: Project): Record<string, numbe
 export const resetSettings = (now: Project, base: Project): Project => ({
   ...now,
   name: base.name, deploy: base.deploy, scale: base.scale, target_utilization: base.target_utilization,
-  personas: base.personas, persona_mix: base.persona_mix, actions: base.actions, exchange: base.exchange, growth: base.growth, cost: base.cost,
+  personas: base.personas, persona_mix: base.persona_mix, actions: base.actions, exchange: base.exchange, growth: base.growth, cost: base.cost, recovery: base.recovery,
 });

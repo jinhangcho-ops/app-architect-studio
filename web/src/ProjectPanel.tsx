@@ -179,6 +179,21 @@ export function ProjectPanel() {
         ))}
         <p className="muted">노드 비용은 주 항목의 과금 방식(대수×시간·사용량·월 정액)과 노드 리전으로 가격표에서 찾습니다.</p>
       </Section>
+
+      <Section id="s-rec" title="장애 목표" desc="어떤 장애까지 견뎌야 하는지, 얼마 안에 되살리고 데이터를 얼마나 잃어도 되는지 정해요. 정하면 노드 판정에 넣어요.">
+        <Row label="견딜 장애" hint="존 = 같은 리전 안의 데이터센터 하나, 리전 = 지역 전체">
+          <Select value={p.recovery?.survive ?? ''} onChange={(e) => set({ recovery: e.target.value ? { ...p.recovery, survive: e.target.value as 'none' | 'zone' | 'region' } : undefined })}>
+            <option value="">(목표 없음 — 결과만 보기)</option>
+            <option value="none">백업만 (존 장애도 멈춰도 됨)</option>
+            <option value="zone">존 하나 장애</option>
+            <option value="region">리전 하나 장애</option>
+          </Select>
+        </Row>
+        {p.recovery && <>
+          <NumField label="목표 RTO(분)" value={p.recovery.rto_min} step={5} hint="장애가 나서 다시 동작하기까지 허용하는 시간. 넘기는 시간·백업에서 되살리는 시간과 비교해요" onChange={(v) => set({ recovery: { ...p.recovery!, rto_min: v && v > 0 ? v : undefined } })} />
+          <NumField label="목표 RPO(분)" value={p.recovery.rpo_min} step={5} hint="장애 때 잃어도 되는 데이터의 시간. 백업 주기·시점 복구·리전 복제 지연과 비교해요" onChange={(v) => set({ recovery: { ...p.recovery!, rpo_min: v === undefined || v < 0 ? undefined : v } })} />
+        </>}
+      </Section>
     </div>
   );
 }

@@ -362,6 +362,16 @@ export const Project = z.object({
     max_lag_s: z.number().positive().optional(),
     /** 정해진 주기로 도는 배치: every_min분마다 그동안 들어온 양을 한 번에 처리하고, window_min분(없으면 주기) 안에 끝나야 한다 */
     batch: z.object({ every_min: z.number().positive(), window_min: z.number().positive().optional() }).optional(),
+    /** 서버를 나눠 둔 가용 영역(존) 수. 없으면 1 (존 하나가 멈추면 이 노드도 멈춤) */
+    zones: z.number().int().positive().optional(),
+    /** 다른 리전 복사본. active = 두 리전이 같이 받음, standby = 대기 중인 복사본으로 넘김, backup = 다른 리전에 둔 백업에서 되살림.
+     *  rto_s: 넘기는 데 걸리는 시간(실측), lag_s: 복제 지연(그만큼 데이터를 잃음) */
+    dr: z.object({
+      region: z.enum(REGIONS), mode: z.enum(['active', 'standby', 'backup']),
+      rto_s: z.number().positive().optional(), lag_s: z.number().nonnegative().optional(),
+    }).optional(),
+    /** 데이터 노드 백업: every_h시간마다, pitr = 시점 복구(로그를 계속 보관), restore_mb_s = 되살리는 속도 */
+    backup: z.object({ every_h: z.number().positive(), pitr: z.boolean().default(false), restore_mb_s: z.number().positive().optional() }).optional(),
     /** 13절 1대의 가용성. 없으면 project.default_availability */
     availability: z.number().min(0).max(1).optional(),
     /** 9절 가격표의 인스턴스 상품 id (시간당 과금 또는 월 정액) */
@@ -422,6 +432,12 @@ export const Project = z.object({
     min_availability: z.number().min(0).max(1).optional(),
     priorities: z.array(z.string()).default([]),
   }).default({ priorities: [] }),
+  /** 장애 목표: 견딜 장애(존·리전), 복구 목표 시간(RTO), 잃어도 되는 데이터 시간(RPO). 있을 때만 판정에 넣는다 */
+  recovery: z.object({
+    survive: z.enum(['none', 'zone', 'region']).default('none'),
+    rto_min: z.number().positive().optional(),
+    rpo_min: z.number().nonnegative().optional(),
+  }).optional(),
   /** 14절 월 성장률, 보는 기간, 교체 준비 기간 */
   exchange: Exchange.optional(),
   growth: z.object({

@@ -18,8 +18,8 @@ export function singlePointsOfFailure(p: Project, paths: string[][]): string[] {
   return p.nodes.filter((n) => onPath.has(n.id) && n.replicas === 1 && n.layer !== 'ui').map((n) => n.id);
 }
 
-/** 노드 하나가 멈추면 각 화면이 멈추는지(동기로 닿음), 반영이 늦어지는지(비동기를 거쳐 닿음). */
-export function impactOf(p: Project, failed: string): Record<string, 'stopped' | 'delayed'> {
+/** 노드들이 멈추면 각 화면이 멈추는지(멈춘 노드 하나에라도 동기로 닿음), 반영이 늦어지는지(비동기를 거쳐서만 닿음). */
+export function impactOf(p: Project, failed: string[]): Record<string, 'stopped' | 'delayed'> {
   const out: Record<string, 'stopped' | 'delayed'> = {};
   for (const ui of entryNodes(p)) {
     // 너비 우선으로 화면에서 닿는 노드마다 "동기로만 왔는지"를 기록한다
@@ -35,7 +35,8 @@ export function impactOf(p: Project, failed: string): Record<string, 'stopped' |
         }
       }
     }
-    if (best.has(failed)) out[ui.id] = best.get(failed) ? 'stopped' : 'delayed';
+    const hit = failed.filter((id) => best.has(id));
+    if (hit.length) out[ui.id] = hit.some((id) => best.get(id)) ? 'stopped' : 'delayed';
   }
   return out;
 }

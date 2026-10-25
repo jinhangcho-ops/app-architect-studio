@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { DEFAULT_DB_POOL, type Analysis } from '../../engine/analyze';
 import { DEFAULT_HIT_RATIO } from '../../engine/load';
 import { DEFAULT_MAX_LAG_S, flowLine } from '../../engine/pipeline';
+import { failureLines } from '../../engine/failure';
 import { judgeItem } from '../../engine/judge';
 import { LAYERS, LAYER_NAMES, VERDICT_NAMES, type Layer } from '../../engine/model';
 import { REGIONS, TABLE_LAYERS } from '../../engine/schema';
@@ -170,6 +171,38 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
           </Select>
         </Row>
       </Section>
+
+      {n.layer !== 'ui' && n.layer !== 'external' && n.region !== 'local' && (
+        <Section title="장애 대비">
+          <NumField label="존 수" value={n.zones} step={1} hint="서버를 나눠 둔 가용 영역 수. 1이면 존 하나가 멈출 때 이 노드도 멈춰요. 비우면 1" onChange={(v) => upd({ zones: v && v > 1 ? Math.round(v) : undefined })} />
+          <Row label="다른 리전 복사본" hint="같이 받기 = 두 리전이 늘 같이 받음(넘기기 1분), 대기 = 대기 복사본을 키워 받음(15분), 백업 = 다른 리전에 둔 백업에서 되살림 (모두 예시값)">
+            <Select value={n.dr?.mode ?? ''} onChange={(e) => upd({ dr: e.target.value ? { region: n.dr?.region ?? REGIONS.find((r) => r !== (n.region ?? project.cost.region))!, ...n.dr, mode: e.target.value as 'active' | 'standby' | 'backup' } : undefined })}>
+              <option value="">(없음)</option>
+              <option value="active">같이 받기 (active)</option>
+              <option value="standby">대기 (standby)</option>
+              <option value="backup">백업만</option>
+            </Select>
+          </Row>
+          {n.dr && <>
+            <Row label="복사본 리전">
+              <Select value={n.dr.region} onChange={(e) => upd({ dr: { ...n.dr!, region: e.target.value as typeof REGIONS[number] } })}>
+                {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+              </Select>
+            </Row>
+            <NumField label="넘기는 시간(초)" value={n.dr.rto_s} step={30} hint="복구 훈련에서 잰 값. 비우면 방식별 예시값" onChange={(v) => upd({ dr: { ...n.dr!, rto_s: v && v > 0 ? v : undefined } })} />
+          </>}
+          {(n.layer === 'db' || n.layer === 'analytics') && <>
+            <NumField label="백업 주기(시간)" value={n.backup?.every_h} step={1} hint="비우면 백업 없음 — 데이터가 망가지면 되살릴 수 없어요" onChange={(v) => upd({ backup: v && v > 0 ? { pitr: false, ...n.backup, every_h: v } : undefined })} />
+            {n.backup && <>
+              <Row label="시점 복구" hint="로그를 계속 보관해 장애 직전으로 되살림 (잃는 데이터 5분, 예시값)">
+                <input type="checkbox" checked={n.backup.pitr} onChange={(e) => upd({ backup: { ...n.backup!, pitr: e.target.checked } })} />
+              </Row>
+              <NumField label="되살리는 속도(MB/초)" value={n.backup.restore_mb_s} step={10} hint="복구 훈련에서 잰 값. 비우면 100 (예시값)" onChange={(v) => upd({ backup: { ...n.backup!, restore_mb_s: v && v > 0 ? v : undefined } })} />
+            </>}
+          </>}
+          {analysis?.failure && failureLines(analysis.failure, (x) => project.nodes.find((y) => y.id === x)?.name ?? x, id).map((l) => <p key={l} className="muted pipe-line">{l}</p>)}
+        </Section>
+      )}
 
       {n.layer === 'ui' && (
         <Section title="HTML 화면">

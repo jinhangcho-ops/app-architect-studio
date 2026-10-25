@@ -54,8 +54,8 @@ describe('관문: 13절 가용성 (1대 99.9%)', () => {
       nodes: [{ id: 'w', name: 'w', layer: 'ui' }, { id: 'q', name: 'q', layer: 'queue' }, { id: 'd', name: 'd', layer: 'db' }, { id: 'a', name: 'a', layer: 'backend' }],
       edges: [{ from: 'w', to: 'a' }, { from: 'a', to: 'q', sync: false }, { from: 'q', to: 'd' }],
     });
-    expect(impactOf(p, 'a')).toEqual({ w: 'stopped' });
-    expect(impactOf(p, 'd')).toEqual({ w: 'delayed' });
+    expect(impactOf(p, ['a'])).toEqual({ w: 'stopped' });
+    expect(impactOf(p, ['d'])).toEqual({ w: 'delayed' });
   });
 });
 

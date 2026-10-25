@@ -78,7 +78,9 @@ const num = (v: Value | undefined) => (typeof v === 'number' ? v : undefined);
 
 /** 항목 조건과 별개로 노드의 주 항목에 거는 문제: 사용률 100% 초과, 큐 지연이 허용을 넘음, 배치가 실행 창 안에 안 끝남.
  *  평소 피크에서 걸리면 안 됨, 이벤트 피크에서만 걸리면 조건부 (사용률 초과는 어느 쪽이든 안 됨: 늘릴 대수가 없어 요청이 끝없이 쌓인다) */
-export function nodeIssues(s: Scenario): { verdict: Verdict; reasons: string[] } | undefined {
+export const nodeIssues = (s: Scenario) => issues(s, false);
+
+function issues(s: Scenario, recovery: boolean): { verdict: Verdict; reasons: string[] } | undefined {
   const reasons: string[] = [];
   let verdict: Verdict | undefined;
   const hit = (v: Verdict, why: string) => { reasons.push(why); if (!verdict || VERDICT_RANK[v] > VERDICT_RANK[verdict]) verdict = v; };
@@ -93,7 +95,36 @@ export function nodeIssues(s: Scenario): { verdict: Verdict; reasons: string[] }
     if (run !== undefined && win !== undefined && run > win) hit(soft, `${name}에 배치 1회 실행이 ${secs(run)}로 실행 창 ${secs(win)} 안에 끝나지 않습니다`);
     if (verdict === 'fail') break;
   }
+  if (recovery) recoveryIssues(s, hit);
   return verdict && { verdict, reasons: [...new Set(reasons)] };
+}
+
+/** 장애 목표(recovery)를 넣었을 때만: 존·리전 장애에 멈춤(화면이 멈추면 안 됨, 반영만 늦으면 조건부), 존 장애 직후 넘침(조건부: 자동 확장이 채움),
+ *  복구 시간·잃는 데이터가 목표를 넘음(안 됨). 부하와 무관한 문제라 한계 사용자 찾기(nodeIssues)에는 넣지 않는다 */
+function recoveryIssues(s: Scenario, hit: (v: Verdict, why: string) => void) {
+  const x = s.normal, survive = x.survive;
+  if (survive === undefined) return;
+  const effect = x.node_stops ? '화면이 멈춥니다' : '반영이 늦어집니다';
+  if (survive !== 'none') {
+    if (x.zone_down === true) hit(x.node_stops ? 'fail' : 'conditional', `존 하나가 멈추면 이 노드가 멈추고 ${effect} (서버를 존 ${show(x.zones)}개에 둠 — 2개 이상에 나눠 두어야 함)`);
+    else {
+      const nu = num(x.zone_util), eu = num(s.event.zone_util);
+      const over = nu !== undefined && nu > 1 ? ['평소 피크', nu] as const : eu !== undefined && eu > 1 ? ['이벤트 피크', eu] as const : undefined;
+      if (over) hit('conditional', `${over[0]}에 존 하나가 멈추면 남은 서버 사용률이 ${Number.isFinite(over[1]) ? `${Math.round(over[1] * 100)}%` : '끝없음'} — 자동 확장이 남은 존에 대수를 채울 때까지 요청이 밀립니다`);
+    }
+  }
+  if (survive === 'region' && x.region_down === true) hit(x.node_stops ? 'fail' : 'conditional', `리전이 멈추면 다른 리전 복사본이 없어 이 노드가 멈추고 ${effect}`);
+  const rto = num(x.target_rto_s);
+  if (rto !== undefined) {
+    const zr = num(x.zone_rto_s), rr = num(x.region_rto_s), br = num(x.restore_rto_s);
+    if (survive !== 'none' && x.zone_down !== true && zr !== undefined && zr > rto) hit('fail', `존 장애 때 대기 서버로 넘기는 데 ${secs(zr)}로 목표 RTO ${secs(rto)}를 넘습니다`);
+    if (survive === 'region' && x.region_down !== true && rr !== undefined && rr > rto) hit('fail', `리전 장애 때 다른 리전 복사본으로 넘기는 데 ${secs(rr)}로 목표 RTO ${secs(rto)}를 넘습니다`);
+    if (br !== undefined && br > rto) hit('fail', `백업에서 되살리는 데 ${secs(br)}로 목표 RTO ${secs(rto)}를 넘습니다 (새 서버 준비 + 데이터 크기 / 되살리는 속도)`);
+  }
+  const rpo = num(x.target_rpo_s), r = num(x.rpo_s);
+  if (rpo !== undefined && r !== undefined && r > rpo) {
+    hit('fail', Number.isFinite(r) ? `장애 때 최대 ${secs(r)} 동안의 데이터를 잃어 목표 RPO ${secs(rpo)}를 넘습니다` : '백업도 다른 리전 복사본도 없어 장애 때 데이터를 되살릴 수 없습니다');
+  }
 }
 
 export function judgeNode(node: ProjectNode, catalog: Map<string, CatalogItem>, computed?: Scenario): NodeJudgement {
@@ -102,8 +133,8 @@ export function judgeNode(node: ProjectNode, catalog: Map<string, CatalogItem>, 
   const items = ids.map((id) => {
     const item = catalog.get(id);
     if (!item) throw new Error(`${node.id}: 없는 카탈로그 항목 ${id}`);
-    // 노드 문제(넘침·큐 지연·배치 창)를 주 항목에 걸고 이유를 맨 앞에 둔다. 항목 조건에 걸린 이유(연결 한도 등)도 같이 남긴다
-    const base = judgeItem(item, node, s), issue = id === node.primary ? nodeIssues(s) : undefined;
+    // 노드 문제(넘침·큐 지연·배치 창·장애 목표)를 주 항목에 걸고 이유를 맨 앞에 둔다. 항목 조건에 걸린 이유(연결 한도 등)도 같이 남긴다
+    const base = judgeItem(item, node, s), issue = id === node.primary ? issues(s, true) : undefined;
     const j = issue && VERDICT_RANK[issue.verdict] >= VERDICT_RANK[base.verdict]
       ? { ...base, verdict: issue.verdict, reasons: [...issue.reasons, ...(base.verdict === 'ok' ? [] : base.reasons)] }
       : issue ? { ...base, reasons: [...base.reasons, ...issue.reasons] } : base;

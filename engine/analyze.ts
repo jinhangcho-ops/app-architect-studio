@@ -15,6 +15,7 @@ import { limitFactor } from './limits';
 import { apiLoads, type ApiLoad } from './api';
 import { computedScenarios, nodeLoads, type NodeLoad } from './load';
 import { metric, type Metric } from './model';
+import { failureScenarios, recoveryVars, type Failure } from './failure';
 import { pipelineFlows, type PipelineFlow } from './pipeline';
 import { checkRegulation, type LawHit } from './regulation';
 import type { CatalogItem, LawRow, PriceRow, Project, ProjectNode, Rule } from './schema';
@@ -65,6 +66,8 @@ export type Analysis = {
   regulation: LawHit[];
   /** 데이터 파이프라인: 큐 → 소비자 적체·지연, 배치 1회 실행 */
   pipeline: PipelineFlow[];
+  /** 장애 시나리오: 존 하나·리전 하나가 멈출 때, 백업에서 되살릴 때 */
+  failure?: Failure;
   /** 노드별 판정 변수(계산값 + 직접 넣은 값). 화면이 후보 항목을 다시 계산 없이 판정하는 데 쓴다 */
   scenarios: Record<string, Scenario>;
 };
@@ -236,7 +239,21 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     return lim.length ? { required_freshness_s: Math.min(...lim) } : {};
   };
 
-  // 판정 변수에 계산값을 더한다: 사용률, 노드 p99, 이 노드를 지나는 경로 중 가장 낮은 가용성, DB 연결 수, 파이프라인
+  // 장애 시나리오: 존·리전 장애, 백업에서 되살리기 (서버 가용성을 따지지 않는 방식이면 만들지 않는다)
+  const dataGb = (id: string) => {
+    const xs = tables.filter((x) => x.nodeId === id);
+    return xs.length ? xs.reduce((s, x) => s + x.storedGb.value, 0) : undefined;
+  };
+  const failure = enabled(p.deploy, 'availability') ? failureScenarios(p, (n) => {
+    const na = nodes[n.id];
+    return {
+      ...(na.instances && { N: { normal: na.instances.normal.value, event: na.instances.event.value } }),
+      ...(na.utilization && { util: { normal: na.utilization.normal.value, event: na.utilization.event.value } }),
+      singlePrimary: !!primaryShape(n, d.catalog), dataGb: dataGb(n.id),
+    };
+  }) : undefined;
+
+  // 판정 변수에 계산값을 더한다: 사용률, 노드 p99, 이 노드를 지나는 경로 중 가장 낮은 가용성, DB 연결 수, 파이프라인, 장애 목표
   const judged = new Map<string, Scenario>();
   for (const n of p.nodes) {
     const base = scenarios.get(n.id)!;
@@ -250,6 +267,7 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
       ...(na.connections && { db_connections: na.connections[s].value }),
       ...freshness(n.id),
       ...pipeVars(pipeline, n.id, s),
+      ...recoveryVars(failure, p, n, s, dataGb(n.id)),
     });
     judged.set(n.id, mergeScenario(n, { normal: add('normal'), event: add('event') }));
   }
@@ -328,5 +346,6 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     })()),
     scenarios: Object.fromEntries(judged),
     pipeline,
+    failure,
   };
 }
