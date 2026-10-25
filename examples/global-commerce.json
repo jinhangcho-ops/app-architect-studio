@@ -34,7 +34,7 @@
       "vars": { "normal": { "cold_start_s": 20, "max_start_delay_s": 300 }, "event": { "cold_start_s": 20, "max_start_delay_s": 300 } } },
     { "id": "N-06", "name": "정산·원장 DB (N-06)", "layer": "db", "primary": "postgresql",
       "extras": ["range_partitioning", "read_replica", "uuidv7_keys"], "replicas": 2, "zones": 2, "region": "aws:ap-northeast-1",
-      "backup": { "every_h": 24, "pitr": true }, "dr": { "region": "aws:ap-northeast-3", "mode": "standby" },
+      "backup": { "every_h": 24, "pitr": true }, "dr": { "region": "aws:ap-northeast-2", "mode": "standby" },
       "privacy": { "personal": true, "subjects": ["KR", "JP"] },
       "spec": { "vcpu": 2, "memGb": 16 },
       "tables": [

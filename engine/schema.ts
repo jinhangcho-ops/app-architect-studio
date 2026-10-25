@@ -365,10 +365,11 @@ export const Project = z.object({
     /** 서버를 나눠 둔 가용 영역(존) 수. 없으면 1 (존 하나가 멈추면 이 노드도 멈춤) */
     zones: z.number().int().positive().optional(),
     /** 다른 리전 복사본. active = 두 리전이 같이 받음, standby = 대기 중인 복사본으로 넘김, backup = 다른 리전에 둔 백업에서 되살림.
-     *  rto_s: 넘기는 데 걸리는 시간(실측), lag_s: 복제 지연(그만큼 데이터를 잃음) */
+     *  rto_s: 넘기는 데 걸리는 시간(실측), lag_s: 복제 지연(그만큼 데이터를 잃음), instances: standby가 평소 띄워 두는 대수(없으면 1) */
     dr: z.object({
       region: z.enum(REGIONS), mode: z.enum(['active', 'standby', 'backup']),
       rto_s: z.number().positive().optional(), lag_s: z.number().nonnegative().optional(),
+      instances: z.number().int().positive().optional(),
     }).optional(),
     /** 데이터 노드 백업: every_h시간마다, pitr = 시점 복구(로그를 계속 보관), restore_mb_s = 되살리는 속도 */
     backup: z.object({ every_h: z.number().positive(), pitr: z.boolean().default(false), restore_mb_s: z.number().positive().optional() }).optional(),

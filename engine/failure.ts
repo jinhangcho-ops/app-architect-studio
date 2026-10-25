@@ -3,7 +3,8 @@
 //     남은 서버의 사용률 = 지금 사용률 × N / 남은 대수. 주 서버 1대 DB는 다른 존의 대기 서버로 넘긴다.
 // 리전: 그 리전의 노드는 다른 리전 복사본(dr)이 없으면 리전이 돌아올 때까지 멈춘다. 복사본이 있으면 방식에 따라 넘기는 시간(RTO)과 복제 지연만큼 잃는 데이터(RPO).
 // 백업: RPO = 백업 주기(시점 복구면 로그 보관 간격), RTO = 새 서버 준비 + 데이터 크기 / 되살리는 속도.
-// shortcut: 존 장애 직후(자동 확장이 남은 존에 대수를 다시 채우기 전)의 사용률만 보고, 리전 복사본 쪽 처리량·비용은 세지 않는다. 복사본 비용·용량이 필요해지면 복사본을 리전이 다른 노드로 따로 넣는다
+//     넘긴 직후 복사본의 사용률: active는 같은 대수가 떠 있어 그대로, standby는 지금 사용률 × 대수 / 대기 대수 (대기 복사본이 대수를 늘리기 전).
+// shortcut: 존·리전 장애 직후(자동 확장이 대수를 다시 채우기 전)의 사용률만 본다. active도 한쪽이 전부 받는 크기로 두 리전에 띄운다고 본다 (평소 나눠 받아 절반만 쓰는 것은 세지 않음)
 import { impactOf } from './availability';
 import type { Vars } from './expr';
 import { metric as m, type Metric } from './model';
@@ -27,7 +28,11 @@ export const PROVISION_S = 600;
 export type NodeInfo = { N?: { normal: number; event: number }; util?: { normal: number; event: number }; singlePrimary: boolean; dataGb?: number };
 
 export type ZoneCase = { nodeId: string; zones: number; servers: number; lost: number; down: boolean; util?: { normal: Metric; event: Metric }; rto: Metric };
-export type RegionCase = { region: string; down: string[]; failover: string[]; stopped: string[]; delayed: string[]; rto?: Metric; rpo?: Metric };
+export type RegionCase = {
+  region: string; down: string[]; failover: string[]; stopped: string[]; delayed: string[]; rto?: Metric; rpo?: Metric;
+  /** 넘긴 직후 복사본의 사용률 (사용률을 계산하는 노드만) */
+  util: Record<string, { normal: Metric; event: Metric }>;
+};
 export type DataCase = { nodeId: string; rpo: Metric; restore?: Metric };
 export type Failure = { zone: ZoneCase[]; regions: RegionCase[]; data: DataCase[] };
 
@@ -67,7 +72,20 @@ export function failureScenarios(p: Project, info: (n: ProjectNode) => NodeInfo)
     const impact = Object.entries(impactOf(p, down.map((n) => n.id)));
     const rtos = failover.map((n) => drRtoS(n, info(n).dataGb));
     const data = failover.filter(isData);
+    const util = Object.fromEntries(failover.flatMap((n) => {
+      const x = info(n);
+      if (!x.util) return [];
+      const copy = n.dr!.mode === 'active' ? undefined : n.dr!.instances ?? 1;
+      const at = (s: 'normal' | 'event') => {
+        const all = Math.max(1, x.N?.[s] ?? 0, n.replicas, n.min_instances);
+        return copy === undefined
+          ? m(x.util![s], '비율', '복사본(active)이 같은 대수로 떠 있어 사용률 그대로', { 사용률: x.util![s] })
+          : m((x.util![s] * all) / copy, '비율', '지금 사용률 × 대수 / 대기 대수 (대기 복사본이 대수를 늘리기 전)', { 사용률: x.util![s], 대수: all, 대기대수: copy });
+      };
+      return [[n.id, { normal: at('normal'), event: at('event') }]];
+    }));
     return {
+      util,
       region, down: down.map((n) => n.id), failover: failover.map((n) => n.id),
       stopped: impact.filter(([, h]) => h === 'stopped').map(([id]) => id), delayed: impact.filter(([, h]) => h === 'delayed').map(([id]) => id),
       ...(down.length ? { rto: m(Infinity, '초', '복사본 없는 노드가 리전이 돌아올 때까지 멈춤', { 멈춤: down.length }) }
@@ -99,6 +117,7 @@ export function recoveryVars(f: Failure | undefined, p: Project, n: ProjectNode,
     ...(z.util && { zone_util: z.util[s].value }),
     ...(r && { region_down: r.down.includes(n.id) }),
     ...(drRto !== undefined && { region_rto_s: drRto }),
+    ...(r?.util[n.id] && { region_util: r.util[n.id][s].value }),
     ...(d && { rpo_s: d.rpo.value, ...(d.restore && { restore_rto_s: d.restore.value }) }),
     ...(p.recovery.rto_min !== undefined && { target_rto_s: p.recovery.rto_min * 60 }),
     ...(p.recovery.rpo_min !== undefined && { target_rpo_s: p.recovery.rpo_min * 60 }),
@@ -118,6 +137,6 @@ export function failureLines(f: Failure, nameOf: (id: string) => string, id?: st
 export function regionLines(f: Failure, nameOf: (id: string) => string, id?: string): string[] {
   return f.regions.filter((r) => !id || r.down.includes(id) || r.failover.includes(id)).map((r) => `리전 ${r.region} 장애: ${r.down.length
     ? `${r.down.map(nameOf).join(', ')} 멈춤${r.stopped.length ? ` → ${r.stopped.map(nameOf).join(', ')} 멈춤` : ''}${r.delayed.length ? ` · ${r.delayed.map(nameOf).join(', ')} 반영 지연` : ''}`
-    : '모든 노드가 다른 리전 복사본으로 넘어감'}${r.failover.length ? ` · 넘어감: ${r.failover.map(nameOf).join(', ')}${r.rto ? ` (${secs(r.rto.value)})` : ''}` : ''}${r.rpo ? ` · 잃는 데이터 최대 ${secs(r.rpo.value)}` : ''}`);
+    : '모든 노드가 다른 리전 복사본으로 넘어감'}${r.failover.length ? ` · 넘어감: ${r.failover.map((x) => `${nameOf(x)}${r.util[x] ? ` 넘긴 직후 사용률 ${pct(r.util[x].normal.value)} / ${pct(r.util[x].event.value)}` : ''}`).join(', ')}${r.rto ? ` (${secs(r.rto.value)})` : ''}` : ''}${r.rpo ? ` · 잃는 데이터 최대 ${secs(r.rpo.value)}` : ''}`);
 }
 const pct = (x: number) => (Number.isFinite(x) ? `${Math.round(x * 100)}%` : '끝없음');

@@ -8,7 +8,7 @@ import type { Project } from '../schema';
 const root = (p: string) => fileURLToPath(new URL(`../../${p}`, import.meta.url));
 const catalog = loadCatalog(root('data/catalog'));
 const d = { catalog: catalog.byId, rules: catalog.rules, prices: loadPrices(root('data/prices')), laws: loadLaws(root('data/laws')) };
-// global-commerce: 존 장애를 견디는 목표(RTO 60분, RPO 60분). API(N-03)는 존 2개, DB(N-06)는 존 2개·시점 복구·다른 리전 대기 복사본, 레이크하우스(N-10)는 1대
+// global-commerce: 존 장애를 견디는 목표(RTO 60분, RPO 60분). API(N-03)는 존 2개, DB(N-06)는 존 2개·시점 복구·서울 리전 대기 복사본, 레이크하우스(N-10)는 1대
 const base = loadProject(root('examples/global-commerce.json'), catalog.items);
 const run = (p: Project) => analyze(p, d, '2026-10-25');
 const node = (p: Project, id: string, patch: Partial<Project['nodes'][number]>): Project => ({ ...p, nodes: p.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)) });
@@ -78,5 +78,33 @@ describe('백업·RPO', () => {
     const r = slow.failure!.data.find((x) => x.nodeId === 'N-06')!.restore!;
     expect(r.value).toBeCloseTo(600 + r.inputs['데이터GB'] * 1024);
     expect(primaryOf(slow, 'N-06').reasons.join()).toContain('백업에서 되살리는 데');
+  });
+});
+
+describe('리전 복사본의 비용과 처리량', () => {
+  const hours = (a: ReturnType<typeof run>, id: string) => a.cost!.parts[id].inputs;
+  it('standby는 대기 대수 × 24시간 × 30일을 복사본 리전 가격으로 더하고, active는 같은 대수를 한 번 더', () => {
+    const none = run(node(base, 'N-06', { dr: undefined })).cost!.parts['N-06'].value;
+    const standby = run(node(base, 'N-06', { dr: { region: 'aws:ap-northeast-2', mode: 'standby', instances: 2 } }));
+    expect(standby.cost!.parts['N-06'].value - none).toBeCloseTo(2 * 24 * 30 * 0.2);
+    expect(hours(standby, 'N-06')['대·시간 aws-seoul-db-2vcpu 수량']).toBe(2 * 24 * 30);
+    const active = run(node(base, 'N-03', { dr: { region: 'aws:ap-northeast-1', mode: 'active' } })).cost!.parts['N-03'].value;
+    expect(active).toBeGreaterThan(run(base).cost!.parts['N-03'].value * 1.9);
+  });
+
+  it('복사본 데이터 노드는 복사본 리전에도 같은 저장량', () => {
+    const a = run(base), b = run(node(base, 'N-06', { dr: undefined }));
+    const gb = a.tables.filter((x) => x.nodeId === 'N-06').reduce((s2, x) => s2 + x.storedGb.value, 0);
+    expect(a.cost!.parts['저장'].value - b.cost!.parts['저장'].value).toBeCloseTo(gb * 0.1);
+  });
+
+  it('standby로 넘긴 직후 사용률 = 지금 × 대수 / 대기 대수, 리전 목표에서 넘치면 조건부. active는 그대로', () => {
+    const p = node({ ...base, recovery: { survive: 'region' } }, 'N-03', { dr: { region: 'aws:ap-northeast-1', mode: 'standby' } });
+    const a = run(p), kr = a.failure!.regions.find((r) => r.region === 'aws:ap-northeast-2')!, na = a.nodes['N-03'];
+    expect(kr.util['N-03'].event.value).toBeCloseTo(na.utilization!.event.value * na.instances!.event.value);
+    expect(primaryOf(a, 'N-03').reasons.join()).toContain('대기 복사본으로 넘기면 사용률');
+    const act = run(node(p, 'N-03', { dr: { region: 'aws:ap-northeast-1', mode: 'active' } }));
+    expect(act.failure!.regions.find((r) => r.region === 'aws:ap-northeast-2')!.util['N-03'].event.value).toBeCloseTo(na.utilization!.event.value);
+    expect(primaryOf(act, 'N-03').reasons.join()).not.toContain('대기 복사본');
   });
 });

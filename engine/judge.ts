@@ -114,6 +114,11 @@ function recoveryIssues(s: Scenario, hit: (v: Verdict, why: string) => void) {
     }
   }
   if (survive === 'region' && x.region_down === true) hit(x.node_stops ? 'fail' : 'conditional', `리전이 멈추면 다른 리전 복사본이 없어 이 노드가 멈추고 ${effect}`);
+  if (survive === 'region' && x.region_down !== true) {
+    const nu = num(x.region_util), eu = num(s.event.region_util);
+    const over = nu !== undefined && nu > 1 ? ['평소 피크', nu] as const : eu !== undefined && eu > 1 ? ['이벤트 피크', eu] as const : undefined;
+    if (over) hit('conditional', `${over[0]}에 리전이 멈춰 대기 복사본으로 넘기면 사용률이 ${Math.round(over[1] * 100)}% — 복사본이 대수를 늘릴 때까지 요청이 밀립니다 (대기 대수를 늘리거나 active로)`);
+  }
   const rto = num(x.target_rto_s);
   if (rto !== undefined) {
     const zr = num(x.zone_rto_s), rr = num(x.region_rto_s), br = num(x.restore_rto_s);
