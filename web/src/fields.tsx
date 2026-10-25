@@ -4,7 +4,8 @@ import type { ReactNode } from 'react';
 export function Row({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
   return (
     <label className="row" title={hint}>
-      <span>{label}</span>
+      {/* 도움말은 넓은 설정 화면에서만 글로 보이고, 좁은 패널에서는 마우스를 올리면 보인다 */}
+      <span>{label}{hint && <small className="help">{hint}</small>}</span>
       {children}
     </label>
   );
@@ -34,10 +35,11 @@ export function TextField({ label, value, onChange }: { label: string; value?: s
   );
 }
 
-export function Section({ title, children }: { title: string; children: ReactNode }) {
+export function Section({ title, children, id, desc }: { title: string; children: ReactNode; id?: string; desc?: string }) {
   return (
-    <section className="section">
+    <section className="section" id={id}>
       <h3>{title}</h3>
+      {desc && <p className="desc">{desc}</p>}
       {children}
     </section>
   );

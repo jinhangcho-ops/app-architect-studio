@@ -2,7 +2,7 @@ import { Select } from './Select';
 import { useState } from 'react';
 import { Persona, REGIONS, Scale, PATTERN_IDS, SERVICE_KINDS, type Exchange, type PriceRow, type Project } from '../../engine/schema';
 import { RECOMMEND, SERVICE_NAMES } from './exchange';
-import { INDUSTRIES, INDUSTRY_IDS, type IndustryId } from '../../engine/industry';
+import { DayPeakSection, PersonaMixEditor } from './PeakSections';
 import { prices } from './data';
 import { PATTERNS } from '../../engine/traffic';
 import { enabled, MODE_NAMES, SCOPE_NAMES } from '../../engine/deploy';
@@ -21,11 +21,11 @@ export function ProjectPanel() {
 
   return (
     <div className="panel">
-      <Section title="프로젝트">
+      <Section id="s-proj" title="프로젝트" desc="설계서에 표시되는 이름이에요.">
         <TextField label="이름" value={p.name} onChange={(v) => set({ name: v })} />
       </Section>
 
-      <Section title="구동 방식">
+      <Section id="s-mode" title="구동 방식" desc="서비스가 어디서, 누구에게 쓰이는지 골라 주세요.">
         <Row label="방식">
           <Select value={p.deploy.mode} onChange={(e) => set({ deploy: { ...p.deploy, mode: e.target.value as Project['deploy']['mode'] } })}>
             {Object.entries(MODE_NAMES).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -40,35 +40,26 @@ export function ProjectPanel() {
         {enabled(p.deploy, 'localMemory') && <LocalMemory />}
       </Section>
 
-      <Section title="규모">
+      <Section id="s-scale" title="규모" desc="사용자가 늘 때 어디가 먼저 막힐지 계산하는 데 쓰는 값이에요.">
         {!p.scale && <button onClick={() => set({ scale: Scale.parse({ users: 100000 }) })}>규모 입력하기</button>}
         {p.scale && <>
-          <NumField label="활성 사용자" value={p.scale.users} step={1000} onChange={(v) => v && setScale({ users: v })} />
-          <NumField label="이벤트 배수" value={p.scale.event_multiplier} onChange={(v) => setScale({ event_multiplier: v ?? 1 })} />
+          <NumField label="활성 사용자" hint="한 달 안에 쓰는 사람 수" value={p.scale.users} step={1000} onChange={(v) => v && setScale({ users: v })} />
+          <NumField label="이벤트 배수" hint="이벤트 때 평소의 몇 배가 몰리는지" value={p.scale.event_multiplier} onChange={(v) => setScale({ event_multiplier: v ?? 1 })} />
           <NumField label="창 안 비율" value={p.scale.window_share} step={0.05} hint="깨어 있는 시간대에 들어오는 접속 비율" onChange={(v) => setScale({ window_share: v ?? 0.8 })} />
-          <Row label="업종 (피크 시각)">
-            <Select value={p.scale.industry ?? ''} onChange={(e) => setScale({ industry: (e.target.value || undefined) as IndustryId | undefined })}>
-              <option value="">없음 (페르소나 창 가운데 한 번)</option>
-              {INDUSTRY_IDS.map((k) => <option key={k} value={k}>{INDUSTRIES[k].label}</option>)}
-            </Select>
-          </Row>
-          {p.scale.industry && (() => {
-            const ind = INDUSTRIES[p.scale.industry];
-            // 피크 시각은 정시 아니면 30분 (industry.ts 값)
-            const hh = (h: number) => (Number.isInteger(h) ? `${h}시` : `${Math.floor(h)}시 반`);
-            return <p className="muted">피크 {ind.peaks.map((k) => hh(k.at)).join(' · ')} · 깨어 있는 시간 {ind.window[0]}~{ind.window[1]}시 (모든 페르소나, 현지 시각). {ind.why} (예시값)</p>;
-          })()}
           <Row label="기준 나라">
             <Select value={p.scale.report_country} onChange={(e) => setScale({ report_country: e.target.value })}>
               {Object.keys(STANDARD_OFFSET).map((c) => <option key={c} value={c}>{c}</option>)}
             </Select>
           </Row>
-          <NumField label="시드" value={p.scale.seed} step={1} onChange={(v) => setScale({ seed: v ?? 1 })} />
-          <NumField label="목표 사용률" value={p.target_utilization} step={0.05} onChange={(v) => v && set({ target_utilization: v })} />
+          <NumField label="시드" hint="같은 값이면 같은 결과가 나와요" value={p.scale.seed} step={1} onChange={(v) => setScale({ seed: v ?? 1 })} />
+          <NumField label="목표 사용률" hint="이 선을 넘으면 착수 시점으로 봐요" value={p.target_utilization} step={0.05} onChange={(v) => v && set({ target_utilization: v })} />
         </>}
       </Section>
 
-      <Section title={`페르소나 (비율 합 ${(shareSum * 100).toFixed(0)}%)`}>
+      <DayPeakSection />
+
+      <Section id="s-pers" title={`페르소나 (비율 합 ${(shareSum * 100).toFixed(0)}%)`} desc="활동 정도에 따른 사용자 분포예요. 목록 위에서부터 활발한 순으로 보고, 봉우리를 끌어서 비율을 정해요.">
+        <PersonaMixEditor />
         {/* 평소에는 비율 막대로 보고, "편집"을 누르면 입력 칸으로 바뀐다 */}
         {!editPersonas && p.personas.map((ps, i) => {
           const top = Math.max(...p.personas.map((x) => x.share), 1e-9);
@@ -102,25 +93,7 @@ export function ProjectPanel() {
 
       <ActionsSection />
 
-      <Section title="비용 기준">
-        <Row label="기본 리전">
-          <Select value={p.cost.region ?? ''} onChange={(e) => set({ cost: { ...p.cost, region: (e.target.value || undefined) as typeof p.cost.region } })}>
-            <option value="">(없음)</option>
-            {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
-          </Select>
-        </Row>
-        {([['저장 (GB·월)', 'storage', 'gb_month'], ['인터넷 송신 (GB)', 'egress', 'gb'], ['리전 간 전송 (GB)', 'transfer', 'gb_interregion']] as const).map(([label, key, unit]) => (
-          <Row key={key} label={label}>
-            <Select value={p.cost[key] ?? ''} onChange={(e) => set({ cost: { ...p.cost, [key]: e.target.value || undefined } })}>
-              <option value="">(계산 안 함)</option>
-              {productsOf(unit).map((x) => <option key={x} value={x}>{x}</option>)}
-            </Select>
-          </Row>
-        ))}
-        <p className="muted">노드 비용은 주 항목의 과금 방식(대수×시간·사용량·월 정액)과 노드 리전으로 가격표에서 찾습니다.</p>
-      </Section>
-
-      <Section title="데이터 주고받기 (로드밸런서)">
+      <Section id="s-ex" title="데이터 주고받기 (로드밸런서)" desc="앱이 얼마마다 다시 받고, 모아서 보내는지에 따라 요청 수가 달라져요.">
         {(() => {
           const ex = p.exchange ?? { receive: 'polling' as const, send: 'realtime' as const, batch_s: 60 };
           const setEx = (patch: Partial<Exchange>) => set({ exchange: { ...ex, ...patch } });
@@ -156,7 +129,7 @@ export function ProjectPanel() {
         })()}
       </Section>
 
-      <Section title="성장">
+      <Section id="s-growth" title="성장" desc="몇 개월째에 한계에 닿는지, 언제 준비를 시작해야 하는지 계산해요.">
         {!p.growth && <button onClick={() => set({ growth: { monthly_rate: 0.1, months: 24, lead_months: 3 } })}>성장률 입력하기</button>}
         {p.growth && <>
           {!p.growth.inflow && <NumField label="월 성장률" value={p.growth.monthly_rate} step={0.01} onChange={(v) => set({ growth: { ...p.growth!, monthly_rate: v ?? 0 } })} />}
@@ -188,6 +161,24 @@ export function ProjectPanel() {
           <button onClick={() => set({ growth: undefined })}>성장률 지우기</button>
         </>}
       </Section>
+
+      <Section id="s-cost" title="비용 기준" desc="가격표에서 어떤 상품으로 저장·송신 비용을 셀지 골라요.">
+        <Row label="기본 리전">
+          <Select value={p.cost.region ?? ''} onChange={(e) => set({ cost: { ...p.cost, region: (e.target.value || undefined) as typeof p.cost.region } })}>
+            <option value="">(없음)</option>
+            {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+          </Select>
+        </Row>
+        {([['저장 (GB·월)', 'storage', 'gb_month'], ['인터넷 송신 (GB)', 'egress', 'gb'], ['리전 간 전송 (GB)', 'transfer', 'gb_interregion']] as const).map(([label, key, unit]) => (
+          <Row key={key} label={label}>
+            <Select value={p.cost[key] ?? ''} onChange={(e) => set({ cost: { ...p.cost, [key]: e.target.value || undefined } })}>
+              <option value="">(계산 안 함)</option>
+              {productsOf(unit).map((x) => <option key={x} value={x}>{x}</option>)}
+            </Select>
+          </Row>
+        ))}
+        <p className="muted">노드 비용은 주 항목의 과금 방식(대수×시간·사용량·월 정액)과 노드 리전으로 가격표에서 찾습니다.</p>
+      </Section>
     </div>
   );
 }
@@ -200,10 +191,10 @@ function ActionsSection() {
   const { project: p, edit } = usePick('project', 'edit');
   const targets = p.nodes.flatMap((n) => n.tables.map((t) => ({ key: `${n.id}.${t.name}`, node: n.id, table: t.name, label: `${n.name}.${t.name}` })));
   if (!targets.length && !p.actions.length) {
-    return <Section title="행동"><p className="muted">DB·캐시·분석 노드에 테이블을 넣으면 행동(주문, 리뷰 …)으로 테이블에 쓰는 양을 정할 수 있습니다.</p></Section>;
+    return <Section id="s-act" title="행동"><p className="muted">DB·캐시·분석 노드에 테이블을 넣으면 행동(주문, 리뷰 …)으로 테이블에 쓰는 양을 정할 수 있습니다.</p></Section>;
   }
   return (
-    <Section title={`행동 (${p.actions.length})`}>
+    <Section id="s-act" title={`행동 (${p.actions.length})`} desc="사용자가 서비스에서 하는 일과 그때 쓰는 테이블이에요.">
       {p.actions.map((a) => {
         const upd = (patch: Parameters<typeof updateAction>[2]) => edit((x) => updateAction(x, a.name, patch));
         const setWrite = (i: number, patch: Partial<(typeof a.writes)[number]>) => upd({ writes: patchAt(a.writes, i, patch) });

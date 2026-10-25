@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseProject } from '../../engine/data';
 import { catalog, examples } from './data';
 import { parseSpec } from '../../engine/spec';
-import { addAction, addEdge, addWrite, removeWrite, addNode, addTable, applyAlternative, importTables, removeAction, removeNode, removePersona, removeTable, run, setActionRate, setVar, updateAction, updateNode, updatePersona, updateTable, worstVerdict } from './edit';
+import { applyIndustry, setPersonaMix, addAction, addEdge, addWrite, removeWrite, addNode, addTable, applyAlternative, importTables, removeAction, removeNode, removePersona, removeTable, run, setActionRate, setVar, updateAction, updateNode, updatePersona, updateTable, worstVerdict } from './edit';
 import { autoLayout } from './layout';
 
 const today = '2026-10-23';
@@ -15,6 +15,28 @@ describe('판정 순위: 됨 < 조건부 < 판단 불가 < 안 됨 (배지·대�
   it('조건부와 판단 불가가 같이 있으면 노드 배지는 판단 불가', () => {
     expect(worstVerdict({ nodeId: 'n', items: [item('conditional'), item('unknown'), item('ok')] })).toBe('unknown');
     expect(worstVerdict({ nodeId: 'n', items: [item('unknown'), item('fail')] })).toBe('fail');
+  });
+});
+
+describe('업종 미리 설정', () => {
+  it('하루 피크와 페르소나 비율을 한 번에 바꾸고, 결과는 그대로 분석됨', () => {
+    const p = applyIndustry(base, 'live_game');
+    expect(p.scale!.industry).toBe('live_game');
+    expect(p.scale!.day).toBeUndefined();
+    expect(p.persona_mix).toBeDefined();
+    expect(Math.abs(p.personas.reduce((s, x) => s + x.share, 0) - 1)).toBeLessThan(1e-9);
+    expect(p.personas.map((x) => x.share)).not.toEqual(base.personas.map((x) => x.share));
+    expect(parseProject(p, catalog.items).scale!.industry).toBe('live_game');
+    expect(run(p, today).error).toBeUndefined();
+    // 업종을 지우면 하루 모양도 지운다 (비율은 그대로)
+    const off = applyIndustry({ ...p, scale: { ...p.scale!, day: { window: [9, 18], peaks: [{ at: 12, sd: 1, weight: 1 }] } } }, undefined);
+    expect([off.scale!.industry, off.scale!.day]).toEqual([undefined, undefined]);
+  });
+
+  it('비율을 손으로 바꾸면 분포 모양을 지움 (모양과 비율이 어긋나지 않게)', () => {
+    const p = setPersonaMix(base, [{ mu: 0.3, sg: 0.2, w: 1 }]);
+    expect(updatePersona(p, 0, { name: '새 이름' }).persona_mix).toBeDefined();
+    expect(updatePersona(p, 0, { share: 0.5 }).persona_mix).toBeUndefined();
   });
 });
 

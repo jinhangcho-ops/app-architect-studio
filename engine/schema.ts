@@ -297,6 +297,11 @@ export const Scale = z.object({
   window_share: z.number().min(0).max(1).default(0.8),
   /** 업종: 정하면 모든 페르소나가 그 업종의 깨어 있는 창과 피크 시각(industry.ts)을 쓴다. 없으면 페르소나마다 창 가운데 한 봉우리 */
   industry: z.enum(INDUSTRY_IDS).optional(),
+  /** 하루 접속 모양을 직접 정한 것 (설정의 "하루 피크"에서 끌어 조정). 있으면 업종 표 대신 이것을 쓴다 */
+  day: z.object({
+    window: z.tuple([z.number().min(0).max(24), z.number().min(0).max(24)]),
+    peaks: z.array(z.object({ at: z.number().min(0).max(24), sd: z.number().min(0.2).max(8), weight: z.number().positive() })).min(1).max(4),
+  }).optional(),
   retention_days: z.number().positive().default(365),
   event_multiplier: z.number().min(1).default(1),
   overhead_k: z.number().min(1).default(2),
@@ -324,6 +329,8 @@ export const Project = z.object({
   scale: Scale.optional(),
   personas: z.array(Persona).default([])
     .refine((ps) => !ps.length || Math.abs(ps.reduce((s, p) => s + p.share, 0) - 1) < 1e-6, '페르소나 비율의 합은 1이어야 함'),
+  /** 페르소나 비율을 정한 분포 (설정의 "페르소나"에서 봉우리를 끌어 정함). 비율 자체는 personas[].share가 기준이고, 이것은 다시 편집할 때 쓰는 모양이다 */
+  persona_mix: z.array(z.object({ mu: z.number().min(0).max(1), sg: z.number().min(0.02).max(1), w: z.number().positive() })).min(1).max(4).optional(),
   nodes: z.array(z.object({
     id: z.string(),
     name: z.string(),

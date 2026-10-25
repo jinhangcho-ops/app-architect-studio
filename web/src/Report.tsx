@@ -4,7 +4,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import type { Analysis } from '../../engine/analyze';
 import { MODE_NAMES, SCOPE_NAMES } from '../../engine/deploy';
 import { lawLine } from '../../engine/regulation';
-import { INDUSTRIES } from '../../engine/industry';
+import { dayLabel } from '../../engine/industry';
 import { LAYER_NAMES, VERDICT_NAMES } from '../../engine/model';
 import type { OptimizeResult, Plan } from '../../engine/optimize';
 import { itemIds, nodeStorageProfile, selectedFeatures, type Project, type Screen } from '../../engine/schema';
@@ -73,7 +73,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
             <H n={3}>규모 가정</H>
             {p.scale && <KV rows={[
               ['활성 사용자', `${fmt(p.scale.users)}명`], ['이벤트 배수', `${p.scale.event_multiplier}배`],
-              ['창 안 비율', fmtShare(p.scale.window_share)], ['업종 (피크 시각)', p.scale.industry ? INDUSTRIES[p.scale.industry].label : '없음'], ['보관 기간', `${p.scale.retention_days}일`], ['기준 나라', p.scale.report_country],
+              ['창 안 비율', fmtShare(p.scale.window_share)], ['하루 피크 (업종)', dayLabel(p.scale) ?? '없음 (페르소나마다 깨어 있는 시간 가운데)'], ['보관 기간', `${p.scale.retention_days}일`], ['기준 나라', p.scale.report_country],
               ['데이터 주고받기', p.exchange
                 ? `${p.exchange.receive === 'streaming' ? '스트리밍' : '폴링'}${p.exchange.refresh_s ? ` ${p.exchange.refresh_s}초마다 최신화` : ' (화면을 옮길 때만 받음)'} · ${p.exchange.send === 'batch' ? `${p.exchange.batch_s}초마다 모아 보내기` : '행동마다 바로 보내기'}`
                 : '설정 없음 (접속당 읽기·쓰기만)'],

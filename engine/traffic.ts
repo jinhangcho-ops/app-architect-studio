@@ -95,11 +95,11 @@ const erf = (x: number) => {
 const hourDiff = (t: number, mu: number) => ((((t - mu) % 24) + 36) % 24) - 12;
 
 /** 접속 시작 시각 모형: 봉우리(정규분포)들을 weight만큼, 하루 전체 고른 바닥을 (1 − weight)만큼 섞는다.
- *  봉우리는 업종(scale.industry)이 있으면 그 업종의 피크들, 없으면 페르소나 창 가운데 하나(창 반폭 = window_sigma × σ).
+ *  봉우리는 직접 정한 하루 모양(scale.day)이나 업종(scale.industry)이 있으면 그 피크들, 없으면 페르소나 창 가운데 하나(창 반폭 = window_sigma × σ).
  *  둘 다 매끄러워 하루 곡선에 턱이 없다 (예전처럼 창 끝에서 정규분포를 자르고 창 밖에만 고르게 두면 창 끝에서 곡선이 끊겼다).
  *  weight는 창 안 비율이 share가 되게 고른다: share = weight × (봉우리 중 창 안 몫) + (1 − weight) × (창 길이 / 24) */
-export function startModel(ps: Persona, scale: { window_share: number; industry?: IndustryId }) {
-  const ind = scale.industry ? INDUSTRIES[scale.industry] : undefined;
+export function startModel(ps: Persona, scale: { window_share: number; industry?: IndustryId; day?: { window: [number, number]; peaks: { at: number; sd: number; weight: number }[] } }) {
+  const ind = scale.day ?? (scale.industry ? INDUSTRIES[scale.industry] : undefined);
   const [a, b] = ind?.window ?? ps.window;
   const span = (b - a + 24) % 24 || 24;
   const mu = a + span / 2;

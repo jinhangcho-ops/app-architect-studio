@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { INDUSTRIES, type IndustryId } from '../industry';
+import { INDUSTRIES, mixShares, type IndustryId } from '../industry';
 import { loadCatalog, loadProject } from '../io';
 import type { Project } from '../schema';
 import { dayCurve, traffic } from '../traffic';
@@ -62,5 +62,33 @@ describe('업종별 피크 시각', () => {
         expect(k.weight * k.sd, id).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+describe('직접 정한 하루 모양 (scale.day)', () => {
+  it('업종 표와 같은 값을 넣으면 결과도 같고, 피크를 옮기면 곡선의 봉우리도 옮겨 감', () => {
+    const ind = INDUSTRIES.restaurant;
+    const same = kr('restaurant');
+    const custom = { ...same, scale: { ...same.scale!, day: { window: ind.window, peaks: ind.peaks } } };
+    expect(dayCurve(custom)!.total).toEqual(dayCurve(same)!.total);
+    const moved = { ...same, scale: { ...same.scale!, day: { window: ind.window, peaks: [{ at: 15, sd: 1, weight: 1 }] } } };
+    const at = peaks(dayCurve(moved)!.total);
+    expect(at).toHaveLength(1);
+    expect(Math.abs(at[0] - 15)).toBeLessThan(0.5);
+  });
+});
+
+describe('페르소나 분포 → 비율', () => {
+  it('정수 %이고 합이 100, 봉우리 쪽 칸이 가장 큼', () => {
+    for (const n of [1, 3, 7, 9]) {
+      for (const ind of Object.values(INDUSTRIES)) {
+        const pct = mixShares(ind.mix, n);
+        expect(pct.reduce((s, x) => s + x, 0)).toBe(100);
+        expect(pct.every((x) => Number.isInteger(x) && x >= 0)).toBe(true);
+      }
+    }
+    const one = mixShares([{ mu: 0.1, sg: 0.08, w: 1 }], 7);
+    expect(one.indexOf(Math.max(...one))).toBe(0);
+    expect(mixShares([{ mu: 0.9, sg: 0.08, w: 1 }], 7).indexOf(Math.max(...mixShares([{ mu: 0.9, sg: 0.08, w: 1 }], 7)))).toBe(6);
   });
 });

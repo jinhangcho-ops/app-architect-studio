@@ -4,6 +4,7 @@ import { parseProject } from '../../engine/data';
 import type { NodeJudgement } from '../../engine/judge';
 import { LAYER_NAMES, VERDICT_RANK, type Layer, type Verdict } from '../../engine/model';
 import { optimize, withAssignment, type OptimizeResult } from '../../engine/optimize';
+import { INDUSTRIES, mixShares, type IndustryId, type MixPeak } from '../../engine/industry';
 import { traffic, type Traffic } from '../../engine/traffic';
 import { EdgeSchema, NodeSchema, nodeStorageProfile, selectedFeatures, Table as TableSchema, withPrimary, type Project, type ProjectEdge, type ProjectNode, type Screen, type WireItem } from '../../engine/schema';
 import { catalog, engineData } from './data';
@@ -299,9 +300,23 @@ export function bindApi(p: Project, nodeId: string, screen: number, id: string, 
 
 // ── 페르소나 ──
 /** 페르소나 고치기. 이름이 바뀌면 유입 모형의 "들어오는 페르소나"도 따라 바꾼다 */
+/** 페르소나 분포를 정하면 비율도 그 분포대로 (정수 %, 합 100). 페르소나는 목록 위에서부터 활발한 순으로 본다 */
+export const setPersonaMix = (p: Project, mix: MixPeak[]): Project => {
+  const pct = mixShares(mix, p.personas.length);
+  return { ...p, persona_mix: mix, personas: p.personas.map((ps, i) => ({ ...ps, share: pct[i] / 100 })) };
+};
+
+/** 업종 미리 설정: 하루 피크 시각과 페르소나 분포를 한 번에 바꾼다. id가 없으면 업종을 지운다 (페르소나마다 창 가운데 한 봉우리) */
+export function applyIndustry(p: Project, id: IndustryId | undefined): Project {
+  if (!p.scale) return p;
+  const next = { ...p, scale: { ...p.scale, industry: id, day: undefined } };
+  return id && p.personas.length ? setPersonaMix(next, INDUSTRIES[id].mix) : next;
+}
+
 export function updatePersona(p: Project, i: number, patch: Partial<Project['personas'][number]>): Project {
   const old = p.personas[i]?.name;
-  const next = { ...p, personas: patchAt(p.personas, i, patch) };
+  // 비율을 손으로 바꾸면 분포 모양(persona_mix)과 맞지 않게 되므로 모양은 지운다
+  const next = { ...p, personas: patchAt(p.personas, i, patch), ...(patch.share !== undefined && { persona_mix: undefined }) };
   const inflow = p.growth?.inflow;
   return patch.name !== undefined && inflow?.entry === old ? { ...next, growth: { ...p.growth!, inflow: { ...inflow, entry: patch.name } } } : next;
 }

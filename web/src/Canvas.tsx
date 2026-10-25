@@ -4,7 +4,7 @@ import type { Analysis } from '../../engine/analyze';
 import { callSplit } from '../../engine/api';
 import { edgeFlow } from '../../engine/load';
 import { LAYER_NAMES, VERDICT_NAMES, type Verdict } from '../../engine/model';
-import type { ProjectNode } from '../../engine/schema';
+import type { Project, ProjectNode } from '../../engine/schema';
 import { catalog } from './data';
 import { addEdge, removeEdge, removeNode, worstVerdict } from './edit';
 import { fmt } from './format';
@@ -64,6 +64,21 @@ function FlowEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targ
 }
 const edgeTypes = { flow: FlowEdge };
 const EDGE = { base: '#4c5870', bad: '#ff5a5a', read: '#2ec4a6', async: '#f5b301' };
+
+/** 범례 (설계도 위쪽 줄): 노란·빨간 노드마다 몇 개월째 착수인지 */
+export function Legend({ project, analysis }: { project: Project; analysis?: Analysis }) {
+  const months = [...new Set(project.nodes.map((n) => healthOf(analysis, project.scale?.users, n.id))
+    .filter((h) => h.health !== 'ok' && h.health !== 'none' && h.startMonth !== undefined).map((h) => `${h.health}:${h.startMonth}`))]
+    .map((k) => { const [hh, m] = k.split(':'); return { health: hh as Health, month: Number(m) }; })
+    .sort((x, y) => y.month - x.month);
+  return (
+    <div className="legend">
+      <span><i className="h-ok" />여유 충분</span>
+      {months.map((m) => <span key={`${m.health}${m.month}`}><i className={`h-${m.health}`} />{m.month}개월째 착수</span>)}
+      <span><i className="wire" />선 굵기 = 요청량</span>
+    </div>
+  );
+}
 
 /** layout: 패널을 접거나 펼 때 바뀌는 값. 바뀌면 넓어진(좁아진) 칸에 다이어그램을 다시 맞춘다 */
 export function Canvas({ analysis, onSelect, layout }: { analysis?: Analysis; onSelect: () => void; layout?: string }) {
@@ -132,19 +147,8 @@ export function Canvas({ analysis, onSelect, layout }: { analysis?: Analysis; on
     });
   }, [project, analysis, selected, health]);
 
-  // 범례: 노란·빨간 노드마다 몇 개월째 착수인지
-  const months = [...new Set([...health.values()].filter((h) => h.health !== 'ok' && h.health !== 'none' && h.startMonth !== undefined).map((h) => `${h.health}:${h.startMonth}`))]
-    .map((k) => { const [hh, m] = k.split(':'); return { health: hh as Health, month: Number(m) }; })
-    .sort((x, y) => y.month - x.month);
-
   return (
     <div className="canvas-wrap">
-      <div className="legend">
-        <span><i className="h-ok" />여유 충분</span>
-        {months.map((m) => <span key={`${m.health}${m.month}`}><i className={`h-${m.health}`} />{m.month}개월째 착수</span>)}
-        <span>선 굵기 = 요청량</span>
-        <span className="legend-hint">카드를 누르면 세부 구성이 열려요</span>
-      </div>
       <ReactFlow
         nodes={nodes}
         edges={edges}

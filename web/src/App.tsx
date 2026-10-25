@@ -1,8 +1,7 @@
-import { Select } from './Select';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseProject } from '../../engine/data';
 import { LAYERS, LAYER_NAMES, type Layer } from '../../engine/model';
-import { Canvas } from './Canvas';
+import { Canvas, Legend } from './Canvas';
 import { catalog, examples } from './data';
 import { mergeCodeAnalysis } from './codeImport';
 import { addNode, findPlans, pasteNode, run } from './edit';
@@ -19,40 +18,48 @@ import { Palette } from './Palette';
 import { EdgePanel, NodePanel } from './NodePanel';
 import { OptimizePanel } from './OptimizePanel';
 import { View3D } from './View3D';
-import { ProjectPanel } from './ProjectPanel';
+import { Settings } from './Settings';
+import { Menu } from './Menu';
+import { changedCounts } from './settingsDiff';
 import { ResultsPanel } from './ResultsPanel';
 import { exportProject, importProject, useStore } from './store';
 
 // 사용자 PC의 날짜 (toISOString은 UTC라 한국에서는 오전 9시 전에 어제 날짜가 된다). sv-SE 형식이 YYYY-MM-DD
 const today = new Date().toLocaleDateString('sv-SE');
 
-type Hidden = { left: boolean; right: boolean; bottom: boolean };
+type Hidden = { right: boolean; bottom: boolean };
 const PANELS_KEY = 'aas.panels';
+const TIP_KEY = 'aas.tip-closed';
 const readHidden = (): Hidden => {
-  try { return { left: false, right: false, bottom: false, ...JSON.parse(localStorage.getItem(PANELS_KEY) ?? '{}') }; } catch { return { left: false, right: false, bottom: false }; }
+  try { return { right: false, bottom: false, ...JSON.parse(localStorage.getItem(PANELS_KEY) ?? '{}') }; } catch { return { right: false, bottom: false }; }
 };
 /** 패널 단추 아이콘: 창 모양에서 그 쪽 칸을 칠한다 */
-const PanelIcon = ({ side }: { side: 'left' | 'right' | 'bottom' }) => (
+const PanelIcon = ({ side }: { side: 'right' | 'bottom' }) => (
   <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden fill="none" stroke="currentColor" strokeWidth="1.3">
     <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
-    {side === 'left' && <rect x="1.5" y="2.5" width="4.5" height="11" fill="currentColor" stroke="none" opacity="0.7" />}
     {side === 'right' && <rect x="10" y="2.5" width="4.5" height="11" fill="currentColor" stroke="none" opacity="0.7" />}
     {side === 'bottom' && <rect x="1.5" y="9.5" width="13" height="4" fill="currentColor" stroke="none" opacity="0.7" />}
   </svg>
 );
 
 export function App() {
-  const { project, positions, selected, load, edit, relayout, select, focus, setFocus, undo, redo, past, future, clipboard, set, move } = useStore();
+  const { project, baseline, positions, selected, load, edit, relayout, select, focus, setFocus, undo, redo, past, future, clipboard, set, move } = useStore();
   // 위치를 끌어도 다시 계산하지 않도록 프로젝트가 바뀔 때만 분석한다
   const result = useMemo(() => run(project, today), [project]);
   const [tab, setTab] = useState<'selected' | 'results' | 'optimize'>('results');
   const fileRef = useRef<HTMLInputElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
   const [view, setView] = useState<'2d' | '3d'>('2d');
+  // 위쪽 화면 전환: 설계도 / 설정
+  const [screen, setScreen] = useState<'design' | 'settings'>('design');
+  const changed = Object.values(changedCounts(project, baseline)).reduce((s, x) => s + x, 0);
+  // 처음 보는 사람을 위한 안내 카드 (닫으면 이 기기에서는 다시 안 나온다)
+  const [tip, setTip] = useState(() => { try { return localStorage.getItem(TIP_KEY) !== '1'; } catch { return true; } });
+  const closeTip = () => { setTip(false); try { localStorage.setItem(TIP_KEY, '1'); } catch { /* 저장소를 못 쓰면 이번 창에서만 */ } };
   // 접은 패널 (왼쪽 설정·아래 그래프·오른쪽 결과). 다음에 열 때도 그대로 (이 기기에만 저장)
   const [hide, setHide] = useState<Hidden>(readHidden);
   const toggle = (patch: Partial<Hidden>) => setHide((h) => { const next = { ...h, ...patch }; try { localStorage.setItem(PANELS_KEY, JSON.stringify(next)); } catch { /* 저장소를 못 쓰면 이번 창에서만 */ } return next; });
-  const onlyDiagram = hide.left && hide.right && hide.bottom;
+  const onlyDiagram = hide.right && hide.bottom;
   const [report, setReport] = useState<{ plans?: OptimizeResult }>();
   const [find, setFind] = useState<{ q: string; at: number }>();
   // 앱을 열 때 남아 있던 임시 저장. 복구할지 정하기 전에는 임시 저장을 덮어쓰지 않는다
@@ -187,7 +194,7 @@ export function App() {
   // 노드를 끄는 동안 App은 위치 때문에 다시 그려지지만, 위치와 무관한 패널(KPI·왼쪽·그래프·오른쪽)은 그대로 둔다
   const analysis = result.analysis;
   const kpi = useMemo(() => <KpiStrip analysis={analysis} />, [analysis]);
-  const left = useMemo(() => (focus ? <Palette nodeId={focus} analysis={analysis} /> : <ProjectPanel />), [focus, analysis]);
+  const left = useMemo(() => focus && <Palette nodeId={focus} analysis={analysis} />, [focus, analysis]);
   const chart = useMemo(() => <LimitChart project={project} analysis={analysis} />, [project, analysis]);
   const right = useMemo(() => <>
     {tab === 'results' && <ResultsPanel analysis={analysis} />}
@@ -200,37 +207,30 @@ export function App() {
 
   return (
     <>
-    <div className={`app ${hide.left ? 'hide-left' : ''} ${hide.right ? 'hide-right' : ''}`}>
-      <header className="toolbar">
-        <strong className="brand">App Architect Studio</strong>
-        <Select aria-label="노드 추가" value="" onChange={(e) => e.target.value && add(e.target.value as Layer)}>
-          <option value="">+ 노드 추가</option>
-          {LAYERS.map((l) => <option key={l} value={l}>{LAYER_NAMES[l]}</option>)}
-        </Select>
-        <i className="sep" />
-        <button onClick={undo} disabled={!past.length} title="되돌리기 (Ctrl+Z)" aria-label="되돌리기">↶</button>
-        <button onClick={redo} disabled={!future.length} title="다시 하기 (Ctrl+Y, Ctrl+Shift+Z)" aria-label="다시 하기">↷</button>
-        <i className="sep" />
-        <button onClick={relayout} disabled={view === '3d'}>자동 배치</button>
-        <button onClick={() => setView(view === '2d' ? '3d' : '2d')}>{view === '2d' ? '3D 보기' : '2D 보기'}</button>
-        <i className="sep" />
-        <span className="panel-toggles" role="group" aria-label="패널 보이기">
-          <button aria-pressed={!hide.left} title="왼쪽 설정 패널" aria-label="왼쪽 설정 패널" onClick={() => toggle({ left: !hide.left })}><PanelIcon side="left" /></button>
-          <button aria-pressed={!hide.bottom} title="아래 그래프" aria-label="아래 그래프" onClick={() => toggle({ bottom: !hide.bottom })}><PanelIcon side="bottom" /></button>
-          <button aria-pressed={!hide.right} title="오른쪽 결과 패널" aria-label="오른쪽 결과 패널" onClick={() => toggle({ right: !hide.right })}><PanelIcon side="right" /></button>
-        </span>
-        <button className={onlyDiagram ? 'on' : ''} onClick={() => toggle(onlyDiagram ? { left: false, right: false, bottom: false } : { left: true, right: true, bottom: true })}>{onlyDiagram ? '패널 다시 보기' : '다이어그램만'}</button>
+    <div className="app">
+      <header className="bar">
+        <div className="brand"><i />App Architect Studio</div>
+        <div className="seg" role="tablist" aria-label="화면">
+          <button role="tab" aria-selected={screen === 'design'} onClick={() => setScreen('design')}>
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden><rect x="1.5" y="2" width="5" height="4" rx="1" /><rect x="9.5" y="2" width="5" height="4" rx="1" /><rect x="5.5" y="10" width="5" height="4" rx="1" /><path d="M4 6v2h8V6M8 8v2" /></svg>설계도</button>
+          <button role="tab" aria-selected={screen === 'settings'} onClick={() => setScreen('settings')}>
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7" /><circle cx="10.5" cy="4.5" r="1.6" /><circle cx="5.5" cy="11.5" r="1.6" /></svg>설정
+            {changed > 0 && <span className="badge" title="불러온 뒤 바꾼 설정 항목 수">{changed}</span>}</button>
+        </div>
         <span className="spacer" />
-        <Select aria-label="예시 불러오기" value="" onChange={(e) => {
-          const ex = examples.find((x) => x.name === e.target.value);
-          if (ex) { load(parseProject(ex.data, catalog.items, ex.name)); setFilePath(undefined); }
-        }}>
-          <option value="">예시 불러오기</option>
-          {examples.map((e) => <option key={e.name} value={e.name}>{e.name}</option>)}
-        </Select>
-        <button onClick={openProject} title="Ctrl+O">열기</button>
+        <Menu label="파일" right>{(close) => <>
+          <div className="menu-head">예시 불러오기</div>
+          {examples.map((e) => (
+            <button key={e.name} role="menuitem" onClick={() => { close(); load(parseProject(e.data, catalog.items, e.name)); setFilePath(undefined); }}>{e.name}</button>
+          ))}
+          <hr />
+          <button role="menuitem" onClick={() => { close(); openProject(); }}>열기<small>Ctrl+O</small></button>
+          <button role="menuitem" title="tools/analyze_py.py가 만든 JSON" onClick={() => { close(); codeRef.current?.click(); }}>코드 분석 불러오기</button>
+          <hr />
+          <button role="menuitem" onClick={() => { close(); exportFile(); }}>파일로 내보내기<small>Ctrl+Shift+S</small></button>
+          <button role="menuitem" onClick={() => { close(); setHistory(!history); }}>저장 기록</button>
+        </>}</Menu>
         <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => e.target.files?.[0] && open(e.target.files[0])} />
-        <button onClick={() => codeRef.current?.click()} title="tools/analyze_py.py가 만든 JSON">코드 분석 불러오기</button>
         <input ref={codeRef} type="file" accept="application/json" hidden onChange={async (e) => {
           const f = e.target.files?.[0];
           if (!f) return;
@@ -242,55 +242,53 @@ export function App() {
           }
           e.target.value = '';
         }} />
-        <i className="sep" />
-        <button onClick={save} title="저장 기록에 시점을 남깁니다 (Ctrl+S)">저장</button>
-        <button onClick={exportFile} title="JSON 파일로 내려받기 (Ctrl+Shift+S)">파일로 내보내기</button>
-        <button onClick={() => setHistory(!history)} title="직접 저장·자동 저장 시점 보기와 복구">저장 기록</button>
-        <i className="sep" />
+        <button className="btn" onClick={save} title="저장 기록에 시점을 남깁니다 (Ctrl+S)">저장</button>
         {/* 최선 조합(7번째 절)은 설계서를 열 때 한 번 찾는다 */}
-        <button className="primary" onClick={() => setReport({ plans: findPlans(project, today).result })}>설계서 PDF</button>
+        <button className="btn primary" onClick={() => setReport({ plans: findPlans(project, today).result })}>설계서 PDF</button>
       </header>
       {kpi}
-      {!hide.left && <aside className="left">{left}</aside>}
+      <div className="views">
+      {screen === 'settings' && <Settings onBack={() => setScreen('design')} />}
+      <div className={`design ${focus ? 'with-left' : ''} ${hide.right ? 'hide-right' : ''}`} hidden={screen !== 'design'}>
+      {focus && <aside className="left">{left}</aside>}
       <main className="center">
+        <div className="ctb">
+          <Menu label="노드 추가" icon={<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden><path d="M8 3v10M3 8h10" /></svg>}>{(close) => <>
+            {LAYERS.map((l) => <button key={l} role="menuitem" onClick={() => { close(); add(l); }}><i className={`dot l-${l}`} />{LAYER_NAMES[l]}</button>)}
+          </>}</Menu>
+          <i className="sep" />
+          <button className="btn icon" onClick={undo} disabled={!past.length} title="되돌리기 (Ctrl+Z)" aria-label="되돌리기"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden><path d="M6 3.5L3 6.5l3 3M3.5 6.5H10a3.5 3.5 0 010 7H7" /></svg></button>
+          <button className="btn icon" onClick={redo} disabled={!future.length} title="다시 하기 (Ctrl+Y, Ctrl+Shift+Z)" aria-label="다시 하기"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden><path d="M10 3.5l3 3-3 3M12.5 6.5H6a3.5 3.5 0 000 7h3" /></svg></button>
+          <i className="sep" />
+          <button className="btn" onClick={relayout} disabled={view === '3d' || !!focus} title="카드를 보기 좋게 다시 늘어놓아요">자동 배치</button>
+          <button className="btn" aria-pressed={view === '3d'} onClick={() => setView(view === '2d' ? '3d' : '2d')} disabled={!!focus} title="입체로 보기">3D 보기</button>
+          <span className="spacer" />
+          {!focus && <Legend project={project} analysis={analysis} />}
+          <span className="panel-toggles" role="group" aria-label="패널 보이기">
+            <button aria-pressed={!hide.bottom} title="아래 그래프" aria-label="아래 그래프" onClick={() => toggle({ bottom: !hide.bottom })}><PanelIcon side="bottom" /></button>
+            <button aria-pressed={!hide.right} title="오른쪽 결과 패널" aria-label="오른쪽 결과 패널" onClick={() => toggle({ right: !hide.right })}><PanelIcon side="right" /></button>
+          </span>
+          <button className={`btn ${onlyDiagram ? 'on' : ''}`} onClick={() => toggle(onlyDiagram ? { right: false, bottom: false } : { right: true, bottom: true })}>{onlyDiagram ? '패널 다시 보기' : '다이어그램만'}</button>
+        </div>
         <div className="stage">
           {focus
             ? <NodeInside key={focus} nodeId={focus} analysis={result.analysis} onSelect={() => setTab('selected')} />
             : view === '2d'
-            ? <Canvas analysis={result.analysis} onSelect={() => setTab('selected')} layout={`${hide.left}${hide.right}${hide.bottom}`} />
+            ? <Canvas analysis={result.analysis} onSelect={() => setTab('selected')} layout={`${hide.right}${hide.bottom}${screen}`} />
             : <View3D analysis={result.analysis} onSelect={() => setTab('selected')} />}
+          {!focus && view === '2d' && tip && (
+            <div className="tip" role="note">
+              <button className="x" aria-label="안내 닫기" onClick={closeTip}>×</button>
+              <b>이렇게 읽어요</b>
+              <ul>
+                <li><i className="h-bad" /><span>빨간 카드가 사용자가 늘 때 가장 먼저 막히는 곳이에요.</span></li>
+                <li><i className="wire" /><span>선이 굵을수록 요청이 많이 지나가요.</span></li>
+                <li><i className="h-warn" /><span>입력값(사용자 수, 페르소나, 하루 피크 등)은 위쪽 <b>설정</b>에서 바꿔요.</span></li>
+              </ul>
+            </div>
+          )}
         </div>
         {!focus && !hide.bottom && chart}
-        {result.error && <pre className="error-banner">{result.error}</pre>}
-        {recovery && (
-          <div className="recovery">
-            <span>지난번 작업이 남아 있어요</span>
-            <b title={snapshotLabel(recovery)}>{snapshotLabel(recovery)}</b>
-            <button className="primary" onClick={() => restore(recovery)}>복구</button>
-            <button onClick={() => setHistory(true)}>다른 시점…</button>
-            <button onClick={() => { startNewSnapshot(); setRecovery(undefined); }}>닫기</button>
-          </div>
-        )}
-        {history && <SaveHistory filePath={desktop ? filePath : undefined} onRestore={restore} onClose={() => setHistory(false)} />}
-        {notice && <div className="notice" role="status">{notice}</div>}
-        {find && (
-          <div className="find" role="search">
-            <input autoFocus value={find.q} placeholder="노드·항목·테이블·컬럼 찾기 (Enter 다음, Esc 닫기)" aria-label="찾기"
-              onChange={(e) => setFind({ q: e.target.value, at: 0 })}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') { e.stopPropagation(); setFind(undefined); }
-                if (e.key === 'Enter' && hits.length) { go(hits[find.at % hits.length]); setFind({ ...find, at: find.at + 1 }); }
-              }} />
-            {find.q && <div className="find-results">
-              {!hits.length && <div className="muted">찾은 것이 없습니다</div>}
-              {hits.map((h, i) => (
-                <button key={`${h.kind}:${h.label}`} className={i === (find.at - 1 + hits.length) % hits.length ? 'on' : ''} onClick={() => go(h)}>
-                  <b>{h.label}</b> <span className="muted">{h.detail}</span>
-                </button>
-              ))}
-            </div>}
-          </div>
-        )}
       </main>
       {!hide.right && (
       <aside className="right">
@@ -302,6 +300,38 @@ export function App() {
         {right}
       </aside>
       )}
+      </div>
+      {result.error && <pre className="error-banner">{result.error}</pre>}
+      {recovery && (
+        <div className="recovery">
+          <span>지난번 작업이 남아 있어요</span>
+          <b title={snapshotLabel(recovery)}>{snapshotLabel(recovery)}</b>
+          <button className="primary" onClick={() => restore(recovery)}>복구</button>
+          <button onClick={() => setHistory(true)}>다른 시점…</button>
+          <button onClick={() => { startNewSnapshot(); setRecovery(undefined); }}>닫기</button>
+        </div>
+      )}
+      {history && <SaveHistory filePath={desktop ? filePath : undefined} onRestore={restore} onClose={() => setHistory(false)} />}
+      {notice && <div className="notice" role="status">{notice}</div>}
+      {find && (
+        <div className="find" role="search">
+          <input autoFocus value={find.q} placeholder="노드·항목·테이블·컬럼 찾기 (Enter 다음, Esc 닫기)" aria-label="찾기"
+            onChange={(e) => setFind({ q: e.target.value, at: 0 })}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') { e.stopPropagation(); setFind(undefined); }
+              if (e.key === 'Enter' && hits.length) { go(hits[find.at % hits.length]); setFind({ ...find, at: find.at + 1 }); }
+            }} />
+          {find.q && <div className="find-results">
+            {!hits.length && <div className="muted">찾은 것이 없습니다</div>}
+            {hits.map((h, i) => (
+              <button key={`${h.kind}:${h.label}`} className={i === (find.at - 1 + hits.length) % hits.length ? 'on' : ''} onClick={() => go(h)}>
+                <b>{h.label}</b> <span className="muted">{h.detail}</span>
+              </button>
+            ))}
+          </div>}
+        </div>
+      )}
+      </div>
     </div>
     <Tooltip />
     {/* 인쇄할 때 .app은 숨기고 설계서만 남기므로 .app 밖에 둔다 */}

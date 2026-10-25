@@ -11,6 +11,8 @@ export type Selection = { kind: 'node'; id: string } | { kind: 'edge'; from: str
 
 type State = {
   project: Project;
+  /** 마지막으로 불러온 프로젝트 (설정 화면이 "바뀐 항목"을 세고 되돌리는 기준) */
+  baseline: Project;
   positions: Record<string, XY>;
   selected: Selection;
   /** 프로젝트 전체를 바꾼다(예시·파일 불러오기). 위치가 없으면 자동 배치 */
@@ -53,12 +55,13 @@ const initial = parseProject(first.data, catalog.items, first.name);
 
 export const useStore = create<State>((set) => ({
   project: initial,
+  baseline: initial,
   past: [],
   future: [],
   positions: autoLayout(initial),
   selected: null,
   // 다른 프로젝트를 불러오는 것도 되돌릴 수 있다
-  load: (p, positions) => set((s) => ({ ...remember(s, false), project: p, positions: { ...autoLayout(p), ...positions }, selected: null, focus: undefined })),
+  load: (p, positions) => set((s) => ({ ...remember(s, false), project: p, baseline: p, positions: { ...autoLayout(p), ...positions }, selected: null, focus: undefined })),
   edit: (fn) => set((s) => {
     const project = fn(s.project);
     if (project === s.project) return {};
