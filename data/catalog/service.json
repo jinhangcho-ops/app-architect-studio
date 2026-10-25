@@ -184,11 +184,12 @@
     "name": "Round-Robin 분산",
     "area": "서비스", "role": "주", "kind": "알고리즘",
     "attaches_to": ["gateway"],
+    "billing": {"model": "provisioned", "products": {"instance": "vm-2vcpu"}},
     "goals": { "운영 난이도": "좋음", "지연시간": "보통" },
     "works_when": [{ "if": "service_time_cv <= th.cv_max", "why": "요청 처리 시간이 고르면 순서대로 나눠도 고르게 분산됩니다" }],
-    "fails_when": [{ "if": "service_time_cv > th.cv_max", "why": "요청 처리 시간 편차(변동계수 {service_time_cv})가 커서, 무거운 요청이 몰린 서버에도 기계적으로 요청을 보내 대기가 쌓입니다" }],
+    "fails_when": [{"if": "peak_rps > th.rps * th.max_instances", "why": "피크 {peak_rps} RPS가 게이트웨이 최대 {th.max_instances}대 처리량({th.rps} RPS × 대수)을 넘습니다"}, { "if": "service_time_cv > th.cv_max", "why": "요청 처리 시간 편차(변동계수 {service_time_cv})가 커서, 무거운 요청이 몰린 서버에도 기계적으로 요청을 보내 대기가 쌓입니다" }],
     "alternatives": [{ "id": "least_connections", "better_for": ["지연시간"] }],
-    "thresholds": { "cv_max": { "value": 1, "unit": "변동계수", "source": "예시값(지수분포의 변동계수 1) — 실측으로 교체 필요" } },
+    "thresholds": {"rps": {"value": 20000, "unit": "RPS", "base_spec": {"vcpu": 2}, "bound_by": "vcpu", "source": "예시값 — 실측으로 교체 필요 (작은 응답 기준, TLS 종료·플러그인이 많으면 더 낮음)"}, "max_instances": {"value": 20, "unit": "대", "source": "예시값 — 예산·할당량에 맞게 입력"},  "cv_max": { "value": 1, "unit": "변동계수", "source": "예시값(지수분포의 변동계수 1) — 실측으로 교체 필요" } },
     "sources": ["설계서 v2 규칙 5"]
   },
   {
@@ -196,6 +197,9 @@
     "name": "Least-Connections 분산",
     "area": "서비스", "role": "주", "kind": "알고리즘",
     "attaches_to": ["gateway"],
+    "thresholds": {"rps": {"value": 20000, "unit": "RPS", "base_spec": {"vcpu": 2}, "bound_by": "vcpu", "source": "예시값 — 실측으로 교체 필요 (작은 응답 기준, TLS 종료·플러그인이 많으면 더 낮음)"}, "max_instances": {"value": 20, "unit": "대", "source": "예시값 — 예산·할당량에 맞게 입력"}},
+    "billing": {"model": "provisioned", "products": {"instance": "vm-2vcpu"}},
+    "fails_when": [{"if": "peak_rps > th.rps * th.max_instances", "why": "피크 {peak_rps} RPS가 게이트웨이 최대 {th.max_instances}대 처리량({th.rps} RPS × 대수)을 넘습니다"}],
     "goals": { "지연시간": "좋음", "운영 난이도": "보통" },
     "works_when": [{ "if": "service_time_cv > 0", "why": "현재 처리 중인 연결이 가장 적은 서버로 보내 느린 서버를 자동으로 피합니다" }],
     "sources": ["설계서 v2 규칙 5"]

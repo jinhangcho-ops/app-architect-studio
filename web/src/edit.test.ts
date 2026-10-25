@@ -71,12 +71,14 @@ describe('관문: 노드 항목이나 사용자 수를 바꾸면 판정이 바�
     expect(verdictOf(applyAlternative(sqlite, 'db', 'sqlite', 'postgresql'), 'db')).not.toBe('fail');
   });
 
-  it('활성 사용자를 첫 병목의 한계보다 늘리면 그 노드가 이벤트 피크에서 걸려 조건부가 됨', () => {
+  it('활성 사용자를 첫 병목의 한계보다 늘리면 그 노드가 이벤트 피크에서 넘쳐 안 됨이 됨 (사용률 100% 초과)', () => {
     const before = run(base, today).analysis!;
     const { nodeId, limitUsers } = before.bottleneck!;
     expect(verdictOf(base, nodeId)).toBe('ok');
     const bigger = { ...base, scale: { ...base.scale!, users: limitUsers.value * 1.5 } };
-    expect(verdictOf(bigger, nodeId)).toBe('conditional');
+    expect(verdictOf(bigger, nodeId)).toBe('fail');
+    const j = run(bigger, today).analysis!.judgements.find((x) => x.nodeId === nodeId)!;
+    expect(j.items.find((i) => i.itemId === bigger.nodes.find((n) => n.id === nodeId)!.primary)!.reasons[0]).toContain('이벤트 피크에서 사용률');
   });
 
   it('입력이 틀리면 계산하지 않고 오류를 돌려줌', () => {

@@ -38,13 +38,13 @@ describe('관문: SQLite 판정 (설계서 5절)', () => {
 
 describe('관문: 로드밸런서 판정', () => {
   it('처리 시간 편차가 크면 Round-Robin은 안 됨, Least-Connections 추천', () => {
-    const j = judge({ layer: 'gateway', primary: 'round_robin', ...scale({ service_time_cv: 1.8 }, { service_time_cv: 1.8 }) });
+    const j = judge({ layer: 'gateway', primary: 'round_robin', ...scale({ service_time_cv: 1.8, peak_rps: 300 }, { service_time_cv: 1.8, peak_rps: 900 }) });
     expect(j.verdict).toBe('fail');
     expect(j.alternatives).toEqual([{ id: 'least_connections', verdict: 'ok', note: undefined }]);
   });
 
   it('편차가 작으면 Round-Robin도 됨', () => {
-    expect(judge({ layer: 'gateway', primary: 'round_robin', ...scale({ service_time_cv: 0.3 }, { service_time_cv: 0.3 }) }).verdict).toBe('ok');
+    expect(judge({ layer: 'gateway', primary: 'round_robin', ...scale({ service_time_cv: 0.3, peak_rps: 300 }, { service_time_cv: 0.3, peak_rps: 900 }) }).verdict).toBe('ok');
   });
 });
 

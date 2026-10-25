@@ -73,13 +73,27 @@ export const mergeScenario = (node: ProjectNode, computed?: Scenario): Scenario 
   event: { ...computed?.event, ...node.vars.event },
 });
 
+/** 주 항목은 사용률이 100%를 넘으면(늘릴 수 있는 대수를 다 써도 못 받음) 다른 조건과 상관없이 안 됨. 평소 피크를 먼저 본다 */
+function overloaded(s: Scenario | undefined): Omit<ItemJudgement, 'alternatives'> | undefined {
+  if (!s) return undefined;
+  for (const [k, name] of [['normal', '평소 피크'], ['event', '이벤트 피크']] as const) {
+    const u = s[k].utilization;
+    if (typeof u === 'number' && u > 1) {
+      return { itemId: '', verdict: 'fail', reasons: [`${name}에서 사용률 ${Math.round(u * 100)}% — 늘릴 수 있는 대수를 다 써도 받지 못합니다 (100%를 넘으면 요청이 쌓여 응답이 끝없이 늦어집니다)`] };
+    }
+  }
+  return undefined;
+}
+
 export function judgeNode(node: ProjectNode, catalog: Map<string, CatalogItem>, computed?: Scenario): NodeJudgement {
   const s = mergeScenario(node, computed);
   const ids = itemIds(node);
   const items = ids.map((id) => {
     const item = catalog.get(id);
     if (!item) throw new Error(`${node.id}: 없는 카탈로그 항목 ${id}`);
-    const j = judgeItem(item, node, s);
+    // 넘친 이유를 맨 앞에 두고, 항목 조건에 걸린 이유(연결 한도 등)도 같이 남긴다
+    const base = judgeItem(item, node, s), over = overloaded(id === node.primary ? s : undefined);
+    const j = over ? { ...base, verdict: over.verdict, reasons: [...over.reasons, ...(base.verdict === 'ok' ? [] : base.reasons)] } : base;
     // 됨이 아니면 같은 노드·같은 변수로 대안을 판정해, 안 됨이 아닌 것만 좋은 순서로 남긴다
     const alternatives = j.verdict === 'ok' ? [] : item.alternatives
       .map((a) => ({ id: a.id, note: a.note, verdict: judgeItem(catalog.get(a.id)!, node, s).verdict }))

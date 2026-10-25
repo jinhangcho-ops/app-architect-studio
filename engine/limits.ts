@@ -24,7 +24,8 @@ export function limitFactor(node: ProjectNode, catalog: Map<string, CatalogItem>
   if (!items.length || !LOAD_VARS.some((k) => typeof s.event[k] === 'number')) return undefined;
   const fails = (f: number) => {
     const ev = { ...scaled(s.event, f), ...at?.(f) };
-    return tests.some((t) => t(ev));
+    // 주 항목의 사용률이 100%를 넘으면 안 됨 (판정과 같은 규칙)
+    return (typeof ev.utilization === 'number' && ev.utilization > 1) || tests.some((t) => t(ev));
   };
   if (fails(0)) return 0;
   let hi = 1;

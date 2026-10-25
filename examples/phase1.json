@@ -5,7 +5,7 @@
     { "id": "web", "name": "웹 화면", "layer": "ui" },
     {
       "id": "lb", "name": "게이트웨이", "layer": "gateway", "primary": "round_robin", "extras": ["token_bucket"],
-      "vars": { "normal": { "service_time_cv": 1.8 }, "event": { "service_time_cv": 1.8 } }
+      "vars": { "normal": { "service_time_cv": 1.8, "peak_rps": 300 }, "event": { "service_time_cv": 1.8, "peak_rps": 900 } }
     },
     {
       "id": "api", "name": "주문 API", "layer": "backend", "primary": "api_single",

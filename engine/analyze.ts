@@ -229,9 +229,13 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
   let bottleneck: Analysis['bottleneck'];
   if (p.scale && t) {
     for (const n of p.nodes) {
-      // 사람이 연결 수를 직접 넣었으면 그 값을 그대로 두고, 계산한 연결 수는 배수마다 다시 센다
-      const conn = connAt.get(n.id);
-      const f = limitFactor(n, d.catalog, judged.get(n.id)!, conn && n.vars.event.db_connections === undefined ? (x) => ({ db_connections: conn(x, 'event').total }) : undefined);
+      // 배수마다 다시 계산하는 값: 사용률(대수가 계단식·최대 대수에서 멈춤), 연결 수(사람이 직접 넣었으면 그 값 그대로)
+      const conn = n.vars.event.db_connections === undefined ? connAt.get(n.id) : undefined;
+      const load = loads?.get(n.id), per = perOf.get(n.id)!, db = primaryShape(n, d.catalog, load);
+      const util = nodes[n.id].utilization && load && per.rps && n.vars.event.utilization === undefined
+        ? (x: number) => sizeAt(n, per.rps!.value, per.max, load.rps.event * x, u, db).util : undefined;
+      const f = limitFactor(n, d.catalog, judged.get(n.id)!, conn || util
+        ? (x) => ({ ...(conn && { db_connections: conn(x, 'event').total }), ...(util && { utilization: util(x) }) }) : undefined);
       if (f === undefined) continue;
       const lim = m(p.scale.users * f, '명', '현재 활성 사용자 × 이벤트 피크에서 안 됨이 되기 직전 배수', { 활성사용자: p.scale.users, 배수: f });
       nodes[n.id].limitUsers = lim;
