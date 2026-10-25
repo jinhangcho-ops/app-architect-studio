@@ -4,7 +4,8 @@
 //   plan         = 월 정액 1개
 // 다른 리전 복사본(dr): active = 같은 대수를 그 리전에, standby = 대기 대수(기본 1)를 하루 내내. 월 정액이면 1개 더, 사용량 과금은 요청이 나뉠 뿐이라 늘지 않는다.
 //   데이터 노드는 복사본 리전에도 같은 저장량을 둔다.
-// shortcut: 복제로 리전 사이에 오가는 쓰기 전송은 세지 않는다. 쓰기가 많아 전송비가 커지면 쓰기 rps × 행 크기로 리전 간 전송 줄을 더한다
+//   복사본 리전으로 가는 복제 = 하루 쓰는 행(새 행 + 갱신) × 행 크기 × 30일을 리전 간 전송으로 센다.
+// shortcut: 복제 1건을 행 크기로 본다 (WAL·binlog의 머리말·인덱스 변경은 빠짐). 실제 복제량을 재면 그 값으로 바꾼다
 // 저장(GB·월), 인터넷 송신(GB), 리전이 다른 노드 사이 전송(GB)은 프로젝트 단위로 더한다.
 import type { LineItem } from './cost';
 import { callSplit } from './api';
@@ -115,6 +116,12 @@ export function costLines(
       // shortcut: 노드 사이 응답 크기를 사용자 응답 평균 크기로 본다. 구간별 크기가 필요해지면 연결선에 payload_kb를 둔다
       const gb = requestsPerMonth(byId.get(e.from)!) * carried * gbPerRequest;
       lines.push({ key: '리전 간 전송', product: p.cost.transfer, region: a, quantities: { gb_interregion: gb }, how: { gb_interregion: `${e.from}→${e.to} 월 요청 × 호출 비율 × 요청당 응답 GB` } });
+    }
+    for (const n of p.nodes.filter((x) => (x.layer === 'db' || x.layer === 'analytics') && x.dr && x.dr.mode !== 'backup' && x.region !== 'local')) {
+      const mine = tables.filter((x) => x.nodeId === n.id);
+      if (!mine.length) { missing.push(`${n.name}: 테이블이 없어 리전 복제량을 모름`); continue; }
+      const gb = mine.reduce((s, x) => s + x.writtenRowsPerDay * x.rowBytes.value, 0) * 30 / 1e9;
+      lines.push({ key: '리전 간 전송', product: p.cost.transfer, region: regionOf(n), quantities: { gb_interregion: gb }, how: { gb_interregion: `${n.id}→${n.dr!.region} 복제: 하루 쓰는 행 × 행 크기 × 30` } });
     }
   }
   return { lines, missing };

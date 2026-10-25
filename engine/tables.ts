@@ -15,6 +15,8 @@ export type TableAnalysis = {
   indexBytesPerRow: Metric;
   storedGb: Metric;
   partitions?: { count: number; gb: Metric };
+  /** 하루에 쓰는 행 (새 행 + 갱신). 리전 복제 전송량에 쓴다 */
+  writtenRowsPerDay: number;
   /** 피크 1시간의 초당 쓰기 행 (평소) */
   peakRowsPerSec: number;
   /** 평균 길이 없음, 저장 프로필 없음 같은 가정 */
@@ -127,7 +129,7 @@ export function tableSize(
   const peak = (sim?.peakRowsPerSec.value ?? 0) * factor;
   return {
     key, nodeId, table: t.name, newRowsPerDay: m(newRows, '행/일', '하루 쓰기 행 × (1 − 갱신 비율)', { 쓰기행: written, 갱신비율: t.update_ratio }),
-    rowBytes, indexBytesPerRow, storedGb, partitions, peakRowsPerSec: peak, assumptions: [...new Set(assumptions)],
+    rowBytes, indexBytesPerRow, storedGb, partitions, writtenRowsPerDay: written, peakRowsPerSec: peak, assumptions: [...new Set(assumptions)],
     // 행·인덱스 크기를 둘 다 실측했으면 프로필이 없어도 크기를 안다
     profiled: !!sp || (t.measured.row_bytes !== undefined && t.measured.index_bytes !== undefined),
     vars: {

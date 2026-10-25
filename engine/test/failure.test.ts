@@ -98,6 +98,14 @@ describe('리전 복사본의 비용과 처리량', () => {
     expect(a.cost!.parts['저장'].value - b.cost!.parts['저장'].value).toBeCloseTo(gb * 0.1);
   });
 
+  it('데이터 노드 복사본은 하루 쓰는 행 × 행 크기 × 30을 리전 간 전송으로 더함', () => {
+    const a = run(base), b = run(node(base, 'N-06', { dr: undefined }));
+    const gb = a.tables.filter((x) => x.nodeId === 'N-06').reduce((s2, x) => s2 + x.writtenRowsPerDay * x.rowBytes.value, 0) * 30 / 1e9;
+    expect(gb).toBeGreaterThan(0);
+    const price = d.prices.find((r) => (r.product ?? r.id) === base.cost.transfer && r.region === 'aws:ap-northeast-1')!.price;
+    expect(a.cost!.parts['리전 간 전송'].value - b.cost!.parts['리전 간 전송'].value).toBeCloseTo(gb * price, 6);
+  });
+
   it('standby로 넘긴 직후 사용률 = 지금 × 대수 / 대기 대수, 리전 목표에서 넘치면 조건부. active는 그대로', () => {
     const p = node({ ...base, recovery: { survive: 'region' } }, 'N-03', { dr: { region: 'aws:ap-northeast-1', mode: 'standby' } });
     const a = run(p), kr = a.failure!.regions.find((r) => r.region === 'aws:ap-northeast-2')!, na = a.nodes['N-03'];
