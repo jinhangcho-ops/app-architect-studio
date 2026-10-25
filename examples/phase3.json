@@ -37,7 +37,7 @@
     },
     {
       "id": "db", "name": "주문 DB", "layer": "db", "primary": "postgresql", "replicas": 2,
-      "vars": { "normal": { "db_connections": 60 }, "event": { "db_connections": 60 } }
+      "vars": { "normal": {}, "event": {} }
     },
     {
       "id": "worker", "name": "정산 워커", "layer": "batch", "primary": "on_demand_worker", "min_instances": 0,

@@ -5,7 +5,7 @@
 // 저장(GB·월), 인터넷 송신(GB), 리전이 다른 노드 사이 전송(GB)은 프로젝트 단위로 더한다.
 import type { LineItem } from './cost';
 import { callSplit } from './api';
-import { edgeFlow, type NodeLoad } from './load';
+import { edgeFlow, readMiss, type NodeLoad } from './load';
 import type { TableAnalysis } from './tables';
 import { nodeRegion, type CatalogItem, type Project, type ProjectNode } from './schema';
 import type { Traffic } from './traffic';
@@ -94,7 +94,7 @@ export function costLines(
       if (!a || !b || a === b) continue;
       // 연결선이 나르는 몫(호출 비율 포함): load.ts의 전파 규칙(edgeFlow)을 그대로 쓴다
       const l = loads?.get(e.from);
-      const carried = l?.rps.normal ? edgeFlow(e, l, callSplit(p, byId.get(e.from)!), 'normal').rps / l.rps.normal : 0;
+      const carried = l?.rps.normal ? edgeFlow(e, l, callSplit(p, byId.get(e.from)!), 'normal', readMiss(p, e)).rps / l.rps.normal : 0;
       // shortcut: 노드 사이 응답 크기를 사용자 응답 평균 크기로 본다. 구간별 크기가 필요해지면 연결선에 payload_kb를 둔다
       const gb = requestsPerMonth(byId.get(e.from)!) * carried * gbPerRequest;
       lines.push({ key: '리전 간 전송', product: p.cost.transfer, region: a, quantities: { gb_interregion: gb }, how: { gb_interregion: `${e.from}→${e.to} 월 요청 × 호출 비율 × 요청당 응답 GB` } });

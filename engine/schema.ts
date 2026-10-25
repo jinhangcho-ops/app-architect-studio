@@ -122,6 +122,8 @@ export const CatalogItem = z.object({
   thresholds: z.record(z.string(), Threshold).default({}),
   /** 9절 과금 방식과 계량 항목별 가격표 상품 키 (리전은 노드에서 정한다) */
   billing: Billing.optional(),
+  /** 늘리는 방식: horizontal = 대수만큼 처리량이 는다(기본), single_primary = 쓰기는 주 서버 1대만 받고 읽기만 읽기 복제본(read_replica)으로 나눈다 */
+  scaling: z.enum(['horizontal', 'single_primary']).default('horizontal'),
   /** 저장 프로필. 같은 엔진을 쓰는 항목(Supabase → PostgreSQL)은 same_as로 가리킨다 */
   storage: z.union([StorageProfile, z.object({ same_as: z.string() })]).optional(),
   sources: z.array(z.string()).min(1),
@@ -350,6 +352,10 @@ export const Project = z.object({
     perf: z.object({ service_ms: z.number().positive(), workers: z.number().int().positive(), service_p99_ms: z.number().positive().optional() }).optional(),
     /** 13절 이중화 대수(하나만 살아 있어도 동작). 1이면 단일 장애점 */
     replicas: z.number().int().positive().default(1),
+    /** 캐시 노드의 적중률 (읽기 중 캐시에서 끝나는 몫). 같은 노드가 부르는 DB의 읽기가 (1 − 적중률)로 준다. 없으면 0.8 (예시값) */
+    hit_ratio: z.number().min(0).max(1).optional(),
+    /** 이 노드 1대가 DB에 여는 연결 풀 크기. 없으면 10 (HikariCP·node-postgres 기본값) */
+    db_pool: z.number().int().positive().optional(),
     /** 13절 1대의 가용성. 없으면 project.default_availability */
     availability: z.number().min(0).max(1).optional(),
     /** 9절 가격표의 인스턴스 상품 id (시간당 과금 또는 월 정액) */

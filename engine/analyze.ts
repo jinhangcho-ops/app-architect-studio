@@ -2,7 +2,7 @@
 // deploy → traffic → load → calibrate/capacity → latency·availability·cost → limits → growth → judge
 import { monthlyDowntimeHours, nodeAvailability, pathAvailability, singlePointsOfFailure } from './availability';
 import { calibrate } from './calibrate';
-import { hourlyInstances, instancesNeeded } from './capacity';
+import { instancesNeeded } from './capacity';
 import { monthlyCost, type CostResult } from './cost';
 import { costLines } from './meters';
 import { enabled, localMemoryMb } from './deploy';
@@ -29,7 +29,14 @@ export type NodeAnalysis = {
   availability: Metric;
   /** 이벤트 피크 기준 '안 됨'이 되는 사용자 수 */
   limitUsers?: Metric;
+  /** DB 노드: 부르는 노드들이 여는 연결 수 */
+  connections?: { normal: Metric; event: Metric };
 };
+
+/** 노드 1대가 DB에 여는 연결 풀 기본값 (HikariCP maximumPoolSize, node-postgres Pool max 기본값) */
+export const DEFAULT_DB_POOL = 10;
+/** 연결 풀러가 DB에 여는 연결 수 기본값 (PgBouncer default_pool_size) */
+export const POOLER_POOL = 20;
 
 export type PathAnalysis = { nodes: string[]; p99?: Metric; availability: Metric; downtime: Metric };
 
@@ -70,10 +77,25 @@ export function perInstance(node: ProjectNode, catalog: Map<string, CatalogItem>
   return { rps, max: max?.value ?? Infinity };
 }
 
-/** 부하 rps를 받는 데 필요한 대수(목표 사용률, 최소·최대 대수 적용)와 그 대수에서의 p99. 결과 카드와 "사용자 증가 시 p99" 그래프가 같이 쓴다 */
-export function sizeAt(n: ProjectNode, perRps: number, maxInstances: number, rps: number, u: number) {
-  const N = instancesNeeded(rps, perRps, u, n.min_instances, maxInstances);
-  return { N, p99: n.perf && nodeP99(rps, n.perf.service_ms, N * n.perf.workers, n.perf.service_p99_ms) };
+/** 주 서버 1대 DB(single_primary)의 모양: 부하 중 쓰기 몫, 읽기 복제본이 있는지. 대수만큼 늘어나는 노드면 undefined */
+export type PrimaryShape = { writeShare: number; replicas: boolean };
+export function primaryShape(n: ProjectNode, catalog: Map<string, CatalogItem>, load?: NodeLoad): PrimaryShape | undefined {
+  if (!n.primary || catalog.get(n.primary)?.scaling !== 'single_primary') return undefined;
+  return { writeShare: load && load.rps.normal > 0 ? load.writeRps.normal / load.rps.normal : 0, replicas: n.extras.includes('read_replica') };
+}
+
+/** 부하 rps를 받는 데 필요한 대수(목표 사용률, 최소·최대 대수 적용), 사용률, 그 대수에서의 p99. 결과 카드·비용·"사용자 증가 시 p99" 그래프가 같이 쓴다.
+ *  주 서버 1대 DB는 쓰기를 주 서버 1대가 모두 받는다: 대수를 늘려도 쓰기 한계는 그대로이고, 읽기 복제본이 있을 때만 읽기를 복제본 대수로 나눈다.
+ *  사용률은 가장 바쁜 서버 기준 (주 서버와 복제본 중 큰 쪽), p99는 주 서버의 대기열 */
+export function sizeAt(n: ProjectNode, perRps: number, maxInstances: number, rps: number, u: number, db?: PrimaryShape) {
+  if (!db) {
+    const N = instancesNeeded(rps, perRps, u, n.min_instances, maxInstances);
+    return { N, util: N ? rps / (N * perRps) : 0, p99: n.perf && nodeP99(rps, n.perf.service_ms, N * n.perf.workers, n.perf.service_p99_ms) };
+  }
+  const reads = rps * (1 - db.writeShare), onPrimary = db.replicas ? rps - reads : rps;
+  const replicas = db.replicas && reads > 0 ? Math.min(Math.max(0, maxInstances - 1), Math.ceil(reads / (perRps * u))) : 0;
+  const util = Math.max(onPrimary / perRps, replicas ? reads / (replicas * perRps) : 0);
+  return { N: Math.max(n.min_instances, 1 + replicas), util, p99: n.perf && nodeP99(onPrimary, n.perf.service_ms, n.perf.workers, n.perf.service_p99_ms) };
 }
 
 /** today = 'YYYY-MM-DD' (가격 기준일 경고용). reuse.traffic: 항목만 바꿔 여러 번 분석할 때 같은 트래픽을 재사용 */
@@ -91,6 +113,7 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
   for (const n of p.nodes) {
     const load = loads?.get(n.id);
     const per = perOf.get(n.id)!;
+    const db = primaryShape(n, d.catalog, load);
     const a = nodeAvailability(n.availability ?? p.default_availability, n.replicas);
     const na: NodeAnalysis = {
       load,
@@ -100,10 +123,15 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     if (load && per.rps && enabled(p.deploy, 'scale')) {
       const at = (s: 'normal' | 'event') => {
         // 비용(hourlyOf)과 같은 최소 대수를 쓴다. 0대까지 줄어드는 노드는 부하가 0일 때 0대
-        const { N, p99 } = sizeAt(n, per.rps!.value, per.max, load.rps[s], u);
-        return {
+        const { N, util, p99 } = sizeAt(n, per.rps!.value, per.max, load.rps[s], u, db);
+        return db ? {
+          N: m(N, '대', db.replicas ? '주 서버 1대(쓰기) + 읽기 복제본 ceil(읽기 / (대당 처리량 × 목표 사용률))' : '주 서버 1대 (쓰기·읽기 모두, 대수를 늘려도 처리량이 늘지 않음)',
+            { 부하: load.rps[s], 쓰기: load.writeRps[s], 대당: per.rps!.value, 목표사용률: u }),
+          util: m(util, '비율', db.replicas ? 'max(쓰기 / 대당 처리량, 읽기 / (복제본 수 × 대당 처리량))' : '부하 / 주 서버 1대 처리량', { 부하: load.rps[s], 쓰기: load.writeRps[s], 대수: N }),
+          p99,
+        } : {
           N: m(N, '대', 'ceil(부하 / (대당 처리량 × 목표 사용률)), 최소·최대 대수로 자름', { 부하: load.rps[s], 대당: per.rps!.value, 목표사용률: u }),
-          util: m(N ? load.rps[s] / (N * per.rps!.value) : 0, '비율', '부하 / (대수 × 대당 처리량)', { 부하: load.rps[s], 대수: N }),
+          util: m(util, '비율', '부하 / (대수 × 대당 처리량)', { 부하: load.rps[s], 대수: N }),
           p99,
         };
       };
@@ -136,8 +164,9 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     const per = perOf.get(n.id)!;
     // 이중화(replicas > 1)는 부하와 무관하게 늘 떠 있어야 하는 대수다. 1이면 0대까지 줄어드는 워커를 막지 않도록 하한으로 쓰지 않는다
     const floor = n.replicas > 1 ? n.replicas : 0;
+    const db = primaryShape(n, d.catalog, load);
     const hourly = load && per.rps && shape
-      ? hourlyInstances(load.rps.normal * factor, shape, per.rps.value, u, n.min_instances, per.max)
+      ? shape.map((s) => sizeAt(n, per.rps!.value, per.max, load.rps.normal * factor * s, u, db).N)
       : Array<number>(24).fill(n.min_instances);
     return hourly.map((x) => Math.max(x, floor));
   };
@@ -150,7 +179,37 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
   const first = enabled(p.deploy, 'cost') ? costAt(1) : undefined;
   const cost = first?.any ? first.result : undefined;
 
-  // 판정 변수에 계산값을 더한다: 사용률, 노드 p99, 이 노드를 지나는 경로 중 가장 낮은 가용성
+  // DB 연결 수: 이 DB를 부르는 노드의 대수 × 대당 연결 풀. 대수를 계산하지 않는 노드는 이중화·최소 대수(적어도 1대)로 본다.
+  // 연결 풀러(PgBouncer 등)가 있으면 DB 쪽 연결은 풀러 크기(기본 20, PgBouncer default_pool_size)를 넘지 않는다.
+  // connAt(배수): 사용자가 배수만큼 늘 때의 연결 수 (부르는 노드 대수가 계단식으로 늘어 사용자에 비례하지 않으므로 한계 찾기가 다시 계산해 쓴다)
+  const connAt = new Map<string, (f: number, s: 'normal' | 'event') => { total: number; parts: number[]; callers: ProjectNode[] }>();
+  for (const n of p.nodes) {
+    if (n.layer !== 'db') continue;
+    const callers = [...new Set(p.edges.filter((e) => e.to === n.id).map((e) => e.from))]
+      .map((id) => p.nodes.find((x) => x.id === id)!).filter((c) => c.layer !== 'ui');
+    if (!callers.length) continue;
+    const pooled = n.extras.includes('connection_pooler');
+    const count = (f: number, s: 'normal' | 'event') => {
+      const parts = callers.map((c) => {
+        const cl = loads?.get(c.id), per = perOf.get(c.id)!;
+        const N = cl && per.rps && enabled(p.deploy, 'scale')
+          ? sizeAt(c, per.rps.value, per.max, cl.rps[s] * f, u, primaryShape(c, d.catalog, cl)).N
+          : Math.max(1, c.replicas, c.min_instances);
+        return N * (c.db_pool ?? DEFAULT_DB_POOL);
+      });
+      const sum = parts.reduce((a, b) => a + b, 0);
+      return { total: pooled ? Math.min(sum, POOLER_POOL) : sum, parts, callers };
+    };
+    connAt.set(n.id, count);
+    const at = (s: 'normal' | 'event') => {
+      const c = count(1, s);
+      return m(c.total, '개', pooled ? 'min(Σ 부르는 노드 대수 × 대당 연결 풀, 연결 풀러 크기)' : 'Σ 부르는 노드 대수 × 대당 연결 풀',
+        Object.fromEntries(c.callers.map((x, i) => [x.id, c.parts[i]])));
+    };
+    nodes[n.id].connections = { normal: at('normal'), event: at('event') };
+  }
+
+  // 판정 변수에 계산값을 더한다: 사용률, 노드 p99, 이 노드를 지나는 경로 중 가장 낮은 가용성, DB 연결 수
   const judged = new Map<string, Scenario>();
   for (const n of p.nodes) {
     const base = scenarios.get(n.id)!;
@@ -161,6 +220,7 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
       ...(na.utilization && { utilization: na.utilization[s].value }),
       ...(na.p99 && { node_p99_ms: na.p99[s].value }),
       ...(Number.isFinite(pathAv) && { path_availability: pathAv }),
+      ...(na.connections && { db_connections: na.connections[s].value }),
     });
     judged.set(n.id, mergeScenario(n, { normal: add('normal'), event: add('event') }));
   }
@@ -169,7 +229,9 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
   let bottleneck: Analysis['bottleneck'];
   if (p.scale && t) {
     for (const n of p.nodes) {
-      const f = limitFactor(n, d.catalog, judged.get(n.id)!);
+      // 사람이 연결 수를 직접 넣었으면 그 값을 그대로 두고, 계산한 연결 수는 배수마다 다시 센다
+      const conn = connAt.get(n.id);
+      const f = limitFactor(n, d.catalog, judged.get(n.id)!, conn && n.vars.event.db_connections === undefined ? (x) => ({ db_connections: conn(x, 'event').total }) : undefined);
       if (f === undefined) continue;
       const lim = m(p.scale.users * f, '명', '현재 활성 사용자 × 이벤트 피크에서 안 됨이 되기 직전 배수', { 활성사용자: p.scale.users, 배수: f });
       nodes[n.id].limitUsers = lim;

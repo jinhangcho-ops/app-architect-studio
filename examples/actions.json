@@ -122,14 +122,6 @@
       "layer": "db",
       "primary": "postgresql",
       "replicas": 2,
-      "vars": {
-        "normal": {
-          "db_connections": 60
-        },
-        "event": {
-          "db_connections": 60
-        }
-      },
       "tables": [
         {
           "name": "orders",

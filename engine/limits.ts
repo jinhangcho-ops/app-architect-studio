@@ -4,7 +4,8 @@ import type { Vars } from './expr';
 import { failsWith, type Scenario } from './judge';
 import { itemIds, type CatalogItem, type ProjectNode } from './schema';
 
-const LOAD_VARS = ['peak_rps', 'peak_write_rps'] as const;
+// db_connections처럼 부하에 비례하지 않는 값은 at(배수)로 그 배수에서 다시 계산해 받는다
+const LOAD_VARS = ['peak_rps', 'peak_write_rps', 'primary_rps'] as const;
 const MAX_FACTOR = 1e6;
 
 const scaled = (vars: Vars, f: number): Vars => {
@@ -17,12 +18,12 @@ const scaled = (vars: Vars, f: number): Vars => {
  * 이벤트 피크 기준으로 '안 됨'이 되기 직전의 배수. 부하와 무관하게 이미 안 되면 0,
  * 1,000,000배까지 버티거나 부하 변수가 없으면 undefined(한계 없음).
  */
-export function limitFactor(node: ProjectNode, catalog: Map<string, CatalogItem>, s: Scenario): number | undefined {
+export function limitFactor(node: ProjectNode, catalog: Map<string, CatalogItem>, s: Scenario, at?: (f: number) => Vars): number | undefined {
   const items = itemIds(node).map((id) => catalog.get(id)!);
   const tests = items.map((it) => failsWith(it, node));
   if (!items.length || !LOAD_VARS.some((k) => typeof s.event[k] === 'number')) return undefined;
   const fails = (f: number) => {
-    const ev = scaled(s.event, f);
+    const ev = { ...scaled(s.event, f), ...at?.(f) };
     return tests.some((t) => t(ev));
   };
   if (fails(0)) return 0;

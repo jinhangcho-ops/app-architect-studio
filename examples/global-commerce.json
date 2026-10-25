@@ -34,7 +34,6 @@
     { "id": "N-06", "name": "정산·원장 DB (N-06)", "layer": "db", "primary": "postgresql",
       "extras": ["range_partitioning", "read_replica", "uuidv7_keys"], "replicas": 2, "region": "aws:ap-northeast-1",
       "privacy": { "personal": true, "subjects": ["KR", "JP"] },
-      "vars": { "normal": { "db_connections": 60, "read_ratio": 0.8 }, "event": { "db_connections": 60, "read_ratio": 0.8 } },
       "spec": { "vcpu": 2, "memGb": 16 },
       "tables": [
         { "name": "orders", "primary_key": ["id"],

@@ -1,6 +1,6 @@
 [
   {
-    "id": "sqlite",
+    "id": "sqlite", "scaling": "single_primary",
     "name": "SQLite",
     "area": "서비스",
     "role": "주",
@@ -45,7 +45,7 @@
     "sources": ["https://www.sqlite.org/lockingv3.html"]
   },
   {
-    "id": "sqlite_wal",
+    "id": "sqlite_wal", "scaling": "single_primary",
     "name": "SQLite (WAL 모드)",
     "area": "서비스",
     "role": "주",
@@ -60,7 +60,7 @@
     "sources": ["https://www.sqlite.org/wal.html"]
   },
   {
-    "id": "postgresql",
+    "id": "postgresql", "scaling": "single_primary",
     "name": "PostgreSQL",
     "area": "서비스",
     "role": "주",
@@ -69,7 +69,7 @@
     "goals": {"메모리": "보통", "속도": "좋음", "동시성": "좋음", "운영 난이도": "보통"},
     "works_when": [{"if": "writer_nodes >= 1", "why": "행 단위 락과 MVCC로 여러 노드가 동시에 써도 됩니다"}],
     "alternatives": [{"id": "connection_pooler", "better_for": ["동시성"], "note": "연결 수 문제일 때"}],
-    "fails_when": [{"if": "peak_write_rps > th.write_rps", "why": "피크 쓰기 {peak_write_rps}건/초가 기준 {th.write_rps}건/초를 넘습니다"}, {"if": "db_connections > th.max_connections", "why": "동시 연결 {db_connections}개가 연결 한도 {th.max_connections}개를 넘습니다"}, {"if": "peak_rps > th.rps", "why": "피크 {peak_rps} RPS가 주 DB 서버 1대 처리량 {th.rps} RPS를 넘습니다"}],
+    "fails_when": [{"if": "peak_write_rps > th.write_rps", "why": "피크 쓰기 {peak_write_rps}건/초가 기준 {th.write_rps}건/초를 넘습니다"}, {"if": "db_connections > th.max_connections", "why": "동시 연결 {db_connections}개가 연결 한도 {th.max_connections}개를 넘습니다"}, {"if": "primary_rps > th.rps", "why": "주 DB 서버가 받는 피크 {primary_rps} RPS(쓰기, 읽기 복제본이 없으면 읽기까지)가 1대 처리량 {th.rps} RPS를 넘습니다"}],
     "thresholds": {"write_rps": {"value": 2000, "unit": "건/초", "base_spec": {"vcpu": 2}, "bound_by": "vcpu", "source": "예시값(설계서 8절) — 실측·공식 자료로 교체 필요"}, "max_connections": {"value": 100, "unit": "개", "source": "PostgreSQL max_connections 기본값"}, "rps": {"value": 3000, "unit": "RPS", "base_spec": {"vcpu": 2}, "bound_by": "vcpu", "source": "예시값 — 실측으로 교체 필요"}},
     "billing": {"model": "provisioned", "products": {"instance": "db-2vcpu"}},
     "storage": {
@@ -162,7 +162,7 @@
     "sources": ["https://www.pgbouncer.org/features.html"]
   },
   {
-    "id": "supabase",
+    "id": "supabase", "scaling": "single_primary",
     "name": "Supabase",
     "area": "서비스",
     "role": "주",

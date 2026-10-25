@@ -1,6 +1,6 @@
 [
   {
-    "id": "mysql",
+    "id": "mysql", "scaling": "single_primary",
     "name": "MySQL",
     "area": "서비스",
     "role": "주",
@@ -10,7 +10,7 @@
     "goals": {"동시성": "좋음", "운영 난이도": "좋음", "확장성": "보통"},
     "works_when": [{"if": "writer_nodes >= 1", "why": "여러 서버가 동시에 써도 행 단위 락으로 처리됩니다"}],
     "alternatives": [{"id": "connection_pooler", "better_for": ["동시성"], "note": "연결 수 문제일 때"}, {"id": "postgresql", "better_for": ["확장성"], "note": "확장 기능·타입이 더 풍부"}],
-    "fails_when": [{"if": "db_connections > th.max_connections", "why": "동시 연결 {db_connections}개가 연결 한도 {th.max_connections}개를 넘습니다"}, {"if": "peak_rps > th.rps", "why": "피크 {peak_rps} RPS가 주 DB 서버 1대 처리량 {th.rps} RPS를 넘습니다"}],
+    "fails_when": [{"if": "db_connections > th.max_connections", "why": "동시 연결 {db_connections}개가 연결 한도 {th.max_connections}개를 넘습니다"}, {"if": "primary_rps > th.rps", "why": "주 DB 서버가 받는 피크 {primary_rps} RPS(쓰기, 읽기 복제본이 없으면 읽기까지)가 1대 처리량 {th.rps} RPS를 넘습니다"}],
     "thresholds": {"max_connections": {"value": 151, "unit": "개", "source": "MySQL max_connections 기본값"}, "rps": {"value": 3000, "unit": "RPS", "base_spec": {"vcpu": 2}, "bound_by": "vcpu", "source": "예시값 — 실측으로 교체 필요"}},
     "billing": {"model": "provisioned", "products": {"instance": "db-2vcpu"}},
     "storage": {
@@ -66,7 +66,7 @@
     "sources": ["https://dev.mysql.com/doc/refman/8.4/en/server-system-variables.html#sysvar_max_connections"]
   },
   {
-    "id": "mongodb",
+    "id": "mongodb", "scaling": "single_primary",
     "name": "MongoDB",
     "area": "서비스",
     "role": "주",
@@ -76,7 +76,7 @@
     "goals": {"확장성": "좋음", "운영 난이도": "보통", "동시성": "좋음"},
     "works_when": [{"if": "true", "why": "데이터 모양이 자주 바뀌거나 한 문서로 읽는 화면이 많을 때 맞습니다"}],
     "alternatives": [{"id": "postgresql", "better_for": ["안정성"], "note": "조인·트랜잭션이 많을 때(JSONB도 지원)"}],
-    "fails_when": [{"if": "peak_rps > th.rps", "why": "피크 {peak_rps} RPS가 주 DB 서버 1대 처리량 {th.rps} RPS를 넘습니다"}],
+    "fails_when": [{"if": "primary_rps > th.rps", "why": "주 DB 서버가 받는 피크 {primary_rps} RPS(쓰기, 읽기 복제본이 없으면 읽기까지)가 1대 처리량 {th.rps} RPS를 넘습니다"}],
     "thresholds": {"rps": {"value": 3000, "unit": "RPS", "base_spec": {"vcpu": 2}, "bound_by": "vcpu", "source": "예시값 — 실측으로 교체 필요"}},
     "billing": {"model": "provisioned", "products": {"instance": "db-2vcpu"}},
     "storage": {

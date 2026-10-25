@@ -1,6 +1,7 @@
 import { Select } from './Select';
 import { useState } from 'react';
-import type { Analysis } from '../../engine/analyze';
+import { DEFAULT_DB_POOL, type Analysis } from '../../engine/analyze';
+import { DEFAULT_HIT_RATIO } from '../../engine/load';
 import { judgeItem } from '../../engine/judge';
 import { LAYERS, LAYER_NAMES, VERDICT_NAMES, type Layer } from '../../engine/model';
 import { REGIONS, TABLE_LAYERS } from '../../engine/schema';
@@ -101,6 +102,7 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
             ['사용률 (이벤트)', na?.utilization?.event],
             ['p99 (이벤트)', na?.p99?.event],
             ['가용성', na?.availability],
+            ['DB 연결 수 (이벤트)', na?.connections?.event],
             ['한계 사용자', na?.limitUsers],
           ] as const).map(([label, m]) => (
             <tr key={label} title={howMetric(m || undefined)}><td>{label}</td><td>{fmtMetric(m || undefined)}</td></tr>
@@ -138,6 +140,8 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
         <NumField label="1대 가용성" value={n.availability} step={0.0001} hint="비우면 프로젝트 기본값" onChange={(v) => upd({ availability: v })} />
         <NumField label="평균 처리(ms)" value={n.perf?.service_ms} onChange={(v) => upd({ perf: v ? { workers: n.perf?.workers ?? 8, ...n.perf, service_ms: v } : undefined })} />
         <NumField label="대당 동시 처리" value={n.perf?.workers} step={1} onChange={(v) => n.perf && upd({ perf: { ...n.perf, workers: v ?? 1 } })} />
+        {n.layer === 'cache' && <NumField label="캐시 적중률" value={n.hit_ratio} step={0.05} hint={`읽기 중 캐시에서 끝나는 몫. 이 캐시를 부르는 노드가 DB로 보내는 읽기가 (1 − 적중률)로 줄어요. 비우면 ${DEFAULT_HIT_RATIO} (예시값) — 실측 적중률로 바꾸세요`} onChange={(v) => upd({ hit_ratio: v === undefined ? undefined : Math.min(1, Math.max(0, v)) })} />}
+        {project.edges.some((e) => e.from === n.id && project.nodes.find((x) => x.id === e.to)?.layer === 'db') && <NumField label="DB 연결 풀(대당)" value={n.db_pool} step={1} hint={`이 노드 1대가 DB에 여는 연결 수. DB 연결 수 = 대수 × 이 값. 비우면 ${DEFAULT_DB_POOL} (HikariCP·node-postgres 기본값)`} onChange={(v) => upd({ db_pool: v && v > 0 ? Math.round(v) : undefined })} />}
         {(() => {
           const b = n.primary ? catalog.byId.get(n.primary)?.billing : undefined;
           const MODEL = { provisioned: '대수 × 시간', usage: '사용량', plan: '월 정액' } as const;

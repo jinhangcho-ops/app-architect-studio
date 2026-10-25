@@ -30,7 +30,7 @@
     { "id": "api", "name": "주문 API", "layer": "backend", "primary": "api_single" },
     {
       "id": "db", "name": "주문 DB", "layer": "db", "primary": "sqlite",
-      "vars": { "normal": { "db_connections": 60 }, "event": { "db_connections": 60 } }
+      "vars": { "normal": {}, "event": {} }
     },
     {
       "id": "worker", "name": "정산 워커", "layer": "batch", "primary": "on_demand_worker",

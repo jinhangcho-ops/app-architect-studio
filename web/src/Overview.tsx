@@ -1,6 +1,6 @@
 // 한눈에 보기: 위쪽 지표 줄과, 캔버스 아래 "활성 사용자가 늘면 어디가 먼저 막힐까요?" 그래프 (엔진 식으로 다시 계산한 사용률·p99 곡선)
 import { useMemo, useState } from 'react';
-import { perInstance, sizeAt, type Analysis } from '../../engine/analyze';
+import { perInstance, primaryShape, sizeAt, type Analysis } from '../../engine/analyze';
 import { dayLabel } from '../../engine/industry';
 import { dayCurve } from '../../engine/traffic';
 import type { Metric } from '../../engine/model';
@@ -74,7 +74,7 @@ export function p99Series(p: Project, a: Analysis, byId: Map<string, CatalogItem
     if (!load || !per.rps || !n.perf) return [];
     const pts = xs.map((u): [number, number] => {
       const rps = (load.rps.event * u) / users;
-      return [u, sizeAt(n, per.rps!.value, per.max, rps, p.target_utilization).p99!.value];
+      return [u, sizeAt(n, per.rps!.value, per.max, rps, p.target_utilization, primaryShape(n, byId, load)).p99!.value];
     });
     return [{ id: n.id, name: n.name, color: COLOR[healthOf(a, users, n.id).health], lim: a.nodes[n.id]?.limitUsers?.value, pts }];
   });

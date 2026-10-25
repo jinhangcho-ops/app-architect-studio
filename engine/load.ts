@@ -27,8 +27,9 @@ export function nodeLoads(p: Project, t: Traffic): Map<string, NodeLoad> {
     const split = callSplit(p, p.nodes.find((n) => n.id === id)!);
     for (const e of p.edges.filter((x) => x.from === id)) {
       const to = loads.get(e.to)!;
+      const miss = readMiss(p, e);
       for (const s of ['normal', 'event'] as const) {
-        const f = edgeFlow(e, from, split, s);
+        const f = edgeFlow(e, from, split, s, miss);
         to.rps[s] += f.rps;
         to.writeRps[s] += f.write;
       }
@@ -37,15 +38,27 @@ export function nodeLoads(p: Project, t: Traffic): Map<string, NodeLoad> {
   return loads;
 }
 
-/** 연결선 하나로 흐르는 요청과 그중 쓰기. 화면 와이어프레임에 API 호출이 있으면(split) 호출 비율대로, 없으면 carries × callRatio */
-export function edgeFlow(e: ProjectEdge, from: NodeLoad, split: ReturnType<typeof callSplit>, s: 'normal' | 'event'): { rps: number; write: number } {
-  const w = from.writeRps[s];
+/** 캐시 적중률을 정하지 않았을 때 쓰는 값 (예시값 — 실측 적중률로 바꾼다) */
+export const DEFAULT_HIT_RATIO = 0.8;
+
+/** 이 연결선의 읽기 중 실제로 도착하는 몫. 보내는 노드가 캐시도 부르면(캐시 먼저 보고 없을 때만 DB: cache-aside) DB로 가는 읽기는 (1 − 적중률)만 */
+export function readMiss(p: Project, e: ProjectEdge): number {
+  const layer = (id: string) => p.nodes.find((n) => n.id === id)?.layer;
+  if (layer(e.to) !== 'db') return 1;
+  const cache = p.edges.find((x) => x.from === e.from && x.sync && layer(x.to) === 'cache');
+  return cache ? 1 - (p.nodes.find((n) => n.id === cache.to)!.hit_ratio ?? DEFAULT_HIT_RATIO) : 1;
+}
+
+/** 연결선 하나로 흐르는 요청과 그중 쓰기. 화면 와이어프레임에 API 호출이 있으면(split) 호출 비율대로, 없으면 carries × callRatio.
+ *  miss: 읽기 중 도착하는 몫 (readMiss, 캐시가 앞에 있으면 1보다 작다). 쓰기는 그대로 간다 */
+export function edgeFlow(e: ProjectEdge, from: NodeLoad, split: ReturnType<typeof callSplit>, s: 'normal' | 'event', miss = 1): { rps: number; write: number } {
+  const w = from.writeRps[s], r = from.rps[s] - w;
   if (split) {
     const f = split.get(e.to) ?? { read: 0, write: 0 };
-    return { rps: (from.rps[s] - w) * f.read + w * f.write, write: w * f.write };
+    return { rps: r * f.read * miss + w * f.write, write: w * f.write };
   }
-  const r = e.carries === 'all' ? from.rps[s] : e.carries === 'write' ? w : from.rps[s] - w;
-  return { rps: r * e.callRatio, write: e.carries === 'read' ? 0 : w * e.callRatio };
+  const reads = e.carries === 'write' ? 0 : r * miss, writes = e.carries === 'read' ? 0 : w;
+  return { rps: (reads + writes) * e.callRatio, write: writes * e.callRatio };
 }
 
 /** Kahn 위상 정렬. 순환 연결이 있으면 부하가 끝없이 불어나므로 오류로 멈춘다. */
@@ -77,7 +90,13 @@ export function computedScenarios(p: Project, loads: Map<string, NodeLoad> | und
     const at = (s: 'normal' | 'event') => ({
       ...common,
       writer_nodes: new Set(p.edges.filter((e) => e.to === n.id && e.carries !== 'read').map((e) => e.from)).size,
-      ...(l && { peak_rps: l.rps[s], peak_write_rps: l.writeRps[s] }),
+      ...(l && {
+        peak_rps: l.rps[s], peak_write_rps: l.writeRps[s],
+        // 읽기 비율 (캐시가 맞는지 보는 값)
+        ...(l.rps[s] > 0 && { read_ratio: 1 - l.writeRps[s] / l.rps[s] }),
+        // 주 서버가 받는 부하: 읽기 복제본이 있으면 쓰기만, 없으면 전부 (single_primary DB의 판정에 쓴다)
+        primary_rps: n.extras.includes('read_replica') ? l.writeRps[s] : l.rps[s],
+      }),
     });
     return [n.id, { normal: at('normal'), event: at('event') }];
   }));

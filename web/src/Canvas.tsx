@@ -2,7 +2,7 @@ import { Background, BackgroundVariant, BaseEdge, Controls, EdgeLabelRenderer, g
 import { useEffect, useMemo, useRef } from 'react';
 import type { Analysis } from '../../engine/analyze';
 import { callSplit } from '../../engine/api';
-import { edgeFlow } from '../../engine/load';
+import { edgeFlow, readMiss } from '../../engine/load';
 import { LAYER_NAMES, VERDICT_NAMES, type Verdict } from '../../engine/model';
 import type { Project, ProjectNode } from '../../engine/schema';
 import { catalog } from './data';
@@ -124,7 +124,7 @@ export function Canvas({ analysis, onSelect, layout }: { analysis?: Analysis; on
     const splits = new Map(project.nodes.map((n) => [n.id, callSplit(project, n)]));
     const flows = project.edges.map((e) => {
       const from = analysis?.nodes[e.from]?.load;
-      return from ? edgeFlow(e, from, splits.get(e.from), 'normal').rps : 0;
+      return from ? edgeFlow(e, from, splits.get(e.from), 'normal', readMiss(project, e)).rps : 0;
     });
     const maxRps = Math.max(1, ...flows);
     return project.edges.map((e, i): Edge => {
