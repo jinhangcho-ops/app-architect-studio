@@ -2,7 +2,7 @@ import { Select } from './Select';
 import { useState } from 'react';
 import { DEFAULT_DB_POOL, type Analysis } from '../../engine/analyze';
 import { DEFAULT_HIT_RATIO } from '../../engine/load';
-import { DEFAULT_MAX_LAG_S, DEFAULT_SCALE_DELAY_S, flowLine } from '../../engine/pipeline';
+import { DEFAULT_COOLDOWN_S, DEFAULT_MAX_LAG_S, DEFAULT_POLL_S, DEFAULT_SCALE_DELAY_S, flowLine } from '../../engine/pipeline';
 import { failureLines } from '../../engine/failure';
 import { judgeItem } from '../../engine/judge';
 import { LAYERS, LAYER_NAMES, VERDICT_NAMES, type Layer } from '../../engine/model';
@@ -152,12 +152,14 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
           <NumField label="허용 지연(초)" value={n.max_lag_s} step={10} hint={`메시지가 들어와 처리될 때까지 허용하는 시간. 넘으면 평소엔 안 됨, 이벤트 때만이면 조건부. 비우면 ${DEFAULT_MAX_LAG_S}초 (예시값)`} onChange={(v) => upd({ max_lag_s: v && v > 0 ? v : undefined })} />
         </>}
         {project.edges.some((e) => e.to === n.id && project.nodes.find((x) => x.id === e.from)?.layer === 'queue') && <>
-          <Row label="자동 확장" hint="큐 소비자 대수를 시간대 도착(페르소나·하루 피크 시뮬레이션)에 맞춰 정해요: ceil(도착 × 처리 시간 / (대당 동시 처리 × 목표 사용률)). 최소는 '최소 대수'(0이면 한가할 때 끔)">
+          <Row label="자동 확장" hint="KEDA처럼 큐 소비자 대수를 트래픽(페르소나·하루 피크의 1분 단위 곡선)에 맞춰 바꿔요. 확인 주기마다 ceil(도착 × 처리 시간 / (대당 동시 처리 × 목표 사용률)). 최소는 '최소 대수'(0이면 한가할 때 끔)">
             <input type="checkbox" checked={!!n.autoscale} onChange={(e) => upd({ autoscale: e.target.checked ? {} : undefined })} />
           </Row>
           {n.autoscale && <>
             <NumField label="최대 대수" value={n.autoscale.max} step={1} hint="비우면 파티션 수 / 대당 동시 처리 (파티션이 없으면 제한 없음)" onChange={(v) => upd({ autoscale: { ...n.autoscale, max: v && v > 0 ? Math.round(v) : undefined } })} />
-            <NumField label="늘리는 시간(초)" value={n.autoscale.delay_s} step={10} hint={`적체를 보고 새 소비자가 처리를 시작하기까지. 이 동안은 이전 대수로 받아 적체가 생겨요. 비우면 ${DEFAULT_SCALE_DELAY_S}초 (예시값)`} onChange={(v) => upd({ autoscale: { ...n.autoscale, delay_s: v === undefined || v < 0 ? undefined : v } })} />
+            <NumField label={`새 소비자가 뜨는 시간(초)${n.autoscale.delay_s === undefined ? ` — 비우면 ${DEFAULT_SCALE_DELAY_S}초 (예시값)` : ''}`} value={n.autoscale.delay_s} step={5} hint={`늘리기로 정한 뒤 새 소비자가 처리를 시작하기까지. 이 동안은 이전 대수로 받아 적체가 생겨요. 비우면 ${DEFAULT_SCALE_DELAY_S}초 — 예시값이니 실제로 잰 값을 넣으세요`} onChange={(v) => upd({ autoscale: { ...n.autoscale, delay_s: v === undefined || v < 0 ? undefined : v } })} />
+            <NumField label="확인 주기(초)" value={n.autoscale.poll_s} step={5} hint={`도착·적체를 보고 대수를 다시 정하는 주기 (KEDA pollingInterval). 비우면 ${DEFAULT_POLL_S}초 (KEDA 기본값)`} onChange={(v) => upd({ autoscale: { ...n.autoscale, poll_s: v && v > 0 ? v : undefined } })} />
+            <NumField label="줄이기 전 기다림(초)" value={n.autoscale.cooldown_s} step={30} hint={`몰림이 끝나도 최근 이 시간 동안 필요했던 가장 큰 대수 아래로는 줄이지 않아요 (KEDA cooldownPeriod). 길수록 다시 몰릴 때 안전하고 비용이 늘어요. 비우면 ${DEFAULT_COOLDOWN_S}초 (KEDA 기본값)`} onChange={(v) => upd({ autoscale: { ...n.autoscale, cooldown_s: v === undefined || v < 0 ? undefined : v } })} />
           </>}
         </>}
         {(n.layer === 'batch' || n.layer === 'analytics' || n.batch) && <>

@@ -16,11 +16,11 @@ import { apiLoads, type ApiLoad } from './api';
 import { computedScenarios, nodeLoads, type NodeLoad } from './load';
 import { metric, type Metric } from './model';
 import { failureScenarios, recoveryVars, type Failure } from './failure';
-import { pipelineFlows, type PipelineFlow } from './pipeline';
+import { minuteShape, pipelineFlows, type PipelineFlow } from './pipeline';
 import { checkRegulation, type LawHit } from './regulation';
 import type { CatalogItem, LawRow, PriceRow, Project, ProjectNode, Rule } from './schema';
 import { tableSizes, type TableAnalysis } from './tables';
-import { traffic, type Traffic } from './traffic';
+import { dayCurve, traffic, type Traffic } from './traffic';
 
 export type NodeAnalysis = {
   load?: NodeLoad;
@@ -75,6 +75,8 @@ export type Analysis = {
 export type Data = { catalog: Map<string, CatalogItem>; rules: Rule[]; prices: PriceRow[]; laws?: LawRow[] };
 
 const m = metric;
+/** 트래픽마다 1분 곡선 (같은 트래픽을 재사용하는 여러 번의 분석이 같은 배열을 써서 자동 확장 결과를 다시 쓴다) */
+const minuteOf = new WeakMap<Traffic, number[]>();
 
 /** 대당 처리량(사양·실측으로 보정)과 최대 대수. 화면의 세부 구성도 같은 값을 쓴다 */
 export function perInstance(node: ProjectNode, catalog: Map<string, CatalogItem>) {
@@ -157,22 +159,28 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     const c = p.nodes.find((x) => x.id === id)!, cl = loads?.get(id), per = perOf.get(id)!;
     return cl && per.rps && enabled(p.deploy, 'scale') ? sizeAt(c, per.rps.value, per.max, cl.rps[s] * f, u, primaryShape(c, d.catalog, cl)).N : undefined;
   };
+  // 자동 확장 소비자는 1분 단위 트래픽 곡선(페르소나·하루 피크의 기대 곡선)으로 돈다
+  let minute = t && p.nodes.some((n) => n.autoscale) ? minuteOf.get(t) : undefined;
+  if (t && !minute && p.nodes.some((n) => n.autoscale)) {
+    const curve = dayCurve(p, 1)?.total;
+    if (curve) minuteOf.set(t, (minute = minuteShape(curve)));
+  }
   const flowCache = new Map<number, PipelineFlow[]>();
   const flowsAt = (f: number) => {
-    if (!flowCache.has(f)) flowCache.set(f, loads && shape ? pipelineFlows(p, loads, shape, eventFactor, instAt(f), f) : []);
+    if (!flowCache.has(f)) flowCache.set(f, loads && shape ? pipelineFlows(p, loads, shape, eventFactor, instAt(f), f, minute) : []);
     return flowCache.get(f)!;
   };
   const pipeline = flowsAt(1);
-  /** 자동 확장 소비자의 0~23시 대수 (큐를 여럿 받으면 시간마다 가장 많은 것). 배수 f에서 다시 계산한다 */
-  const autoHourly = (id: string, f: number, s: 'normal' | 'event') => {
-    const hs = flowsAt(f).filter((x) => x.to === id && x.hourly).map((x) => x.hourly![s]);
-    return hs.length ? hs[0].map((_, h) => Math.max(...hs.map((x) => x[h]))) : undefined;
+  /** 자동 확장 소비자의 하루 (큐를 여럿 받으면 가장 바쁜 것). 배수 f에서 다시 계산한다 */
+  const autoOf = (id: string, f: number, s: 'normal' | 'event') => {
+    const xs = flowsAt(f).filter((x) => x.to === id && x.auto).map((x) => x.auto![s]);
+    return xs.length ? xs.reduce((a, b) => (b.max > a.max ? b : a)) : undefined;
   };
   for (const n of p.nodes) {
-    const hn = autoHourly(n.id, 1, 'normal'), he = autoHourly(n.id, 1, 'event');
-    if (!hn || !he || nodes[n.id].instances) continue;
-    const how = '시간대마다 ceil(도착 × 처리 초 / (대당 동시 처리 × 목표 사용률)), 최소·최대 대수(파티션 수)로 자름 — 이 중 가장 많은 시간';
-    nodes[n.id].instances = { normal: m(Math.max(...hn), '대', how, { 최소: Math.min(...hn) }), event: m(Math.max(...he), '대', how, { 최소: Math.min(...he) }) };
+    const an = autoOf(n.id, 1, 'normal'), ae = autoOf(n.id, 1, 'event');
+    if (!an || !ae || nodes[n.id].instances) continue;
+    const how = '1분 단위 트래픽으로 자동 확장을 돌린 하루 중 가장 많은 대수';
+    nodes[n.id].instances = { normal: m(an.max, '대', how, { 최소: an.min }), event: m(ae.max, '대', how, { 최소: ae.min }) };
   }
   /** 받는 노드의 파이프라인 판정 변수: 큐 지연·허용 지연, 배치 실행·실행 창 (여럿이면 가장 나쁜 것) */
   const pipeVars = (flows: PipelineFlow[], id: string, s: 'normal' | 'event'): Vars => {
@@ -210,7 +218,7 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     // 이중화(replicas > 1)는 부하와 무관하게 늘 떠 있어야 하는 대수다. 1이면 0대까지 줄어드는 워커를 막지 않도록 하한으로 쓰지 않는다
     const floor = n.replicas > 1 ? n.replicas : 0;
     const db = primaryShape(n, d.catalog, load);
-    const hourly = autoHourly(n.id, factor, 'normal') ?? (load && per.rps && shape
+    const hourly = autoOf(n.id, factor, 'normal')?.hourly ?? (load && per.rps && shape
       ? shape.map((s) => sizeAt(n, per.rps!.value, per.max, load.rps.normal * factor * s, u, db).N)
       : Array<number>(24).fill(n.min_instances));
     return hourly.map((x) => Math.max(x, floor));
@@ -237,8 +245,8 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     const count = (f: number, s: 'normal' | 'event') => {
       const parts = callers.map((c) => {
         const cl = loads?.get(c.id), per = perOf.get(c.id)!;
-        const auto = autoHourly(c.id, f, s);
-        const N = auto ? Math.max(...auto) : cl && per.rps && enabled(p.deploy, 'scale')
+        const auto = autoOf(c.id, f, s);
+        const N = auto ? auto.max : cl && per.rps && enabled(p.deploy, 'scale')
           ? sizeAt(c, per.rps.value, per.max, cl.rps[s] * f, u, primaryShape(c, d.catalog, cl)).N
           : Math.max(1, c.replicas, c.min_instances);
         return N * (c.db_pool ?? DEFAULT_DB_POOL);

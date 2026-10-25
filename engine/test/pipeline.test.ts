@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { analyze } from '../analyze';
 import { loadCatalog, loadLaws, loadPrices, loadProject } from '../io';
-import { backlogDay, DEFAULT_SCALE_DELAY_S } from '../pipeline';
+import { autoscaleDay, backlogDay, type AutoscaleOpts } from '../pipeline';
 import type { Project } from '../schema';
 
 const root = (p: string) => fileURLToPath(new URL(`../../${p}`, import.meta.url));
@@ -85,38 +85,52 @@ describe('배치', () => {
   });
 });
 
-describe('소비자 자동 확장', () => {
+describe('소비자 자동 확장 (KEDA처럼)', () => {
   const auto = run(gc), af = flow(auto, 'N-05');
-  it('시간대마다 대수 = ceil(도착 × 처리 초 / (대당 동시 처리 × 목표 사용률)), 최소·파티션 상한으로 자름', () => {
-    const shape = auto.traffic!.hourlyRps.map((x) => x / auto.traffic!.peakRps.value);
-    const want = shape.map((x) => Math.min(Math.ceil(24 / 4), Math.max(1, Math.ceil((af.arrival.normal * x * 0.04) / (4 * gc.target_utilization)))));
-    expect(af.hourly!.normal).toEqual(want);
-    expect(Math.max(...af.hourly!.event)).toBe(6);
-    expect(Math.min(...af.hourly!.normal)).toBeLessThan(Math.max(...af.hourly!.normal));
+  // 처리 1초 · 대당 1건 · 목표 사용률 0.5 → 도착 x건/초면 2x대가 필요
+  const o: AutoscaleOpts = { serviceMs: 1000, workers: 1, cap: Infinity, u: 0.5, min: 1, max: 100, delayS: 0, pollS: 10, cooldownS: 0 };
+  const step = (lo: number, hi: number, from: number, to: number) => Array.from({ length: 1440 }, (_, i) => (i >= from && i < to ? hi : lo));
+
+  it('대수는 트래픽에 따라 분 단위로 바뀌고, 1시간 평균 대수가 비용', () => {
+    // 10시 30분부터 15분만 10건/초, 나머지 1건/초 → 그 15분만 20대, 나머지 2대
+    const r = autoscaleDay(step(1, 10, 630, 645), o);
+    expect([r.min, r.max]).toEqual([2, 20]);
+    expect(Math.abs(r.hourly[10] - (2 + (18 * 15) / 60))).toBeLessThan(0.2);
+    expect(r.hourly[11]).toBeCloseTo(2);
   });
 
-  it('사용자 패턴(이벤트 배수)이 바뀌면 대수도 바뀜', () => {
-    const calm = run({ ...gc, scale: { ...gc.scale!, event_multiplier: 1 } });
-    expect(Math.max(...flow(calm, 'N-05').hourly!.event)).toBeLessThan(6);
+  it('늘리는 시간(예시값) 동안은 이전 대수로 받아 적체가 생김', () => {
+    // 1 → 10건/초로 뛰면 늘린 18대가 뜨는 60초 동안 2대(2건/초)로 받아 (10 − 2) × 60 = 480건 쌓이고, 20건/초로 빼도 24초 지연
+    const r = autoscaleDay(step(1, 10, 630, 645), { ...o, delayS: 60 });
+    expect(r.backlog).toBeGreaterThanOrEqual(480);
+    expect(r.lag).toBeGreaterThanOrEqual(24);
+    expect(autoscaleDay(step(1, 10, 630, 645), o).backlog).toBeLessThan(r.backlog / 1.5);
   });
 
-  it('비용은 시간대별 대수로, 고정 6대보다 쌈', () => {
-    expect(auto.cost!.parts['N-05'].value).toBeLessThan(run(base).cost!.parts['N-05'].value);
-    const qty = Object.entries(auto.cost!.parts['N-05'].inputs).find(([k]) => k.endsWith('수량'))![1];
-    expect(qty).toBe(af.hourly!.normal.reduce((a, x) => a + x, 0) * 30);
+  it('cooldown 동안은 줄이지 않아, 몰림이 끝나도 그만큼 더 떠 있어 비용이 늚', () => {
+    const quick = autoscaleDay(step(1, 10, 630, 645), o), slow = autoscaleDay(step(1, 10, 630, 645), { ...o, cooldownS: 600 });
+    // 20대가 10분 더 떠 있음 → 10시 평균이 (18대 × 10분 / 60) 더 큼
+    expect(Math.abs(slow.hourly[10] - quick.hourly[10] - (18 * 10) / 60)).toBeLessThan(0.2);
+  });
+
+  it('최소 0대면 한가할 때 끄고, 첫 메시지는 새 소비자가 뜰 때까지 기다림', () => {
+    const r = autoscaleDay(step(0, 5, 600, 610), { ...o, min: 0, delayS: 30 });
+    expect(r.min).toBe(0);
+    expect(r.lag).toBeGreaterThanOrEqual(30);
+  });
+
+  it('최대 대수에 막혀 하루에 다 못 빼면 끝없이 늚', () => {
+    expect(autoscaleDay(Array(1440).fill(20), { ...o, max: 10 }).lag).toBe(Infinity);
+  });
+
+  it('예시: 사용자 패턴에서 대수가 나오고, 비용은 시간대별 평균 대수 × 30일', () => {
+    expect(af.auto!.normal.min).toBeLessThan(af.auto!.normal.max);
+    expect(af.auto!.event.max).toBe(6);
     expect(auto.nodes['N-05'].instances!.event.value).toBe(6);
-  });
-
-  it('대수를 늘리는 동안 이전 처리량으로 받아 적체가 생김: 0대에서 늘면 뜨는 시간만큼 기다림', () => {
-    // 0시는 0건, 1시는 10건/초. 처리량 0 → 20건/초, 늘리는 데 60초 → 600건 쌓이고, 처음 온 메시지는 60초 기다림 (뒤에 온 것은 600 / 20 = 30초)
-    const lambda = [0, 10, ...Array(22).fill(0)], mu = [0, 20, ...Array(22).fill(0)];
-    const r = backlogDay(lambda, mu, 0, DEFAULT_SCALE_DELAY_S);
-    expect(r.backlog).toBeCloseTo(600);
-    expect(r.lag).toBeCloseTo(60);
-    // 이미 5건/초로 돌던 중에 늘리면 60초 동안 (10 − 5) × 60 = 300건, 지연 300 / 20 = 15초
-    const warm = backlogDay(lambda, [5, 20, ...Array(22).fill(5)], 0, DEFAULT_SCALE_DELAY_S);
-    expect(warm.backlog).toBeCloseTo(300);
-    expect(warm.lag).toBeCloseTo(15);
-    expect(backlogDay(lambda, mu, 0, 0).backlog).toBe(0);
+    const qty = Object.entries(auto.cost!.parts['N-05'].inputs).find(([k]) => k.endsWith('수량'))![1];
+    expect(qty).toBeCloseTo(af.auto!.normal.hourly.reduce((a, x) => a + x, 0) * 30);
+    expect(auto.cost!.parts['N-05'].value).toBeLessThan(run(base).cost!.parts['N-05'].value);
+    const calm = run({ ...gc, scale: { ...gc.scale!, event_multiplier: 1 } });
+    expect(flow(calm, 'N-05').auto!.event.max).toBeLessThan(6);
   });
 });

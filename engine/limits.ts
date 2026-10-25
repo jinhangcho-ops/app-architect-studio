@@ -34,7 +34,8 @@ export function limitFactor(node: ProjectNode, catalog: Map<string, CatalogItem>
     if (hi > MAX_FACTOR) return undefined;
   }
   let lo = hi === 1 ? 0 : hi / 2; // 여기서 fails(lo)는 거짓, fails(hi)는 참
-  for (let i = 0; i < 60; i++) {
+  // 상대 오차 1e-9까지 (사용자 수로 보면 1명보다 훨씬 작다)
+  for (let i = 0; i < 60 && hi - lo > lo * 1e-9; i++) {
     const mid = (lo + hi) / 2;
     if (fails(mid)) hi = mid; else lo = mid;
   }
