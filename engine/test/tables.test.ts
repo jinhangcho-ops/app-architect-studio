@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { analyze } from '../analyze';
 import { loadCatalog, loadPrices } from '../io';
-import { Project } from '../schema';
+import { checkTable, Project, Table } from '../schema';
 import { tableSizes } from '../tables';
 
 const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
@@ -150,5 +150,32 @@ describe('table 범위 규칙·저장 비용·성장', () => {
     const a = analyze(p, data, '2026-10-24');
     expect(a.tables[0].storedGb.value).toBeCloseTo(4);
     expect(a.growth!.tables).toEqual([{ nodeId: 'db.orders', limitUsers: 2000, month: 8, startMonth: 6 }]);
+  });
+});
+
+describe('장 형식 (고정장·가변장)', () => {
+  // status: 최대 20바이트, 실제 평균 10바이트
+  const withMax = { ...orders, columns: orders.columns.map((c) => (c.name === 'status' ? { ...c, max_length: 20 } : c)) };
+  const fixed = { ...withMax, record: 'fixed' };
+
+  it('PostgreSQL·MySQL은 고정장 문자열을 선언 길이까지 채워 저장: 행이 (20 − 10)바이트 커짐', () => {
+    for (const db of ['postgresql', 'mysql']) {
+      const v = size(db, withMax), f = size(db, fixed);
+      expect(f.rowBytes.value - v.rowBytes.value, db).toBeCloseTo(10 / (db === 'mysql' ? f.rowBytes.inputs['채움률'] : 1));
+    }
+  });
+
+  it('SQLite는 고정장이어도 실제 길이로 저장: 크기는 같고, 그렇다고 알림', () => {
+    const v = size('sqlite', withMax), f = size('sqlite', fixed);
+    expect(f.rowBytes.value).toBe(v.rowBytes.value);
+    expect(f.assumptions.join()).toContain('실제 길이로 저장');
+  });
+
+  it('고정장: 문자열·바이너리는 최대 길이가 있어야 하고 JSON은 넣을 수 없음, 코드 값은 중복 없이', () => {
+    const t = Table.parse({ name: 't', record: 'fixed', columns: [
+      { name: 'memo', type: 'text' }, { name: 'raw', type: 'json' }, { name: 'state', type: 'text', max_length: 1, codes: [{ code: 'A', label: '정상' }, { code: 'A', label: '중복' }] },
+    ] });
+    expect(checkTable(t)).toEqual(['고정장 테이블의 memo: 최대 길이(바이트)가 필요함', '고정장 테이블에 JSON 컬럼 raw은 넣을 수 없음 (길이가 정해지지 않음)', 'state: 코드 값 중복 A']);
+    expect(checkTable(Table.parse({ name: 't', columns: [{ name: 'memo', type: 'text' }] }))).toEqual([]);
   });
 });

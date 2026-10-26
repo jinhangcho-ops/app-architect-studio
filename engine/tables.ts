@@ -32,9 +32,11 @@ const TEXT_TYPES = new Set<Column['type']>(['text', 'json', 'bytes']);
 // 가변 길이 값에 평균·최대 길이가 모두 없을 때 쓰는 가정값
 const DEFAULT_VAR_BYTES = 32;
 
-/** 값 하나의 바이트. 저장 형식이 크기를 정한다 (같은 시각도 정수 8바이트, ISO 문자열 24바이트) */
-export function valueBytes(c: Column, assume: (s: string) => void = () => {}): number {
+/** 값 하나의 바이트. 저장 형식이 크기를 정한다 (같은 시각도 정수 8바이트, ISO 문자열 24바이트).
+ *  padded: 고정장 테이블이고 시스템이 CHAR(n)을 선언 길이까지 채워 저장하면, 문자열·바이너리는 늘 최대 길이 */
+export function valueBytes(c: Column, assume: (s: string) => void = () => {}, padded = false): number {
   const storage = storageOf(c);
+  if (padded && (c.type === 'text' || c.type === 'bytes') && c.max_length) return c.max_length;
   const variable = () => {
     if (c.avg_bytes) return c.avg_bytes;
     if (c.max_length) { assume(`${c.name}: 평균 길이 없음 → 최대 길이의 절반 ${c.max_length / 2}바이트`); return c.max_length / 2; }
@@ -75,8 +77,10 @@ export function tableSize(
   const fx = sp ? selectedFeatures(sp, node, t).map((f) => f.effect) : [];
   const eff = <K extends keyof (typeof fx)[number]>(k: K) => fx.find((e) => e[k] !== undefined)?.[k];
 
-  // 행 크기
-  const bytesOf = new Map(t.columns.map((c) => [c.name, valueBytes(c, assume)]));
+  // 행 크기. 고정장인데 시스템이 채워 저장하지 않으면(SQLite 등) 실제 길이로 센다
+  const padded = t.record === 'fixed' && !!sp?.fixed_width_padded;
+  if (t.record === 'fixed' && !padded) assume('고정장이지만 이 시스템은 고정 길이 문자열도 실제 길이로 저장 → 가변장처럼 계산');
+  const bytesOf = new Map(t.columns.map((c) => [c.name, valueBytes(c, assume, padded)]));
   const data = t.columns.reduce((s, c) => s + bytesOf.get(c.name)!, 0);
   const textData = t.columns.filter((c) => TEXT_TYPES.has(c.type)).reduce((s, c) => s + bytesOf.get(c.name)!, 0);
   const names = sp?.stores_field_names ? t.columns.reduce((s, c) => s + utf8(c.name), 0) : 0;

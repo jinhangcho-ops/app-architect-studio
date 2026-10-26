@@ -88,6 +88,8 @@ export const StorageProfile = z.object({
   pk_is_table: z.boolean().default(false),
   /** 정수 한 컬럼짜리 기본 키는 행 번호(rowid)로 쓰여 인덱스가 따로 없음 (SQLite) */
   integer_pk_is_rowid: z.boolean().default(false),
+  /** 고정 길이 문자열(CHAR(n))을 선언한 길이까지 공백으로 채워 저장 (MySQL·PostgreSQL). false면 고정장으로 선언해도 실제 길이로 저장 */
+  fixed_width_padded: z.boolean().default(false),
   table_fill: z.number().gt(0).max(1).default(1),
   index_fill: z.number().gt(0).max(1).default(1),
   /** 기능 묶음. one이면 그 묶음에서 하나만 고른다 */
@@ -207,15 +209,27 @@ export const SpecField = z.object({
   description: z.string().optional(),
   /** 값의 평균 크기(바이트). 없으면 형식별 예시값 */
   avg_bytes: z.number().positive().optional(),
+  /** 고정장 레이아웃(파일·전문)에서 이 필드가 차지하는 바이트 */
+  length: z.number().int().positive().optional(),
 });
 export type SpecField = z.infer<typeof SpecField>;
+/** 파일·전문의 장 형식: fixed = 고정장(필드마다 바이트 길이, 숫자는 앞을 0으로·문자는 뒤를 공백으로 채움), delimited = 가변장(구분자) */
+export const FileRecord = z.object({
+  format: z.enum(['fixed', 'delimited']),
+  delimiter: z.string().min(1).max(3).default(','),
+  encoding: z.enum(['utf-8', 'euc-kr']).default('utf-8'),
+  newline: z.enum(['crlf', 'lf', 'none']).default('crlf'),
+  /** 가변장의 첫 줄에 필드 이름 머리줄이 있는지 */
+  header: z.boolean().default(false),
+});
+export type FileRecord = z.infer<typeof FileRecord>;
 export const Interface = z.object({
   /** 사람이 읽는 이름 (예: 주문 만들기) */
   name: z.string().min(1),
-  /** rest = HTTP API, grpc = gRPC 메서드, message = 큐·이벤트로 보내는 메시지 */
-  kind: z.enum(['rest', 'grpc', 'message']),
+  /** rest = HTTP API, grpc = gRPC 메서드, message = 큐·이벤트로 보내는 메시지, file = 파일·전문(배치 파일, 기관 연계 고정장 전문) */
+  kind: z.enum(['rest', 'grpc', 'message', 'file']),
   method: z.enum(HTTP_METHODS).optional(),
-  /** rest: 경로(/orders/{id}), grpc: 메서드 이름(CreateOrder), message: 토픽·채널 이름 */
+  /** rest: 경로(/orders/{id}), grpc: 메서드 이름(CreateOrder), message: 토픽·채널 이름, file: 파일 이름 규칙이나 전문 ID */
   path: z.string().min(1),
   description: z.string().optional(),
   /** 보내는 노드가 받는 요청 1건당 이 인터페이스를 부르는 횟수. on = 어떤 요청에서 부르나 (전체·읽기 요청만·쓰기 요청만) */
@@ -230,6 +244,8 @@ export const Interface = z.object({
   response_bytes: z.number().nonnegative().optional(),
   /** 인증: none = 없음, bearer = Authorization: Bearer 토큰(JWT 등), api_key = X-API-Key 헤더. 없으면 미정 (명세 점검이 알린다) */
   auth: z.enum(['none', 'bearer', 'api_key']).optional(),
+  /** 파일·전문의 장 형식과 인코딩 (kind가 file일 때) */
+  record: FileRecord.optional(),
   /** 실패할 때 돌려주는 응답. 본문은 모두 같은 형식(RFC 9457 problem details: type·title·status·detail·code) */
   errors: z.array(z.object({
     status: z.number().int().min(400).max(599),
@@ -268,9 +284,21 @@ export const Column = z.object({
   avg_bytes: z.number().positive().optional(),
   nullable: z.boolean().default(false),
   description: z.string().optional(),
+  /** 데이터 사전: 논리명(사람이 읽는 이름), 도메인(금액·날짜·코드 같은 값의 종류), 코드 값 목록, 개인정보 여부, 기본값 */
+  label: z.string().optional(),
+  domain: z.string().optional(),
+  codes: z.array(z.object({ code: z.string().min(1), label: z.string().default('') })).optional(),
+  personal: z.boolean().default(false),
+  default_value: z.string().optional(),
 });
+/** 장 형식: variable = 가변장(문자열은 실제 길이), fixed = 고정장(문자열·바이너리를 선언 길이 CHAR(n)·BINARY(n)로) */
+export const RECORD_FORMATS = ['variable', 'fixed'] as const;
 export const Table = z.object({
   name: z.string().min(1),
+  /** 데이터 사전: 논리명과 설명 */
+  label: z.string().optional(),
+  description: z.string().optional(),
+  record: z.enum(RECORD_FORMATS).default('variable'),
   columns: z.array(Column).min(1),
   primary_key: z.array(z.string()).default([]),
   indexes: z.array(z.object({ name: z.string().min(1), columns: z.array(z.string()).min(1), unique: z.boolean().default(false) })).default([]),
@@ -586,7 +614,8 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
       if (i.kind === 'rest' && !i.method) errors.push(`${at} ${i.name}: REST는 메서드(GET·POST…)가 필요함`);
       if (i.kind === 'rest' && !i.path.startsWith('/')) errors.push(`${at} ${i.name}: REST 경로는 /로 시작함`);
       if (i.kind === 'grpc' && !IDENT.test(i.path)) errors.push(`${at} ${i.name}: gRPC 메서드 이름은 영문 식별자 (예: CreateOrder)`);
-      if (i.kind === 'message' && i.response.length) errors.push(`${at} ${i.name}: 메시지는 응답이 없음 (보내고 끝)`);
+      if ((i.kind === 'message' || i.kind === 'file') && i.response.length) errors.push(`${at} ${i.name}: ${i.kind === 'file' ? '파일·전문' : '메시지'}은 응답이 없음 (보내고 끝)`);
+      if (i.kind === 'file' && i.record?.format === 'delimited' && i.request.some((f) => f.name.includes(i.record!.delimiter))) errors.push(`${at} ${i.name}: 필드 이름에 구분자 "${i.record.delimiter}"가 들어 있음`);
       for (const d of dupes(i.errors.map((x) => `${x.status}${x.code ? ` ${x.code}` : ''}`))) errors.push(`${at} ${i.name}: 에러 응답 중복 ${d}`);
       for (const side of ['request', 'response'] as const) for (const d of dupes(i[side].map((f) => f.name))) errors.push(`${at} ${i.name}: ${side === 'request' ? '요청' : '응답'} 필드 이름 중복 ${d}`);
     }
@@ -645,6 +674,14 @@ export function checkTable(t: Table): string[] {
   for (const ix of t.indexes) for (const c of ix.columns) if (!cols.has(c)) errors.push(`인덱스 ${ix.name}에 없는 컬럼 ${c}`);
   for (const d of dupes(t.indexes.map((x) => x.name))) errors.push(`인덱스 이름 중복 ${d}`);
   if (t.partition && !cols.has(t.partition.column)) errors.push(`파티션에 없는 컬럼 ${t.partition.column}`);
+  // 고정장: 문자열·바이너리는 길이를 알아야 하고, JSON은 길이가 정해지지 않아 넣을 수 없다
+  if (t.record === 'fixed') {
+    for (const c of t.columns) {
+      if (c.type === 'json') errors.push(`고정장 테이블에 JSON 컬럼 ${c.name}은 넣을 수 없음 (길이가 정해지지 않음)`);
+      else if ((c.type === 'text' || c.type === 'bytes') && !c.max_length) errors.push(`고정장 테이블의 ${c.name}: 최대 길이(바이트)가 필요함`);
+    }
+  }
+  for (const c of t.columns) for (const d of dupes((c.codes ?? []).map((x) => x.code))) errors.push(`${c.name}: 코드 값 중복 ${d}`);
   return errors;
 }
 

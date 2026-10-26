@@ -72,10 +72,10 @@ function writePngs(dir, files) {
   });
 }
 
-/** 명세 파일 쓰기: 이름은 영문·숫자·_.- 와 .json·.proto·.py만 (경로 문자가 섞이지 않게) */
+/** 명세 파일 쓰기: 이름은 영문·숫자·_.- 와 .json·.proto·.py·.csv·.sql만 (경로 문자가 섞이지 않게) */
 function writeTexts(dir, files) {
   return files.map(({ name, text }) => {
-    if (!/^[A-Za-z0-9_.-]+\.(json|proto|py)$/.test(String(name))) throw new Error(`명세 파일 이름 형식이 아닙니다: ${name}`);
+    if (!/^[A-Za-z0-9_.-]+\.(json|proto|py|csv|sql)$/.test(String(name))) throw new Error(`명세 파일 이름 형식이 아닙니다: ${name}`);
     const file = path.join(dir, String(name));
     writeAtomic(file, String(text));
     return file;

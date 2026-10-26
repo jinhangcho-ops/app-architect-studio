@@ -16,10 +16,23 @@ export function bodyBytes(fields: SpecField[], kind: Interface['kind']): number 
     ? fields.reduce((s, f) => s + 1 + (f.avg_bytes ?? PROTO_BYTES[f.type]), 0)
     : 2 + fields.reduce((s, f) => s + f.name.length + 4 + (f.avg_bytes ?? JSON_BYTES[f.type]), 0);
 }
-export const requestBytes = (i: Interface) => i.request_bytes ?? bodyBytes(i.request, i.kind);
+/** 파일·전문 한 줄(레코드)의 바이트: 고정장 = Σ 필드 길이, 가변장 = Σ 값 + 구분자, 끝에 줄바꿈 */
+const PLAIN_BYTES: Record<FieldType, number> = { string: 32, integer: 8, number: 12, boolean: 1, datetime: 14, uuid: 36, object: 64, array: 64 };
+const NEWLINE = { crlf: 2, lf: 1, none: 0 } as const;
+export function recordBytes(i: Interface): number | undefined {
+  const r = i.record;
+  if (!r || !i.request.length) return undefined;
+  const nl = NEWLINE[r.newline];
+  if (r.format === 'fixed') return i.request.every((f) => f.length) ? i.request.reduce((s, f) => s + f.length!, 0) + nl : undefined;
+  return i.request.reduce((s, f) => s + (f.avg_bytes ?? PLAIN_BYTES[f.type]), 0) + (i.request.length - 1) * r.delimiter.length + nl;
+}
+/** 한쪽으로만 보내는 방식(응답·인증·에러 없음): 메시지, 파일·전문 */
+export const oneWay = (i: Pick<Interface, 'kind'>) => i.kind === 'message' || i.kind === 'file';
+
+export const requestBytes = (i: Interface) => i.request_bytes ?? (i.kind === 'file' ? recordBytes(i) ?? bodyBytes(i.request, 'rest') : bodyBytes(i.request, i.kind));
 export const responseBytes = (i: Interface) => i.response_bytes ?? bodyBytes(i.response, i.kind);
 
-export const isWrite = (i: Interface) => (i.op ? i.op === 'write' : i.kind === 'rest' ? i.method !== 'GET' : i.kind === 'message');
+export const isWrite = (i: Interface) => (i.op ? i.op === 'write' : i.kind === 'rest' ? i.method !== 'GET' : oneWay(i));
 
 /** 연결선의 호출 비율 표시: 명세가 있으면 Σ 호출 수, 없으면 callRatio */
 export const edgeCalls = (e: ProjectEdge) => (e.interfaces.length ? e.interfaces.reduce((s, i) => s + i.per_request, 0) : e.callRatio);
@@ -201,8 +214,14 @@ export function protoFiles(p: Project): { nodeId: string; text: string }[] {
 /** 명세에서 빠진 것: 보내는 쪽과 받는 쪽이 각자 다르게 짤 수 있는 곳 */
 export function specGaps(i: Interface): string[] {
   const gaps: string[] = [];
-  const call = i.kind !== 'message';
+  const call = !oneWay(i);
   if (i.kind === 'message' && !i.request.length) gaps.push('메시지 필드가 없음');
+  if (i.kind === 'file') {
+    if (!i.record) gaps.push('장 형식(고정장·가변장)이 정해지지 않음');
+    if (!i.request.length) gaps.push('레코드 필드가 없음');
+    const noLen = i.request.filter((f) => !f.length).map((f) => f.name);
+    if (i.record?.format === 'fixed' && noLen.length) gaps.push(`고정장 필드 길이가 없음: ${noLen.join(', ')}`);
+  }
   if (i.kind === 'rest') {
     const inPath = [...i.path.matchAll(/\{(\w+)\}/g)].map((x) => x[1]);
     for (const v of inPath.filter((v) => !i.request.some((f) => f.name === v))) gaps.push(`경로 변수 {${v}}의 형식이 없음 (문자열로 가정)`);
@@ -228,6 +247,7 @@ export function specAdvice(p: Project): { nodeId: string; title: string; text: s
       out.push({ nodeId, file, ...(REST_ADVICE[n.primary ?? ''] ?? REST_DEFAULT) });
     }
     if (ks.has('grpc')) out.push({ nodeId, title: 'gRPC: .proto가 곧 계약', text: `내보낸 ${safe(nodeId)}.proto를 양쪽이 그대로 쓰고, 각 언어의 protoc 플러그인으로 코드를 만드세요. 필드를 바꿀 때는 번호를 재사용하지 않습니다.` });
+    if (ks.has('file')) out.push({ nodeId, title: '파일·전문: 레이아웃 표가 계약', text: '내보낸 layout-….csv(필드 순서·바이트 길이·시작·끝 위치·채움 규칙·인코딩)를 보내는 쪽·받는 쪽이 같이 봅니다. 고정장은 한 바이트만 어긋나도 뒤 필드가 모두 밀리므로, 필드를 더할 때는 맨 뒤에 붙이고 레코드 길이를 같이 알립니다. EUC-KR이면 한글 한 글자가 2바이트, UTF-8이면 3바이트입니다.' });
     if (ks.has('message') && n.layer === 'queue') out.push({ nodeId, title: '메시지: AsyncAPI로 공유', text: '내보낸 asyncapi.json의 채널(토픽)과 메시지 필드를 보내는 쪽·받는 쪽이 같이 봅니다. 필드를 지우거나 뜻을 바꾸지 말고 새 필드를 더하세요(받는 쪽이 옛 메시지도 읽을 수 있게).' });
   }
   return out;
@@ -402,7 +422,38 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
   });
 }
 
-/** 내보낼 파일 전부: openapi-노드.json, 노드.proto, asyncapi.json, (받는 노드가 FastAPI면) 노드_fastapi.py */
+// ---------- 파일·전문 레이아웃 ----------
+/** 고정장: 숫자는 오른쪽 맞춤·앞을 0으로, 그 밖은 왼쪽 맞춤·뒤를 공백으로 채운다 */
+const numeric = (f: SpecField) => f.type === 'integer' || f.type === 'number';
+export type LayoutRow = { no: number; field: SpecField; start?: number; end?: number; align?: '왼쪽' | '오른쪽'; pad?: string };
+export function layoutRows(i: Interface): LayoutRow[] {
+  let at = 1;
+  return i.request.map((field, k) => {
+    if (i.record?.format !== 'fixed' || !field.length) return { no: k + 1, field };
+    const row: LayoutRow = { no: k + 1, field, start: at, end: at + field.length - 1, align: numeric(field) ? '오른쪽' : '왼쪽', pad: numeric(field) ? '0' : '공백' };
+    at += field.length;
+    return row;
+  });
+}
+const csvCell = (v: unknown) => { const s = v === undefined ? '' : String(v); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+/** 레이아웃 표(CSV, 엑셀에서 한글이 깨지지 않게 BOM). 첫 줄들은 장 형식·인코딩·레코드 길이 */
+export function layoutCsv(i: Interface, from: string, to: string): string {
+  const r = i.record;
+  const head = [
+    ['인터페이스', i.name], ['보내는 → 받는', `${from} → ${to}`], ['파일·전문 ID', i.path],
+    ['장 형식', !r ? '미정' : r.format === 'fixed' ? '고정장' : `가변장 (구분자 ${JSON.stringify(r.delimiter)}${r.header ? ', 머리줄 있음' : ''})`],
+    ['인코딩', r?.encoding ?? '미정'], ['줄바꿈', r ? { crlf: 'CRLF', lf: 'LF', none: '없음' }[r.newline] : '미정'],
+    ['레코드 길이(바이트)', recordBytes(i) ?? ''],
+  ];
+  const fixed = r?.format === 'fixed';
+  const cols = fixed ? ['순번', '필드', '설명', '형식', '필수', '길이', '시작', '끝', '맞춤', '채움'] : ['순번', '필드', '설명', '형식', '필수', '평균 바이트'];
+  const rows = layoutRows(i).map((x) => (fixed
+    ? [x.no, x.field.name, x.field.description, x.field.type, x.field.required ? 'Y' : 'N', x.field.length, x.start, x.end, x.align, x.pad]
+    : [x.no, x.field.name, x.field.description, x.field.type, x.field.required ? 'Y' : 'N', x.field.avg_bytes]));
+  return '\uFEFF' + [...head, [], cols, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
+
+/** 내보낼 파일 전부: openapi-노드.json, 노드.proto, asyncapi.json, (받는 노드가 FastAPI면) 노드_fastapi.py, 파일·전문마다 layout-보내는-받는-ID.csv */
 export function interfaceFiles(p: Project): { name: string; text: string }[] {
   const a = asyncApiDoc(p);
   return [
@@ -410,6 +461,10 @@ export function interfaceFiles(p: Project): { name: string; text: string }[] {
     ...protoFiles(p).map(({ nodeId, text }) => ({ name: `${safe(nodeId)}.proto`, text })),
     ...(a ? [{ name: 'asyncapi.json', text: JSON.stringify(a, null, 2) }] : []),
     ...fastApiFiles(p).map(({ name, text }) => ({ name, text })),
+    ...p.edges.flatMap((e) => e.interfaces.filter((i) => i.kind === 'file').map((i) => ({
+      name: `layout-${safe(e.from)}-${safe(e.to)}-${safe(i.path)}.csv`,
+      text: layoutCsv(i, p.nodes.find((n) => n.id === e.from)?.name ?? e.from, p.nodes.find((n) => n.id === e.to)?.name ?? e.to),
+    }))),
   ];
 }
 

@@ -8,7 +8,7 @@ import { lawLine } from '../../engine/regulation';
 import { dayLabel } from '../../engine/industry';
 import { LAYER_NAMES, VERDICT_NAMES } from '../../engine/model';
 import type { OptimizeResult, Plan } from '../../engine/optimize';
-import { GAP_EFFECT, interfaceRates, requestBytes, responseBytes, specAdvice, specGaps } from '../../engine/interfaces';
+import { GAP_EFFECT, interfaceRates, oneWay, requestBytes, responseBytes, specAdvice, specGaps } from '../../engine/interfaces';
 import { readMiss } from '../../engine/load';
 import { itemIds, nodeStorageProfile, selectedFeatures, type Project, type Screen, type SpecField } from '../../engine/schema';
 import { PATTERNS } from '../../engine/traffic';
@@ -270,7 +270,7 @@ function Interfaces({ project: p, analysis: a }: { project: Project; analysis: A
   if (!edges.length) return null;
   const gaps = edges.flatMap((e) => e.interfaces.map((i) => ({ e, i, g: specGaps(i) }))).filter((x) => x.g.length);
   const advice = specAdvice(p);
-  const fields = (fs: SpecField[]) => fs.map((f) => `${f.name}${f.required ? '' : '?'}: ${f.type}`).join(', ') || '—';
+  const fields = (fs: SpecField[]) => fs.map((f) => `${f.name}${f.required ? '' : '?'}: ${f.type}${f.length ? `(${f.length}B)` : ''}`).join(', ') || '—';
   return <>
     <h3 className="r-sub">서비스 내부 인터페이스 명세</h3>
     <table className="r-grid"><thead><tr><th>보내는 → 받는</th><th>이름</th><th>방식 · 경로</th><th>부르는 요청 × 횟수</th><th>요청 필드</th><th>응답 필드</th><th>인증 · 에러</th><th>크기 (요청/응답)</th><th>피크 / 이벤트 호출</th></tr></thead><tbody>
@@ -281,12 +281,12 @@ function Interfaces({ project: p, analysis: a }: { project: Project; analysis: A
           <tr key={`${e.from}>${e.to}>${i.name}`}>
             <td>{name(e.from)} → {name(e.to)}</td>
             <td>{i.name}{i.description && <div className="muted">{i.description}</div>}</td>
-            <td>{i.kind === 'rest' ? `REST ${i.method ?? 'GET'} ${i.path}` : i.kind === 'grpc' ? `gRPC ${i.path}` : `메시지 ${i.path}`}</td>
+            <td>{i.kind === 'rest' ? `REST ${i.method ?? 'GET'} ${i.path}` : i.kind === 'grpc' ? `gRPC ${i.path}` : i.kind === 'file' ? `파일·전문 ${i.path}${i.record ? ` (${i.record.format === 'fixed' ? '고정장' : `가변장 ${JSON.stringify(i.record.delimiter)}`}, ${i.record.encoding})` : ''}` : `메시지 ${i.path}`}</td>
             <td>{{ all: '모든 요청', read: '읽기 요청', write: '쓰기 요청' }[i.on]} × {fmt(i.per_request)}</td>
             <td>{fields(i.request)}</td>
-            <td>{i.kind === 'message' ? '— (보내고 끝)' : fields(i.response)}</td>
-            <td>{i.kind === 'message' ? '—' : <>{i.auth ? AUTH_NAMES[i.auth] : '인증 미정'}{i.errors.map((x) => <div key={`${x.status}${x.code}`}>{x.status}{x.code && ` ${x.code}`}: {x.description}</div>)}</>}</td>
-            <td>{fmt(requestBytes(i))}B{i.kind !== 'message' && ` / ${fmt(responseBytes(i))}B`}</td>
+            <td>{oneWay(i) ? '— (보내고 끝)' : fields(i.response)}</td>
+            <td>{oneWay(i) ? '—' : <>{i.auth ? AUTH_NAMES[i.auth] : '인증 미정'}{i.errors.map((x) => <div key={`${x.status}${x.code}`}>{x.status}{x.code && ` ${x.code}`}: {x.description}</div>)}</>}</td>
+            <td>{fmt(requestBytes(i))}B{!oneWay(i) && ` / ${fmt(responseBytes(i))}B`}</td>
             <td>{rn && re ? `${fmt(rn[k].rps)} / ${fmt(re[k].rps)} RPS` : '—'}</td>
           </tr>
         ));

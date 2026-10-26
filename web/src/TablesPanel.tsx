@@ -97,7 +97,7 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
           </tr>
         ))}</tbody>
       </table></div>
-      <button onClick={() => upd({ columns: [...t.columns, { name: `col_${t.columns.length + 1}`, type: 'text', nullable: false }] })}>컬럼 추가</button>
+      <button onClick={() => upd({ columns: [...t.columns, { name: `col_${t.columns.length + 1}`, type: 'text', nullable: false, personal: false }] })}>컬럼 추가</button>
 
       <div className="plans"><table className="grid">
         <thead><tr><th>인덱스</th><th>컬럼(쉼표)</th><th>고유</th><th /></tr></thead>

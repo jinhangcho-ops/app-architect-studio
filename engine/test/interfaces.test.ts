@@ -2,7 +2,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { analyze } from '../analyze';
 import { parseProject } from '../data';
-import { asyncApiDoc, bodyBytes, fastApiFiles, interfaceFiles, openApiDocs, protoFiles, requestBytes, specAdvice, specGaps } from '../interfaces';
+import { asyncApiDoc, bodyBytes, fastApiFiles, interfaceFiles, layoutCsv, openApiDocs, protoFiles, recordBytes, requestBytes, specAdvice, specGaps } from '../interfaces';
+import { checkProject } from '../schema';
 import { loadCatalog, loadLaws, loadPrices, loadProject } from '../io';
 import type { Interface, Project } from '../schema';
 
@@ -170,5 +171,41 @@ describe('FastAPI 뼈대', () => {
     expect(text).toContain('from_: str = Field(..., alias="from")');
     expect(text).toContain('model_config = ConfigDict(populate_by_name=True)');
     expect(text).toContain('from pydantic import BaseModel, ConfigDict, Field');
+  });
+});
+
+describe('파일·전문 (고정장·가변장)', () => {
+  const fields = [
+    { name: 'acct', type: 'string' as const, required: true, length: 10 },
+    { name: 'amount', type: 'integer' as const, required: true, length: 13 },
+  ];
+  const fixed = iface({ name: '매출 파일', kind: 'file', path: 'TR0101', request: fields,
+    record: { format: 'fixed', delimiter: ',', encoding: 'euc-kr', newline: 'crlf', header: false } });
+
+  it('고정장 레코드 길이 = 필드 길이 합 + 줄바꿈, 하나라도 길이가 없으면 모름', () => {
+    expect(recordBytes(fixed)).toBe(25);
+    expect(requestBytes(fixed)).toBe(25);
+    const missing = { ...fixed, request: [fields[0], { ...fields[1], length: undefined }] };
+    expect(recordBytes(missing)).toBeUndefined();
+    expect(specGaps(missing)).toContain('고정장 필드 길이가 없음: amount');
+  });
+
+  it('가변장 = 값 + 구분자 + 줄바꿈', () => {
+    const csv = { ...fixed, record: { ...fixed.record!, format: 'delimited' as const, newline: 'lf' as const },
+      request: [{ ...fields[0], avg_bytes: 8 }, { ...fields[1], avg_bytes: 5 }] };
+    expect(recordBytes(csv)).toBe(8 + 5 + 1 + 1);
+  });
+
+  it('레이아웃 표: 시작·끝 위치, 숫자는 오른쪽 0 채움, 문자는 왼쪽 공백 채움', () => {
+    const lines = layoutCsv(fixed, '주문 API', '정산').split('\r\n');
+    expect(lines[0].startsWith('\uFEFF')).toBe(true);
+    expect(lines).toContain('1,acct,,string,Y,10,1,10,왼쪽,공백');
+    expect(lines).toContain('2,amount,,integer,Y,13,11,23,오른쪽,0');
+  });
+
+  it('내보내기에 layout CSV가 들어가고, 응답이 있으면 오류', () => {
+    const p = withEdge(gc, 'N-03', 'N-04', [fixed]);
+    expect(interfaceFiles(p).map((f) => f.name)).toContain('layout-N_03-N_04-TR0101.csv');
+    expect(checkProject(withEdge(gc, 'N-03', 'N-04', [{ ...fixed, response: fields }]), catalog.items).join()).toMatch(/파일·전문은 응답이 없음/);
   });
 });

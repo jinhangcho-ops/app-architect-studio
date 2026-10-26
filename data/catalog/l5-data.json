@@ -15,6 +15,7 @@
     "billing": {"model": "provisioned", "products": {"instance": "db-2vcpu"}},
     "storage": {
       "layout": "row",
+      "fixed_width_padded": true,
       "row_overhead_bytes": 18,
       "per_column_overhead_bytes": 1,
       "index_entry_overhead_bytes": 5,
@@ -60,7 +61,8 @@
       "note": "InnoDB DYNAMIC(기본): 행 헤더 5 + 트랜잭션 id 6 + 롤백 포인터 7. 기본 키가 없으면 행 id 6바이트가 더 붙음. 보조 인덱스는 기본 키 값을 함께 저장",
       "sources": [
         "https://dev.mysql.com/doc/refman/8.4/en/innodb-row-format.html",
-        "https://dev.mysql.com/doc/refman/8.4/en/innodb-page-compression.html"
+        "https://dev.mysql.com/doc/refman/8.4/en/innodb-page-compression.html",
+        "https://dev.mysql.com/doc/refman/8.4/en/char.html"
       ]
     },
     "sources": ["https://dev.mysql.com/doc/refman/8.4/en/server-system-variables.html#sysvar_max_connections"]

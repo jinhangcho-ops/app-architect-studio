@@ -74,6 +74,7 @@
     "billing": {"model": "provisioned", "products": {"instance": "db-2vcpu"}},
     "storage": {
       "layout": "row",
+      "fixed_width_padded": true,
       "row_overhead_bytes": 28,
       "index_entry_overhead_bytes": 12,
       "index_fill": 0.9,
@@ -146,7 +147,8 @@
         "https://www.postgresql.org/docs/current/storage-page-layout.html",
         "https://www.postgresql.org/docs/current/runtime-config-client.html",
         "https://www.postgresql.org/docs/current/sql-createtable.html",
-        "https://www.postgresql.org/docs/current/sql-createindex.html"
+        "https://www.postgresql.org/docs/current/sql-createindex.html",
+        "https://www.postgresql.org/docs/current/datatype-character.html"
       ]
     },
     "sources": ["https://www.postgresql.org/docs/current/runtime-config-connection.html"]
