@@ -1,13 +1,13 @@
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { parseProject } from '../../engine/data';
+import { FORMAT_VERSION, migrate, parseProject } from '../../engine/data';
 import { snapshotFromFile } from './autosave';
 import { catalog, examples } from './data';
 import { stamp, stampTime } from './desktop';
-import { exportProject } from './store';
+import { exportProject, importProject } from './store';
 
 const require = createRequire(import.meta.url);
 const files = require('../../electron/files.cjs') as {
@@ -16,6 +16,7 @@ const files = require('../../electron/files.cjs') as {
   listSnapshots: (f: string, kind: string) => { name: string; text: string }[];
   writePngs: (dir: string, files: { name: string; base64: string }[]) => string[];
   pngName: (name: string) => string;
+  writeAtomic: (target: string, data: string | Buffer) => void;
 };
 
 const dir = mkdtempSync(join(tmpdir(), 'aas-files-'));
@@ -78,5 +79,54 @@ describe('와이어프레임 PNG 쓰기', () => {
   });
   it('PNG가 아닌 내용은 쓰지 않음', () => {
     expect(() => files.writePngs(dir, [{ name: 'x', base64: Buffer.from('hello').toString('base64') }])).toThrow('PNG');
+  });
+});
+
+describe('원자적 저장 (electron/files.cjs writeAtomic)', () => {
+  it('새 내용으로 바꾸고 임시 파일을 남기지 않음', () => {
+    const f = join(dir, '원자.json');
+    writeFileSync(f, '옛 내용');
+    const before = statSync(f).ino;
+    files.writeAtomic(f, '새 내용');
+    expect(readFileSync(f, 'utf8')).toBe('새 내용');
+    // 원본을 덮어쓰지 않고 새로 쓴 파일로 바꿨다 (덮어쓰면 같은 파일 번호가 남는다)
+    expect(statSync(f).ino).not.toBe(before);
+    expect(readdirSync(dir).filter((x) => x.endsWith('.tmp'))).toEqual([]);
+  });
+
+  it('바꾸기에 실패하면 원본은 그대로, 임시 파일은 지움', () => {
+    // 대상이 비어 있지 않은 폴더라 이름 바꾸기가 실패한다
+    const target = join(dir, '폴더.json');
+    mkdirSync(target);
+    writeFileSync(join(target, '안.txt'), '원본');
+    expect(() => files.writeAtomic(target, '덮어쓰기')).toThrow();
+    expect(readFileSync(join(target, '안.txt'), 'utf8')).toBe('원본');
+    expect(readdirSync(dir).filter((x) => x.endsWith('.tmp'))).toEqual([]);
+  });
+});
+
+describe('파일 형식 버전·마이그레이션', () => {
+  const p = parseProject(examples.find((e) => e.name === 'phase3.json')!.data, catalog.items);
+
+  it('저장 파일에 형식 버전을 넣고, 다시 열면 같은 프로젝트', () => {
+    const saved = JSON.parse(JSON.stringify(exportProject(p, {})));
+    expect(saved.format_version).toBe(FORMAT_VERSION);
+    expect(importProject(saved, 'x').project).toEqual(p);
+  });
+
+  it('버전이 없는 옛 파일은 1로 보고 그대로 엶', () => {
+    expect(importProject(JSON.parse(JSON.stringify(p)), 'x').project).toEqual(p);
+  });
+
+  it('이 앱보다 새 형식이면 열지 않음 (모르는 값이 버려져 다시 저장할 때 사라지므로)', () => {
+    expect(() => importProject({ ...JSON.parse(JSON.stringify(p)), format_version: FORMAT_VERSION + 1 }, 'x')).toThrow('더 새 버전');
+    expect(() => importProject({ ...JSON.parse(JSON.stringify(p)), format_version: 'a' }, 'x')).toThrow('올바르지 않습니다');
+  });
+
+  it('낮은 버전은 변환을 차례로 적용', () => {
+    const steps = { 1: (d: Record<string, unknown>) => ({ ...d, b: d.a }), 2: (d: Record<string, unknown>) => ({ ...d, c: 1 }) };
+    expect(migrate({ a: 5 }, 'x', 3, steps)).toEqual({ a: 5, b: 5, c: 1 });
+    expect(migrate({ a: 5, format_version: 2 }, 'x', 3, steps)).toEqual({ a: 5, c: 1 });
+    expect(() => migrate({}, 'x', 3, { 1: steps[1] })).toThrow('2 → 3 변환이 없습니다');
   });
 });

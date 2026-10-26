@@ -19,6 +19,20 @@ const safeName = (name) => {
   return `${name}.json`;
 };
 
+/** 원자적 쓰기: 같은 폴더의 임시 파일에 쓰고 디스크에 확정(fsync)한 뒤 이름을 바꿔 원본과 바꾼다.
+ *  쓰는 도중 앱이 죽거나 전원이 나가도 원본은 예전 내용 그대로 남는다 (rename은 같은 볼륨 안에서 한 번에 바뀐다) */
+function writeAtomic(target, data) {
+  const tmp = `${target}.${process.pid}.tmp`;
+  try {
+    const fd = fs.openSync(tmp, 'w');
+    try { fs.writeSync(fd, typeof data === 'string' ? Buffer.from(data, 'utf8') : data); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    fs.renameSync(tmp, target);
+  } catch (e) {
+    fs.rmSync(tmp, { force: true });
+    throw e;
+  }
+}
+
 const dirOf = (projectFile, kind) => {
   if (!Object.hasOwn(KINDS, kind)) throw new Error('알 수 없는 저장 종류');
   return path.join(path.dirname(check(projectFile)), KINDS[kind]);
@@ -27,7 +41,7 @@ const dirOf = (projectFile, kind) => {
 function writeSnapshot(projectFile, kind, name, text, max) {
   const dir = dirOf(projectFile, kind);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, safeName(name)), text, 'utf8');
+  writeAtomic(path.join(dir, safeName(name)), text);
   // 이름이 시각이라 이름 순서 = 시간 순서. 오래된 것부터 지워 max개만 남긴다
   const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort();
   for (const f of files.slice(0, Math.max(0, files.length - max))) fs.rmSync(path.join(dir, f));
@@ -53,7 +67,7 @@ function writePngs(dir, files) {
     let file = pngName(name);
     for (let k = 2; used.has(file); k++) file = pngName(`${name} ${k}`);
     used.add(file);
-    fs.writeFileSync(path.join(dir, file), buf);
+    writeAtomic(path.join(dir, file), buf);
     return path.join(dir, file);
   });
 }
@@ -76,7 +90,7 @@ function registerFileApi() {
       if (r.canceled || !r.filePath) return null;
       target = allow(r.filePath);
     }
-    fs.writeFileSync(target, text, 'utf8');
+    writeAtomic(target, text);
     return target;
   });
   // 한 장이면 저장 창, 여러 장이면 폴더를 한 번 골라 모두 쓴다
@@ -96,4 +110,4 @@ function registerFileApi() {
   ipcMain.handle('snap:list', (_e, file, kind) => listSnapshots(file, kind));
 }
 
-module.exports = { registerFileApi, writeSnapshot, listSnapshots, allow, writePngs, pngName };
+module.exports = { registerFileApi, writeSnapshot, listSnapshots, allow, writePngs, pngName, writeAtomic };

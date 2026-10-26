@@ -8,6 +8,13 @@ const { registerFileApi } = require('./files.cjs');
 const ROOT = path.join(__dirname, '..', 'dist');
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
+// 화면이 불러올 수 있는 것을 앱 안 파일로 묶는다 (HTML 가져오기·와이어프레임 그리기에 남의 코드가 섞여도 바깥으로 못 나가게).
+// 'wasm-unsafe-eval': SQLite 실험(sql.js WebAssembly). 'unsafe-inline' 스타일: React의 style 속성과 가져온 HTML의 <style>
+const CSP = [
+  "default-src 'self'", "script-src 'self' 'wasm-unsafe-eval'", "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob:",
+  "font-src 'self' data:", "connect-src 'self'", "object-src 'none'", "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'",
+].join('; ');
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1440,
@@ -38,7 +45,11 @@ app.whenReady().then(() => {
     const file = path.normalize(path.join(ROOT, decodeURIComponent(new URL(req.url).pathname)));
     // dist 폴더 밖 파일은 내주지 않는다
     if (!file.startsWith(ROOT + path.sep)) return new Response('not found', { status: 404 });
-    return net.fetch(pathToFileURL(file).toString());
+    return net.fetch(pathToFileURL(file).toString()).then((res) => {
+      const headers = new Headers(res.headers);
+      headers.set('Content-Security-Policy', CSP);
+      return new Response(res.body, { status: res.status, headers });
+    });
   });
   registerFileApi();
   // 기본 메뉴의 단축키(Ctrl+Z 등)가 앱의 단축키를 가로채지 않게 메뉴를 없앤다

@@ -1,7 +1,7 @@
 // 프로젝트 하나와 화면 상태. 노드 위치는 계산과 무관하므로 프로젝트와 따로 둔다(끌 때마다 다시 계산하지 않도록).
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
-import { parseProject } from '../../engine/data';
+import { FORMAT_VERSION, parseProject } from '../../engine/data';
 import type { Project } from '../../engine/schema';
 import { catalog, examples } from './data';
 import { autoLayout, type XY } from './layout';
@@ -92,7 +92,7 @@ export const useStore = create<State>((set) => ({
 
 /** 저장 파일: 프로젝트 + 노드 위치(pos). 엔진 스키마는 pos를 모르고 무시한다. */
 export function exportProject(p: Project, positions: Record<string, XY>) {
-  return { ...p, nodes: p.nodes.map((n) => ({ ...n, pos: positions[n.id] })) };
+  return { format_version: FORMAT_VERSION, ...p, nodes: p.nodes.map((n) => ({ ...n, pos: positions[n.id] })) };
 }
 
 /** 저장 파일 → 프로젝트와 노드 위치 (exportProject의 반대). 틀린 파일이면 던진다 */

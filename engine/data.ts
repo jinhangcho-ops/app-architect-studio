@@ -34,8 +34,29 @@ export function buildPrices(files: JsonFile[]): PriceRow[] {
   return rows;
 }
 
+/** 저장 파일 형식 버전. 저장 파일의 모양이 바뀌면(필드 이름·뜻이 바뀜) 올리고 MIGRATIONS에 옛 모양을 새 모양으로 바꾸는 함수를 더한다.
+ *  format_version이 없는 파일은 1 (버전을 넣기 전에 만든 파일) */
+export const FORMAT_VERSION = 1;
+type Raw = Record<string, unknown>;
+/** MIGRATIONS[v]: 형식 v인 파일을 v + 1로 바꾼다 */
+export const MIGRATIONS: Record<number, (d: Raw) => Raw> = {};
+
+/** 저장 파일을 지금 형식으로 바꾼다. 이 앱보다 새 버전에서 만든 파일은 모르는 값이 버려져 다시 저장할 때 사라지므로 열지 않는다 */
+export function migrate(data: unknown, where = '프로젝트', current = FORMAT_VERSION, steps = MIGRATIONS): unknown {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
+  let d = data as Raw, v = d.format_version ?? 1;
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) throw new Error(`${where}: 형식 버전(format_version)이 올바르지 않습니다: ${String(v)}`);
+  if (v > current) throw new Error(`${where}: 더 새 버전의 앱에서 만든 파일입니다 (파일 형식 ${v}, 이 앱은 ${current}까지). 앱을 최신으로 바꾼 뒤 여세요`);
+  for (; v < current; v++) {
+    if (!steps[v]) throw new Error(`${where}: 형식 ${v} → ${v + 1} 변환이 없습니다`);
+    d = steps[v](d);
+  }
+  const { format_version: _v, ...rest } = d;
+  return rest;
+}
+
 export function parseProject(data: unknown, items: CatalogItem[], where = '프로젝트'): Project {
-  const p = parseOrThrow(Project, data, where);
+  const p = parseOrThrow(Project, migrate(data, where), where);
   const errors = checkProject(p, items);
   if (errors.length) throw new Error(`프로젝트 오류\n${errors.map((e) => `  - ${e}`).join('\n')}`);
   return p;
