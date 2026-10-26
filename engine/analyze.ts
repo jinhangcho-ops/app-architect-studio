@@ -115,8 +115,8 @@ export function sizeAt(n: ProjectNode, perRps: number, maxInstances: number, rps
     return { N, util: N ? rps / (N * perRps) : 0, p99: n.perf && nodeP99(rps, n.perf.service_ms, N * n.perf.workers, n.perf.service_p99_ms) };
   }
   const reads = rps * (1 - db.writeShare), onPrimary = db.replicas ? rps - reads : rps;
-  // 최소 대수를 올리면 그만큼 복제본이 늘 떠 있으므로 읽기도 나눠 받는다 (비용이 세는 대수와 용량이 세는 대수를 같게)
-  const replicas = db.replicas && reads > 0 ? Math.min(Math.max(0, maxInstances - 1), Math.max(Math.ceil(reads / (perRps * u)), n.min_instances - 1)) : 0;
+  // 늘 떠 있는 대수(최소 대수·이중화)만큼 복제본이 떠 있으므로 읽기도 나눠 받는다 (비용이 세는 대수와 용량이 세는 대수를 같게)
+  const replicas = db.replicas && reads > 0 ? Math.min(Math.max(0, maxInstances - 1), Math.max(Math.ceil(reads / (perRps * u)), floor - 1)) : 0;
   const util = Math.max(onPrimary / perRps, replicas ? reads / (replicas * perRps) : 0);
   return { N: Math.max(floor, 1 + replicas), util, p99: n.perf && nodeP99(onPrimary, n.perf.service_ms, n.perf.workers, n.perf.service_p99_ms) };
 }
@@ -149,12 +149,12 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
         // 비용(hourlyOf)과 같은 최소 대수를 쓴다. 0대까지 줄어드는 노드는 부하가 0일 때 0대
         const { N, util, p99 } = sizeAt(n, per.rps!.value, per.max, load.rps[s], u, db);
         return db ? {
-          N: m(N, '대', db.replicas ? '주 서버 1대(쓰기) + 읽기 복제본 ceil(읽기 / (대당 처리량 × 목표 사용률))' : '주 서버 1대 (쓰기·읽기 모두, 대수를 늘려도 처리량이 늘지 않음)',
-            { 부하: load.rps[s], 쓰기: load.writeRps[s], 대당: per.rps!.value, 목표사용률: u }),
+          N: m(N, '대', db.replicas ? '주 서버 1대(쓰기) + 읽기 복제본 ceil(읽기 / (대당 처리량 × 목표 사용률)), 최소·이중화 대수 이상' : '주 서버 1대 (쓰기·읽기 모두, 대수를 늘려도 처리량이 늘지 않음), 최소·이중화 대수만큼 대기 서버',
+            { 부하: load.rps[s], 쓰기: load.writeRps[s], 대당: per.rps!.value, 목표사용률: u, 최소: n.min_instances, 이중화: n.replicas }),
           util: m(util, '비율', db.replicas ? 'max(쓰기 / 대당 처리량, 읽기 / (복제본 수 × 대당 처리량))' : '부하 / 주 서버 1대 처리량', { 부하: load.rps[s], 쓰기: load.writeRps[s], 대수: N }),
           p99,
         } : {
-          N: m(N, '대', 'ceil(부하 / (대당 처리량 × 목표 사용률)), 최소·최대 대수로 자름', { 부하: load.rps[s], 대당: per.rps!.value, 목표사용률: u }),
+          N: m(N, '대', 'ceil(부하 / (대당 처리량 × 목표 사용률)), 최소·이중화 대수 이상, 최대 대수 이하', { 부하: load.rps[s], 대당: per.rps!.value, 목표사용률: u, 최소: n.min_instances, 이중화: n.replicas }),
           util: m(util, '비율', '부하 / (대수 × 대당 처리량)', { 부하: load.rps[s], 대수: N }),
           p99,
         };

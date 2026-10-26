@@ -26,15 +26,21 @@ describe('주 서버 1대 DB (single_primary)', () => {
     expect(r.N).toBe(1 + Math.ceil(4500 / 700));
     expect(r.util).toBeCloseTo(Math.max(500 / 1000, 4500 / (7 * 1000)));
   });
+  it('이중화로 늘린 대수도 읽기를 나눠 받음 (리뷰 10)', () => {
+    const r = sizeAt({ ...n, replicas: 5 }, 1000, 20, 1000, 0.7, { writeShare: 0.1, replicas: true });
+    expect(r.N).toBe(5);
+    expect(r.util).toBeCloseTo(Math.max(100 / 1000, 900 / (4 * 1000)));
+  });
   it('최소 대수를 올리면 늘 떠 있는 복제본이 읽기를 나눠 받음 (감사 7)', () => {
     const r = sizeAt({ ...n, min_instances: 5 }, 1000, 20, 1000, 0.7, { writeShare: 0.1, replicas: true });
     expect(r.N).toBe(5);
     expect(r.util).toBeCloseTo(Math.max(100 / 1000, 900 / (4 * 1000)));
   });
 
-  it('사용자를 50배로 늘려도 PostgreSQL은 1대 그대로이고 주 서버 처리량을 넘어 안 됨이 됨 (예전에는 11대로 늘었다)', () => {
+  it('사용자를 50배로 늘려도 PostgreSQL 대수는 그대로이고 주 서버 처리량을 넘어 안 됨이 됨 (예전에는 11대로 늘었다)', () => {
     const a = run(users(base, 50));
-    // 대수는 부하로 늘지 않고 이중화(replicas 2, 대기 서버)만큼 — 비용이 세는 대수와 같다 (감사 9)
+    // 대수는 부하로 늘지 않는다 (이중화 replicas 2 = 대기 서버만큼, 비용이 세는 대수와 같음)
+    expect(a.nodes.db.instances!.event.value).toBe(run(base).nodes.db.instances!.event.value);
     expect(a.nodes.db.instances!.event.value).toBe(2);
     const pg = a.judgements.find((j) => j.nodeId === 'db')!.items[0];
     expect(pg.verdict).toBe('fail');
