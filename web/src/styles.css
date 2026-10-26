@@ -196,6 +196,7 @@ textarea.spec { width: 100%; min-height: 90px; font-family: ui-monospace, monosp
 .history-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .history h4 { margin: 10px 0 4px; font-size: 13px; }
 .history-row { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 3px 0; border-bottom: 1px dotted var(--line); }
+.update { position: absolute; right: 14px; bottom: 14px; z-index: 24; display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: #10233a; border: 1px solid #4a8bd6; border-radius: 8px; box-shadow: 0 2px 8px #0003; }
 .notice { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 23; background: #f3f5f8; color: #0d1117; padding: 6px 12px; border-radius: 6px; }
 
 /* 지표 줄 · 가운데(캔버스 + 한계 그래프) */

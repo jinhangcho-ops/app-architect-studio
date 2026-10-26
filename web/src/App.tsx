@@ -67,6 +67,9 @@ export function App() {
   const [recovery, setRecovery] = useState<Snapshot | undefined>(() => readAutosaves()[0]);
   const [history, setHistory] = useState(false);
   const [notice, setNotice] = useState<string>();
+  // 새 버전 알림 (데스크톱 앱에서 켤 때 한 번 확인)
+  const [update, setUpdate] = useState<{ current: string; version: string; url: string }>();
+  useEffect(() => { desktop?.checkUpdate?.().then((u) => u && setUpdate(u)).catch(() => {}); }, []);
   // 데스크톱 앱에서 지금 열려 있는 프로젝트 파일 (Ctrl+S가 이 파일을 덮어쓰고, 같은 폴더에 시점 파일을 남긴다)
   const [filePath, setFilePath] = useState<string>();
   useEffect(() => { document.title = filePath ? `${baseName(filePath)} - App Architect Studio` : 'App Architect Studio'; }, [filePath]);
@@ -331,6 +334,13 @@ export function App() {
       )}
       {history && <SaveHistory filePath={desktop ? filePath : undefined} onRestore={restore} onClose={() => setHistory(false)} />}
       {notice && <div className="notice" role="status">{notice}</div>}
+      {update && (
+        <div className="update" role="status">
+          <span>새 버전 <b>{update.version}</b>이 있습니다 (지금 {update.current})</span>
+          <button className="primary" onClick={() => void desktop?.openRelease(update.url)}>받으러 가기</button>
+          <button onClick={() => setUpdate(undefined)}>닫기</button>
+        </div>
+      )}
       {find && (
         <div className="find" role="search">
           <input autoFocus value={find.q} placeholder="노드·항목·테이블·컬럼 찾기 (Enter 다음, Esc 닫기)" aria-label="찾기"

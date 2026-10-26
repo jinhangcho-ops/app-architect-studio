@@ -4,6 +4,7 @@ const { app, BrowserWindow, Menu, net, protocol, shell } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { registerFileApi } = require('./files.cjs');
+const { registerUpdateApi } = require('./update.cjs');
 
 const ROOT = path.join(__dirname, '..', 'dist');
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
@@ -52,6 +53,7 @@ app.whenReady().then(() => {
     });
   });
   registerFileApi();
+  registerUpdateApi();
   // 기본 메뉴의 단축키(Ctrl+Z 등)가 앱의 단축키를 가로채지 않게 메뉴를 없앤다
   Menu.setApplicationMenu(null);
   createWindow();

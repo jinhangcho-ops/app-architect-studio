@@ -10,6 +10,10 @@ export type DesktopApi = {
   savePngs: (files: { name: string; base64: string }[]) => Promise<string[] | null>;
   /** 글자 파일 여러 개(명세 등)를 고른 폴더에. 저장한 경로들(취소면 null) */
   saveTexts: (files: { name: string; text: string }[]) => Promise<string[] | null>;
+  /** GitHub Releases에 지금보다 새 버전이 있으면 그 정보, 없거나 확인할 수 없으면 null */
+  checkUpdate: () => Promise<{ current: string; version: string; url: string } | null>;
+  /** 이 저장소의 Releases 페이지를 브라우저로 연다 */
+  openRelease: (url: string) => Promise<void>;
 };
 
 export const desktop = (globalThis as { desktop?: DesktopApi }).desktop;

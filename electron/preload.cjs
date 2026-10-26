@@ -9,4 +9,6 @@ contextBridge.exposeInMainWorld('desktop', {
   listSnapshots: (file, kind) => ipcRenderer.invoke('snap:list', file, kind),
   savePngs: (files) => ipcRenderer.invoke('png:save', files),
   saveTexts: (files) => ipcRenderer.invoke('text:save', files),
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
+  openRelease: (url) => ipcRenderer.invoke('update:open', url),
 });
