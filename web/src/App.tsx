@@ -7,7 +7,7 @@ import { catalog, examples } from './data';
 import { mergeCodeAnalysis } from './codeImport';
 import { addNode, findPlans, pasteNode, run } from './edit';
 import { readAutosaves, saveToFolder, scheduleAutosave, scheduleFolderAutosave, snapshotLabel, startNewSnapshot, writeManualSave, type Snapshot } from './autosave';
-import { baseName, desktop } from './desktop';
+import { baseName, desktop, setUpdateCheck, updateCheckOn } from './desktop';
 import { SaveHistory } from './SaveHistory';
 import { searchProject, type Hit } from './search';
 import type { OptimizeResult } from '../../engine/optimize';
@@ -68,8 +68,15 @@ export function App() {
   const [history, setHistory] = useState(false);
   const [notice, setNotice] = useState<string>();
   // 새 버전 알림 (데스크톱 앱에서 켤 때 한 번 확인)
-  const [update, setUpdate] = useState<{ current: string; version: string; url: string }>();
-  useEffect(() => { desktop?.checkUpdate?.().then((u) => u && setUpdate(u)).catch(() => {}); }, []);
+  const [update, setUpdate] = useState<{ current: string; version: string; url: string; installer?: unknown; busy?: boolean; error?: string }>();
+  const [checkOn, setCheckOn] = useState(updateCheckOn);
+  useEffect(() => { if (updateCheckOn()) desktop?.checkUpdate?.().then((u) => u && setUpdate(u)).catch(() => {}); }, []);
+  const runUpdate = async () => {
+    setUpdate((u) => u && { ...u, busy: true, error: undefined });
+    const r = await desktop!.installUpdate().catch((e: Error) => ({ ok: false, reason: e.message }));
+    // 성공하면 설치 프로그램이 뜨고 앱이 닫힌다
+    if (!r.ok) setUpdate((u) => u && { ...u, busy: false, error: r.reason });
+  };
   // 데스크톱 앱에서 지금 열려 있는 프로젝트 파일 (Ctrl+S가 이 파일을 덮어쓰고, 같은 폴더에 시점 파일을 남긴다)
   const [filePath, setFilePath] = useState<string>();
   useEffect(() => { document.title = filePath ? `${baseName(filePath)} - App Architect Studio` : 'App Architect Studio'; }, [filePath]);
@@ -250,6 +257,9 @@ export function App() {
           <button role="menuitem" onClick={() => { close(); exportFile(); }}>파일로 내보내기<small>Ctrl+Shift+S</small></button>
           <button role="menuitem" title="연결선의 인터페이스 명세 → OpenAPI(REST)·AsyncAPI(메시지)·proto(gRPC)" onClick={() => { close(); void exportSpecs(); }}>인터페이스 명세 내보내기</button>
           <button role="menuitem" onClick={() => { close(); setHistory(!history); }}>저장 기록</button>
+          {desktop && <button role="menuitemcheckbox" aria-checked={checkOn} title="앱을 열 때 GitHub Releases에 새 버전이 있는지 한 번 묻습니다 (데이터 값은 보내지 않음)"
+            onClick={() => { close(); setUpdateCheck(!checkOn); setCheckOn(!checkOn); if (checkOn) setUpdate(undefined); say(checkOn ? '새 버전 확인을 껐습니다' : '새 버전 확인을 켰습니다 (다음에 열 때부터)'); }}>
+            새 버전 확인<small>{checkOn ? '켜짐' : '꺼짐'}</small></button>}
         </>}</Menu>
         <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => e.target.files?.[0] && open(e.target.files[0])} />
         <input ref={codeRef} type="file" accept="application/json" hidden onChange={async (e) => {
@@ -337,7 +347,10 @@ export function App() {
       {update && (
         <div className="update" role="status">
           <span>새 버전 <b>{update.version}</b>이 있습니다 (지금 {update.current})</span>
-          <button className="primary" onClick={() => void desktop?.openRelease(update.url)}>받으러 가기</button>
+          {update.error && <span className="warn">{update.error}</span>}
+          {update.installer && !update.error
+            ? <button className="primary" disabled={update.busy} onClick={() => void runUpdate()}>{update.busy ? '받는 중…' : '업데이트'}</button>
+            : <button className="primary" onClick={() => void desktop?.openRelease(update.url)}>Releases에서 받기</button>}
           <button onClick={() => setUpdate(undefined)}>닫기</button>
         </div>
       )}
