@@ -1,7 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import initSqlJs from 'sql.js';
 import { describe, expect, it } from 'vitest';
-import { parseProject } from '../data';
+import { parseProject, readProject } from '../data';
 import { dataDictionaryCsv, ddlFiles, dialectOf, schemaFiles, schemaWarnings, tableDdl } from '../ddl';
 import { loadCatalog } from '../io';
 import { Project, Table } from '../schema';
@@ -257,6 +258,41 @@ describe('1.2.0 파일 열기와 스키마 경고 (리뷰 1)', () => {
     expect(as('mysql')).toEqual([]);
     expect(as('bigquery')).toEqual([]);
     expect(as('sqlite')).toHaveLength(1);
+  });
+
+  it('고정장으로 바꿔 길이 없는 문자열이 생겨도 열리고 경고로 남음', () => {
+    const raw = JSON.parse(readFileSync(fileURLToPath(new URL('../../examples/actions.json', import.meta.url)), 'utf8'));
+    raw.nodes.find((n: { id: string }) => n.id === 'db').tables[0].record = 'fixed';
+    const p = parseProject(raw, catalog.items);
+    expect(schemaWarnings(p, catalog.byId)).toContainEqual({ node: 'db', table: 'orders', text: 'status: 고정장 테이블인데 최대 길이(바이트)가 없어 가변장으로 저장됨' });
+  });
+
+  it('앱 열기(readProject)는 모양만 검사: 기본 키에 없는 컬럼이 있어도 열고, parseProject는 거부', () => {
+    const raw = { name: 'p', nodes: [{ id: 'db', name: 'DB', layer: 'db', primary: 'sqlite', tables: [{ name: 't', columns: [{ name: 'a', type: 'int' }], primary_key: ['gone'] }] }] };
+    expect(readProject(raw, catalog.items).nodes[0].tables[0].primary_key).toEqual(['gone']);
+    expect(() => parseProject(raw, catalog.items)).toThrow(/기본 키에 없는 컬럼 gone/);
+    // 모양이 틀리면 둘 다 거부
+    expect(() => readProject({ name: 1 }, catalog.items)).toThrow(/검증 실패/);
+  });
+
+  it('MySQL: VARCHAR 한도(16383) 넘으면 TEXT, 행 합 65535바이트·JSON 키·TEXT 키는 경고', () => {
+    const t = Table.parse({ name: 'm', columns: [
+      { name: 'memo', type: 'text', max_length: 65535 }, { name: 'j', type: 'json' }, { name: 'k', type: 'text', max_length: 20000 },
+      { name: 'a', type: 'text', max_length: 10000 }, { name: 'b', type: 'text', max_length: 10000 },
+    ], primary_key: ['k'], indexes: [{ name: 'ij', columns: ['j'] }] });
+    const s = tableDdl(t, 'mysql');
+    expect(s).toContain('`memo` TEXT NOT NULL');
+    expect(s).toContain('`k` TEXT NOT NULL');
+    expect(s).toContain('`a` VARCHAR(10000) NOT NULL');
+    const p = Project.parse({ name: 'p', nodes: [{ id: 'db', name: 'DB', layer: 'db', primary: 'mysql', tables: [t] }] });
+    expect(schemaWarnings(p, catalog.byId).map((w) => w.text)).toEqual([
+      // 10000 × 4 × 2
+      'VARCHAR·CHAR·VARBINARY·BINARY 합이 utf8mb4로 최대 80000바이트라 MySQL 행 한도 65535바이트를 넘음 (긴 컬럼은 길이를 비워 TEXT로)',
+      'j: MySQL은 JSON 컬럼을 기본 키·인덱스에 쓸 수 없음',
+      'k: 최대 길이 20000가 VARCHAR 한도 16383를 넘어 TEXT가 되는데, MySQL은 TEXT를 키로 쓸 수 없음',
+    ]);
+    // PostgreSQL은 그대로 VARCHAR
+    expect(tableDdl(t, 'postgres')).toContain('"memo" VARCHAR(65535)');
   });
 });
 

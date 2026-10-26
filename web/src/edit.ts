@@ -123,12 +123,31 @@ type Action = Project['actions'][number];
 const mapTables = (p: Project, nodeId: string, fn: (ts: Table[]) => Table[]): Project =>
   ({ ...p, nodes: p.nodes.map((n) => (n.id === nodeId ? { ...n, tables: fn(n.tables) } : n)) });
 
-/** 명세서로 읽은 테이블을 노드에 넣는다. 이름이 같은 테이블은 바꾸고 나머지는 뒤에 붙인다 */
+/** 명세서에 없는 데이터 사전 메타(테이블 논리명·설명·장 형식, 같은 이름 컬럼의 논리명·도메인·코드·개인정보·기본값·설명)는 옛 값을 쓴다.
+ *  shortcut: personal·record는 기본값(false·variable)이면 옛 값을 쓰므로 JSON 명세로 끄거나 가변장으로 되돌릴 수는 없다 — 필요하면 칸에서 바꾼다 */
+function keepMeta(t: Table, old: Table): Table {
+  return {
+    ...t,
+    label: t.label ?? old.label,
+    description: t.description ?? old.description,
+    record: t.record === 'variable' ? old.record : t.record,
+    columns: t.columns.map((c) => {
+      const o = old.columns.find((x) => x.name === c.name);
+      return !o ? c : {
+        ...c,
+        label: c.label ?? o.label, domain: c.domain ?? o.domain, codes: c.codes ?? o.codes,
+        personal: c.personal || o.personal, default_value: c.default_value ?? o.default_value, description: c.description ?? o.description,
+      };
+    }),
+  };
+}
+
+/** 명세서로 읽은 테이블을 노드에 넣는다. 이름이 같은 테이블은 바꾸고(명세서에 없는 메타는 옛 값 유지) 나머지는 뒤에 붙인다 */
 export function importTables(p: Project, nodeId: string, tables: Table[]): { project: Project; replaced: string[] } {
   const n = p.nodes.find((x) => x.id === nodeId)!;
   const replaced = tables.filter((t) => n.tables.some((x) => x.name === t.name)).map((t) => t.name);
   const project = mapTables(p, nodeId, (ts) => [
-    ...ts.map((x) => tables.find((t) => t.name === x.name) ?? x),
+    ...ts.map((x) => { const t = tables.find((y) => y.name === x.name); return t ? keepMeta(t, x) : x; }),
     ...tables.filter((t) => !ts.some((x) => x.name === t.name)),
   ]);
   return { project, replaced };
@@ -164,6 +183,32 @@ export function addTable(p: Project, nodeId: string): Project {
   const n = p.nodes.find((x) => x.id === nodeId)!;
   const k = freeK(n.tables.map((t) => t.name), (k) => `table_${k}`);
   return mapTables(p, nodeId, (ts) => [...ts, TableSchema.parse({ name: `table_${k}`, columns: [{ name: 'id', type: 'bigint' }], primary_key: ['id'] })]);
+}
+
+/** 컬럼 이름 바꾸기: 같은 테이블의 기본 키·인덱스·파티션도 새 이름으로. 이미 있는 이름이면 undefined (저장하지 않음) */
+export function renameColumn(t: Table, from: string, to: string): Table | undefined {
+  if (t.columns.some((c) => c.name === to)) return undefined;
+  const ren = (x: string) => (x === from ? to : x);
+  return {
+    ...t,
+    columns: t.columns.map((c) => (c.name === from ? { ...c, name: to } : c)),
+    primary_key: t.primary_key.map(ren),
+    indexes: t.indexes.map((i) => ({ ...i, columns: i.columns.map(ren) })),
+    partition: t.partition && { ...t.partition, column: ren(t.partition.column) },
+  };
+}
+
+/** i번째 컬럼 지우기: 기본 키·인덱스에서 빼고, 컬럼이 없어진 인덱스와 그 컬럼의 파티션은 지운다 */
+export function removeColumn(t: Table, i: number): Table {
+  const name = t.columns[i].name;
+  const keep = (x: string) => x !== name;
+  return {
+    ...t,
+    columns: t.columns.filter((_, k) => k !== i),
+    primary_key: t.primary_key.filter(keep),
+    indexes: t.indexes.map((x) => ({ ...x, columns: x.columns.filter(keep) })).filter((x) => x.columns.length),
+    partition: t.partition?.column === name ? undefined : t.partition,
+  };
 }
 
 // ── 행동 ──

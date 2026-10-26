@@ -201,6 +201,9 @@ describe('파일·전문 (고정장·가변장)', () => {
     expect(lines[0].startsWith('\uFEFF')).toBe(true);
     expect(lines).toContain('1,acct,,string,Y,10,1,10,왼쪽,공백');
     expect(lines).toContain('2,amount,,integer,Y,13,11,23,오른쪽,0');
+    // 데이터 길이 = 마지막 끝 위치, 레코드 길이 = + CRLF
+    expect(lines).toContain('"레코드 길이(바이트, 줄바꿈 포함)",25');
+    expect(lines).toContain('"데이터 길이(바이트, 줄바꿈 제외)",23');
   });
 
   it('내보내기에 layout CSV가 들어가고, 응답이 있으면 오류', () => {

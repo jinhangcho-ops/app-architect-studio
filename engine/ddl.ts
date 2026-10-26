@@ -22,6 +22,7 @@ export function dialectOf(n: ProjectNode, byId: Map<string, CatalogItem>): Diale
 const q = (d: Dialect, s: string) => (d === 'mysql' ? `\`${s.replace(/`/g, '``')}\`` : `"${s.replace(/"/g, '""')}"`);
 // MySQL은 문자열 안의 백슬래시를 이스케이프로 읽는다
 const lit = (s: string, d: Dialect) => `'${(d === 'mysql' ? s.replace(/\\/g, '\\\\') : s).replace(/'/g, "''")}'`;
+const MYSQL_VARCHAR_MAX = 16383;
 /** 기본 키·인덱스에 쓰이는 컬럼 */
 export const keyCols = (t: Table) => new Set([...t.primary_key, ...t.indexes.flatMap((ix) => ix.columns)]);
 
@@ -30,7 +31,7 @@ export const keyCols = (t: Table) => new Set([...t.primary_key, ...t.indexes.fla
 export function sqlType(c: Column, d: Dialect, fixed = false, key = false): string {
   const n = c.max_length;
   const blob = storageOf(c) === 'blob', txt = storageOf(c) === 'text', real = storageOf(c) === 'real';
-  // MySQL의 CHAR·BINARY는 255까지
+  // MySQL의 CHAR·BINARY는 255까지 (크기 계산은 카탈로그 mysql storage.fixed_width_max가 같은 값)
   const fix = fixed && !(d === 'mysql' && (n ?? 0) > 255);
   switch (c.type) {
     case 'int': return d === 'mysql' ? 'INT' : 'INTEGER';
@@ -45,6 +46,8 @@ export function sqlType(c: Column, d: Dialect, fixed = false, key = false): stri
     case 'json': return d === 'postgres' ? 'JSONB' : d === 'mysql' ? 'JSON' : 'TEXT';
     case 'text':
       if (d === 'sqlite') return 'TEXT';
+      // MySQL utf8mb4 VARCHAR는 16383글자까지 (65535바이트 ÷ 4)
+      if (d === 'mysql' && (n ?? 0) > MYSQL_VARCHAR_MAX) return 'TEXT';
       if (n) return `${fix ? 'CHAR' : 'VARCHAR'}(${n})`;
       return d === 'generic' ? 'VARCHAR(4000)' : d === 'mysql' && key ? 'VARCHAR(255)' : 'TEXT';
     case 'bytes':
@@ -134,6 +137,9 @@ export function schemaWarnings(p: Project, byId: Map<string, CatalogItem>): { no
         for (const x of c.codes ?? []) if (!fitsType(c.type, x.code)) warn(`${c.name}: 코드 값이 타입(${c.type})과 안 맞음: ${x.code}`);
         // 화면의 코드 값 칸은 ;로 나누므로, ;가 든 코드·라벨은 칸을 고치면 쪼개진다
         if (c.codes?.some((x) => x.code.includes(';') || x.label.includes(';'))) warn(`${c.name}: 코드 값·라벨에 ;가 있어 화면에서 고치면 나뉨`);
+        // 고정장인데 길이가 정해지지 않은 컬럼은 DDL·크기 계산 모두 가변장처럼 다룬다
+        if (t.record === 'fixed' && c.type === 'json') warn(`${c.name}: 고정장 테이블의 JSON 컬럼은 길이가 정해지지 않아 가변장으로 저장됨`);
+        else if (t.record === 'fixed' && (c.type === 'text' || c.type === 'bytes') && !c.max_length) warn(`${c.name}: 고정장 테이블인데 최대 길이(바이트)가 없어 가변장으로 저장됨`);
       }
       // MySQL(InnoDB) 키 한도 3072바이트. utf8mb4 CHAR·VARCHAR(n)은 n × 4바이트
       if (d === 'mysql') {
@@ -146,6 +152,13 @@ export function schemaWarnings(p: Project, byId: Map<string, CatalogItem>): { no
         for (const [name, cols] of [['기본 키', t.primary_key], ...t.indexes.map((ix) => [`인덱스 ${ix.name}`, ix.columns])] as [string, string[]][]) {
           const sum = cols.reduce((s, col) => s + bytes(col), 0);
           if (sum > 3072) warn(`${name} (${cols.join(', ')}): utf8mb4로 최대 ${sum}바이트라 MySQL 키 한도 3072바이트를 넘음 (최대 길이를 정하세요)`);
+        }
+        const row = t.columns.reduce((s, c) => s + bytes(c.name), 0);
+        if (row > 65535) warn(`VARCHAR·CHAR·VARBINARY·BINARY 합이 utf8mb4로 최대 ${row}바이트라 MySQL 행 한도 65535바이트를 넘음 (긴 컬럼은 길이를 비워 TEXT로)`);
+        for (const c of t.columns) {
+          if (!keys.has(c.name)) continue;
+          if (c.type === 'json') warn(`${c.name}: MySQL은 JSON 컬럼을 기본 키·인덱스에 쓸 수 없음`);
+          else if (c.type === 'text' && (c.max_length ?? 0) > MYSQL_VARCHAR_MAX) warn(`${c.name}: 최대 길이 ${c.max_length}가 VARCHAR 한도 ${MYSQL_VARCHAR_MAX}를 넘어 TEXT가 되는데, MySQL은 TEXT를 키로 쓸 수 없음`);
         }
       }
     }

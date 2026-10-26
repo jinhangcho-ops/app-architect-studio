@@ -90,7 +90,7 @@ try {
   const feats = featureTables(project), unused = new Set(unusedTables(project)), warns = schemaWarnings(project, catalog.byId);
   const unusedNames = project.nodes.flatMap((n) => n.tables.filter((x) => unused.has(`${n.id}.${x.name}`)).map((x) => `${n.name}.${x.name}`));
   if (feats.length || unused.size || warns.length) console.log('\n## 기능별 테이블');
-  for (const f of feats) console.log(`  ${f.name} (${f.via}): ${f.tables.map((x) => `${nameOf(x.node)}.${x.table} ${x.op === 'read' ? '읽기' : '쓰기'}`).join(', ')}`);
+  for (const f of feats) console.log(`  ${f.name} (${f.via === '행동' ? f.via : f.via.split(' → ').map(nameOf).join(' → ')}): ${f.tables.map((x) => `${nameOf(x.node)}.${x.table} ${x.op === 'read' ? '읽기' : '쓰기'}`).join(', ')}`);
   if (unusedNames.length) console.log(`  ⚠️ 어느 기능에도 연결되지 않은 테이블: ${unusedNames.join(', ')}`);
   for (const w of warns) console.log(`  ⚠️ ${nameOf(w.node)}${w.table ? `.${w.table}` : ''}: ${w.text}`);
 

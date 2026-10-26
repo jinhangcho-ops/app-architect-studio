@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { parseProject } from '../../engine/data';
 import { catalog, examples } from './data';
 import { parseSpec } from '../../engine/spec';
-import { applyIndustry, setPersonaMix, addAction, addEdge, addWrite, removeWrite, addNode, addTable, applyAlternative, importTables, removeAction, removeNode, removePersona, removeTable, run, setActionRate, setVar, updateAction, updateNode, updatePersona, updateTable, worstVerdict } from './edit';
+import { Table as TableSchema } from '../../engine/schema';
+import { applyIndustry, setPersonaMix, addAction, addEdge, addWrite, removeWrite, addNode, addTable, applyAlternative, importTables, removeAction, removeColumn, removeNode, removePersona, removeTable, renameColumn, run, setActionRate, setVar, updateAction, updateNode, updatePersona, updateTable, worstVerdict } from './edit';
 import { autoLayout } from './layout';
 
 const today = '2026-10-23';
@@ -235,5 +236,52 @@ describe('코드 값 입력', () => {
     expect(parseCodes('C=카드,체크; M=현금')).toEqual([{ code: 'C', label: '카드,체크' }, { code: 'M', label: '현금' }]);
     expect(codesText(parseCodes('C=카드; X'))).toBe('C=카드; X');
     expect(parseCodes(' ; ')).toBeUndefined();
+  });
+});
+
+describe('컬럼 이름 바꾸기·삭제가 기본 키·인덱스·파티션을 따라감', () => {
+  const t = TableSchema.parse({
+    name: 'logs', columns: [{ name: 'id', type: 'bigint' }, { name: 'at', type: 'timestamp' }, { name: 'who', type: 'text' }],
+    primary_key: ['id', 'at'], indexes: [{ name: 'ix_at', columns: ['at'] }, { name: 'ix_who_at', columns: ['who', 'at'] }], partition: { column: 'at', interval: 'day' },
+  });
+
+  it('이름을 바꾸면 같은 테이블의 기본 키·인덱스·파티션도 새 이름으로', () => {
+    const r = renameColumn(t, 'at', 'created_at')!;
+    expect(r.columns.map((c) => c.name)).toEqual(['id', 'created_at', 'who']);
+    expect(r.primary_key).toEqual(['id', 'created_at']);
+    expect(r.indexes.map((i) => i.columns)).toEqual([['created_at'], ['who', 'created_at']]);
+    expect(r.partition).toEqual({ column: 'created_at', interval: 'day' });
+  });
+
+  it('이미 있는 컬럼 이름으로는 바꾸지 않음', () => {
+    expect(renameColumn(t, 'at', 'who')).toBeUndefined();
+  });
+
+  it('지우면 목록에서 빠지고, 빈 인덱스와 그 컬럼의 파티션은 지움', () => {
+    const r = removeColumn(t, 1);
+    expect(r.columns.map((c) => c.name)).toEqual(['id', 'who']);
+    expect(r.primary_key).toEqual(['id']);
+    expect(r.indexes).toEqual([{ name: 'ix_who_at', columns: ['who'], unique: false }]);
+    expect(r.partition).toBeUndefined();
+    expect(removeColumn(t, 2).partition).toEqual(t.partition);
+  });
+});
+
+describe('명세서 다시 붙여 넣기', () => {
+  const ax = examples.find((e) => e.name === 'actions.json')!;
+  const p0 = parseProject(ax.data, catalog.items, ax.name);
+  it('같은 이름 테이블을 바꿀 때 명세서에 없는 데이터 사전 메타는 옛 값을 유지', () => {
+    const t0 = p0.nodes.find((n) => n.id === 'db')!.tables.find((t) => t.name === 'orders')!;
+    const id = t0.columns[0].name;
+    const meta = updateTable(p0, 'db', 'orders', {
+      label: '주문', description: '주문 한 건', record: 'fixed',
+      columns: t0.columns.map((c, i) => (i ? c : { ...c, label: '번호', domain: '코드', codes: [{ code: '1', label: '하나' }], personal: true, default_value: '1', description: '옛 설명' })),
+    });
+    const spec = parseSpec(`테이블\t컬럼\t타입\t설명\norders\t${id}\tbigint\t\norders\tmemo\ttext\t새 설명`);
+    const t = importTables(meta, 'db', spec.tables).project.nodes.find((n) => n.id === 'db')!.tables.find((x) => x.name === 'orders')!;
+    expect(t).toMatchObject({ label: '주문', description: '주문 한 건', record: 'fixed' });
+    expect(t.columns[0]).toMatchObject({ name: id, label: '번호', domain: '코드', codes: [{ code: '1', label: '하나' }], personal: true, default_value: '1', description: '옛 설명' });
+    expect(t.columns[1]).toMatchObject({ name: 'memo', description: '새 설명', personal: false });
+    expect(t.columns[1].label).toBeUndefined();
   });
 });

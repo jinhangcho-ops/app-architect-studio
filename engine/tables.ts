@@ -81,7 +81,10 @@ export function tableSize(
   // 행 크기. 고정장인데 시스템이 채워 저장하지 않으면(SQLite 등) 실제 길이로 센다
   const padded = t.record === 'fixed' && !!sp?.fixed_width_padded;
   if (t.record === 'fixed' && !padded) assume('고정장이지만 이 시스템은 고정 길이 문자열도 실제 길이로 저장 → 가변장처럼 계산');
-  const bytesOf = new Map(t.columns.map((c) => [c.name, valueBytes(c, assume, padded)]));
+  // 고정 길이 한도(MySQL CHAR 255)를 넘는 컬럼은 VARCHAR라 채우지 않음 (ddl.ts sqlType의 255와 같은 값)
+  const fits = (c: Column) => !sp?.fixed_width_max || (c.max_length ?? 0) <= sp.fixed_width_max;
+  if (padded && sp?.fixed_width_max) for (const c of t.columns) if (c.type === 'text' && !fits(c)) assume(`${c.name}: 최대 길이 ${c.max_length}가 고정 길이 한도 ${sp.fixed_width_max}를 넘어 가변 길이로 계산`);
+  const bytesOf = new Map(t.columns.map((c) => [c.name, valueBytes(c, assume, padded && fits(c))]));
   const data = t.columns.reduce((s, c) => s + bytesOf.get(c.name)!, 0);
   const textData = t.columns.filter((c) => TEXT_TYPES.has(c.type)).reduce((s, c) => s + bytesOf.get(c.name)!, 0);
   const names = sp?.stores_field_names ? t.columns.reduce((s, c) => s + utf8(c.name), 0) : 0;

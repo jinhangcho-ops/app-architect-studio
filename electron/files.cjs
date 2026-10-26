@@ -82,6 +82,9 @@ function writeTexts(dir, files) {
   });
 }
 
+/** 고른 폴더에 이미 있는 명세 파일 이름 (덮어쓰기 전에 한 번 묻는다) */
+const existingTexts = (dir, files) => files.map((f) => String(f.name)).filter((name) => fs.existsSync(path.join(dir, name)));
+
 /** Electron에 연결: dialog를 쓰는 열기·저장과, 위 시점 함수들 */
 function registerFileApi() {
   const { BrowserWindow, dialog, ipcMain } = require('electron');
@@ -120,10 +123,19 @@ function registerFileApi() {
     if (!Array.isArray(files) || !files.length) return null;
     const r = await dialog.showOpenDialog(win(), { title: '명세 파일을 저장할 폴더', properties: ['openDirectory', 'createDirectory'] });
     if (r.canceled || !r.filePaths[0]) return null;
+    const dup = existingTexts(r.filePaths[0], files);
+    if (dup.length) {
+      const list = dup.slice(0, 10).join('\n') + (dup.length > 10 ? `\n… 외 ${dup.length - 10}개` : '');
+      const ok = await dialog.showMessageBox(win(), {
+        type: 'question', buttons: ['덮어쓰기', '취소'], defaultId: 1, cancelId: 1,
+        message: `이미 있는 파일 ${dup.length}개를 덮어쓸까요?`, detail: list,
+      });
+      if (ok.response !== 0) return null;
+    }
     return writeTexts(r.filePaths[0], files);
   });
   ipcMain.handle('snap:write', (_e, file, kind, name, text, max) => writeSnapshot(file, kind, name, text, max));
   ipcMain.handle('snap:list', (_e, file, kind) => listSnapshots(file, kind));
 }
 
-module.exports = { registerFileApi, writeSnapshot, listSnapshots, allow, writePngs, pngName, writeAtomic, writeTexts };
+module.exports = { registerFileApi, writeSnapshot, listSnapshots, allow, writePngs, pngName, writeAtomic, writeTexts, existingTexts };

@@ -191,3 +191,29 @@ describe('인터페이스 테이블 연결', () => {
     root.unmount();
   });
 });
+
+describe('이름 겹침', () => {
+  it('같은 노드에 있는 테이블 이름으로 바꾸면 저장하지 않고 칸을 옛 이름으로 되돌림', () => {
+    const { el, root, node } = mountTable();
+    const [t0, t1] = node().tables;
+    const input = [...el.querySelectorAll('input')].find((x) => x.value === t0.name)!;
+    const before = useStore.getState().project;
+    input.value = t1.name; blur(input);
+    expect(useStore.getState().project).toBe(before);
+    expect(input.value).toBe(t0.name);
+    root.unmount();
+  });
+
+  it('컬럼 이름 바꾸기는 기본 키를 따라가고, 이미 있는 컬럼 이름이면 저장하지 않음', () => {
+    const { el, root, render, node } = mountTable();
+    const t = node().tables[0];
+    const pk = t.primary_key[0], other = t.columns.find((c) => c.name !== pk)!.name;
+    const cell = () => [...el.querySelectorAll('td input')].find((x) => (x as HTMLInputElement).value === pk) as HTMLInputElement;
+    const before = useStore.getState().project;
+    let c = cell(); c.value = other; blur(c); render();
+    expect(useStore.getState().project).toBe(before);
+    c = cell(); c.value = `${pk}_x`; blur(c); render();
+    expect(node().tables[0].primary_key[0]).toBe(`${pk}_x`);
+    root.unmount();
+  });
+});

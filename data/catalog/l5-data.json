@@ -16,6 +16,7 @@
     "storage": {
       "layout": "row",
       "fixed_width_padded": true,
+      "fixed_width_max": 255,
       "row_overhead_bytes": 18,
       "per_column_overhead_bytes": 1,
       "index_entry_overhead_bytes": 5,

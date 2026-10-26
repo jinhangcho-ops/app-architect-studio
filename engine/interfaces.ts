@@ -452,12 +452,14 @@ export const csvCell = (v: unknown) => {
 };
 /** 레이아웃 표(CSV, 엑셀에서 한글이 깨지지 않게 BOM). 첫 줄들은 장 형식·인코딩·레코드 길이 */
 export function layoutCsv(i: Interface, from: string, to: string): string {
-  const r = i.record;
+  const r = i.record, len = recordBytes(i);
   const head = [
     ['인터페이스', i.name], ['보내는 → 받는', `${from} → ${to}`], ['파일·전문 ID', i.path],
     ['장 형식', !r ? '미정' : r.format === 'fixed' ? '고정장' : `가변장 (구분자 ${JSON.stringify(r.delimiter)}${r.header ? ', 머리줄 있음' : ''})`],
     ['인코딩', r?.encoding ?? '미정'], ['줄바꿈', r ? { crlf: 'CRLF', lf: 'LF', none: '없음' }[r.newline] : '미정'],
-    ['레코드 길이(바이트)', recordBytes(i) ?? ''],
+    ['레코드 길이(바이트, 줄바꿈 포함)', len ?? ''],
+    // 고정장이면 마지막 필드의 끝 위치와 같음
+    ['데이터 길이(바이트, 줄바꿈 제외)', len === undefined || !r ? '' : len - NEWLINE[r.newline]],
   ];
   const fixed = r?.format === 'fixed';
   const cols = fixed ? ['순번', '필드', '설명', '형식', '필수', '길이', '시작', '끝', '맞춤', '채움'] : ['순번', '필드', '설명', '형식', '필수', '평균 바이트'];

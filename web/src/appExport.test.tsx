@@ -32,3 +32,25 @@ it('데스크톱에서 명세 파일 저장이 실패하면 알림을 띄움', a
   expect(el.querySelector('[role="status"]')?.textContent).toContain('저장하지 못했습니다: EPERM');
   await act(async () => root.unmount());
 });
+
+it('검사 오류가 있는 저장 파일도 열리고, 화면은 터지지 않고 오류 배너를 보임', async () => {
+  const { exportProject, importProject } = await import('./store');
+  const ex = examples.find((e) => e.name === 'actions.json')!;
+  const p = JSON.parse(JSON.stringify(exportProject(parseProject(ex.data, catalog.items, ex.name), {})));
+  const n = p.nodes.find((x: { tables?: unknown[] }) => x.tables?.length);
+  n.tables[0].primary_key = ['없는_컬럼'];
+  p.edges.push({ from: n.id, to: '없는_노드' });
+  const { project, positions } = importProject(p, '깨진.json');
+  useStore.getState().load(project, positions);
+  const el = document.createElement('div'); document.body.appendChild(el);
+  const root = createRoot(el);
+  await act(async () => root.render(<App />));
+  expect(el.querySelector('.error-banner')?.textContent).toContain('없는');
+  // 노드 패널, 테이블 편집기, 없는 노드를 가리키는 연결선을 차례로 열어도 터지지 않음
+  await act(async () => useStore.getState().select({ kind: 'node', id: n.id }));
+  await act(async () => useStore.getState().setFocus(n.id, 'tables'));
+  await act(async () => useStore.getState().select({ kind: 'table', node: n.id, table: n.tables[0].name }));
+  await act(async () => { useStore.getState().setFocus(undefined); useStore.getState().select({ kind: 'edge', from: n.id, to: '없는_노드' }); });
+  expect(el.querySelector('.error-banner')?.textContent).toContain('기본 키에 없는 컬럼');
+  await act(async () => root.unmount());
+});

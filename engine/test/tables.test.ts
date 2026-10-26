@@ -171,12 +171,22 @@ describe('장 형식 (고정장·가변장)', () => {
     expect(f.assumptions.join()).toContain('실제 길이로 저장');
   });
 
-  it('고정장: 문자열·바이너리는 최대 길이가 있어야 하고 JSON은 넣을 수 없음, 코드 값은 중복 없이', () => {
+  it('고정장의 길이 없는 문자열·JSON은 막지 않고(ddl.ts 경고) 가변장처럼 계산, 코드 값은 중복 없이', () => {
     const t = Table.parse({ name: 't', record: 'fixed', columns: [
       { name: 'memo', type: 'text' }, { name: 'raw', type: 'json' }, { name: 'state', type: 'text', max_length: 1, codes: [{ code: 'A', label: '정상' }, { code: 'A', label: '중복' }] },
     ] });
-    expect(checkTable(t)).toEqual(['고정장 테이블의 memo: 최대 길이(바이트)가 필요함', '고정장 테이블에 JSON 컬럼 raw은 넣을 수 없음 (길이가 정해지지 않음)', 'state: 코드 값 중복 A']);
-    expect(checkTable(Table.parse({ name: 't', columns: [{ name: 'memo', type: 'text' }] }))).toEqual([]);
+    expect(checkTable(t)).toEqual(['state: 코드 값 중복 A']);
+    const fixedNoLen = size('postgresql', { ...orders, record: 'fixed' }), variable = size('postgresql', orders);
+    expect(fixedNoLen.rowBytes.value).toBe(variable.rowBytes.value);
+  });
+
+  it('MySQL 고정장은 CHAR 한도 255 이하만 채움 (넘으면 VARCHAR라 실제 길이)', () => {
+    const big = { ...orders, columns: orders.columns.map((c) => (c.name === 'status' ? { ...c, max_length: 1000 } : c)) };
+    const v = size('mysql', big), f = size('mysql', { ...big, record: 'fixed' });
+    expect(f.rowBytes.value).toBe(v.rowBytes.value);
+    expect(f.assumptions.join()).toContain('고정 길이 한도 255');
+    // PostgreSQL CHAR(n)은 한도가 없어 채움
+    expect(size('postgresql', { ...big, record: 'fixed' }).rowBytes.value).toBeGreaterThan(size('postgresql', big).rowBytes.value);
   });
 
   it('고정장 채움은 문자열만: 바이너리는 PostgreSQL BYTEA처럼 실제 길이로 저장', () => {

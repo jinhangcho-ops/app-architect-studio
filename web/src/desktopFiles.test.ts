@@ -18,6 +18,7 @@ const files = require('../../electron/files.cjs') as {
   pngName: (name: string) => string;
   writeAtomic: (target: string, data: string | Buffer) => void;
   writeTexts: (dir: string, files: { name: string; text: string }[]) => string[];
+  existingTexts: (dir: string, files: { name: string; text: string }[]) => string[];
 };
 
 const dir = mkdtempSync(join(tmpdir(), 'aas-files-'));
@@ -138,5 +139,11 @@ describe('명세 파일 저장 (writeTexts)', () => {
     expect(readFileSync(f, 'utf8')).toBe('syntax = "proto3";');
     expect(() => files.writeTexts(dir, [{ name: '../밖.json', text: '{}' }])).toThrow('이름 형식');
     expect(() => files.writeTexts(dir, [{ name: 'a.exe', text: '' }])).toThrow('이름 형식');
+  });
+
+  it('고른 폴더에 이미 있는 파일 이름을 찾음 (덮어쓰기 전에 묻게)', () => {
+    const sub = join(dir, 'texts'); mkdirSync(sub);
+    writeFileSync(join(sub, 'a.sql'), '');
+    expect(files.existingTexts(sub, [{ name: 'a.sql', text: '' }, { name: 'b.sql', text: '' }])).toEqual(['a.sql']);
   });
 });

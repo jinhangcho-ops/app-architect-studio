@@ -58,8 +58,13 @@ export function migrate(data: unknown, where = '프로젝트', current = FORMAT_
   return rest;
 }
 
+/** 앱이 파일·저장 기록을 열 때: 형식 변환과 모양만 검사 (checkProject 오류는 계산 때 배너로 보여 고칠 수 있게) */
+export function readProject(data: unknown, _items: CatalogItem[], where = '프로젝트'): Project {
+  return parseOrThrow(Project, migrate(data, where), where);
+}
+
 export function parseProject(data: unknown, items: CatalogItem[], where = '프로젝트'): Project {
-  const p = parseOrThrow(Project, migrate(data, where), where);
+  const p = readProject(data, items, where);
   const errors = checkProject(p, items);
   if (errors.length) throw new Error(`프로젝트 오류\n${errors.map((e) => `  - ${e}`).join('\n')}`);
   return p;

@@ -90,6 +90,8 @@ export const StorageProfile = z.object({
   integer_pk_is_rowid: z.boolean().default(false),
   /** 고정 길이 문자열(CHAR(n))을 선언한 길이까지 공백으로 채워 저장 (MySQL·PostgreSQL). false면 고정장으로 선언해도 실제 길이로 저장 */
   fixed_width_padded: z.boolean().default(false),
+  /** 고정 길이로 채워 저장하는 최대 길이. 넘으면 가변 길이로 저장 (MySQL CHAR는 255까지, 넘으면 VARCHAR) */
+  fixed_width_max: z.number().int().positive().optional(),
   table_fill: z.number().gt(0).max(1).default(1),
   index_fill: z.number().gt(0).max(1).default(1),
   /** 기능 묶음. one이면 그 묶음에서 하나만 고른다 */
@@ -680,13 +682,6 @@ export function checkTable(t: Table): string[] {
   for (const ix of t.indexes) for (const c of ix.columns) if (!cols.has(c)) errors.push(`인덱스 ${ix.name}에 없는 컬럼 ${c}`);
   for (const d of dupes(t.indexes.map((x) => x.name))) errors.push(`인덱스 이름 중복 ${d}`);
   if (t.partition && !cols.has(t.partition.column)) errors.push(`파티션에 없는 컬럼 ${t.partition.column}`);
-  // 고정장: 문자열·바이너리는 길이를 알아야 하고, JSON은 길이가 정해지지 않아 넣을 수 없다
-  if (t.record === 'fixed') {
-    for (const c of t.columns) {
-      if (c.type === 'json') errors.push(`고정장 테이블에 JSON 컬럼 ${c.name}은 넣을 수 없음 (길이가 정해지지 않음)`);
-      else if ((c.type === 'text' || c.type === 'bytes') && !c.max_length) errors.push(`고정장 테이블의 ${c.name}: 최대 길이(바이트)가 필요함`);
-    }
-  }
   for (const c of t.columns) for (const d of dupes((c.codes ?? []).map((x) => x.code))) errors.push(`${c.name}: 코드 값 중복 ${d}`);
   return errors;
 }

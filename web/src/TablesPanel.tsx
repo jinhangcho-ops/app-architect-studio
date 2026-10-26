@@ -5,7 +5,7 @@ import { COLUMN_TYPES, nodeStorageProfile, selectedFeatures, STORAGE_FORMATS, ST
 import { parseSpec } from '../../engine/spec';
 import { schemaWarnings } from '../../engine/ddl';
 import { catalog } from './data';
-import { addTable, importTables, patchAt, removeTable, setFeature, updateNode, updateTable } from './edit';
+import { addTable, importTables, patchAt, removeColumn, removeTable, renameColumn, setFeature, updateNode, updateTable } from './edit';
 import { NumField, Row, Section, TextField } from './fields';
 import { usePick } from './store';
 
@@ -91,7 +91,12 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
     <details className="table-editor" open={open}>
       <summary><b>{t.name}</b>{t.label && ` ${t.label}`} <span className="muted">{t.record === 'fixed' ? '고정장 · ' : ''}컬럼 {t.columns.length} · 인덱스 {t.indexes.length}{t.partition ? ' · 파티션' : ''}</span></summary>
       {warns.length > 0 && <div className="warn">{warns.map((w, i) => <div key={i}>⚠️ {w.text}</div>)}</div>}
-      <Row label="이름"><input defaultValue={t.name} onBlur={(e) => { if (e.target.value && e.target.value !== t.name) { upd({ name: e.target.value }); onRename?.(e.target.value); } }} /></Row>
+      <Row label="이름"><input defaultValue={t.name} onBlur={(e) => {
+        if (!e.target.value || e.target.value === t.name) return;
+        // 같은 노드에 이미 있는 이름이면 두 테이블이 한꺼번에 고쳐지므로 받지 않는다
+        if (node.tables.some((x) => x.name === e.target.value)) { e.target.value = t.name; return; }
+        upd({ name: e.target.value }); onRename?.(e.target.value);
+      }} /></Row>
       <TextField label="논리명" value={t.label} onChange={(v) => upd({ label: v || undefined })} />
       <TextField label="설명" value={t.description} onChange={(v) => upd({ description: v || undefined })} />
       <Row label="장 형식" hint={`고정장: 문자열·바이너리를 최대 길이만큼 채워 저장(CHAR(n)·BINARY(n)). 가변장: 실제 길이(VARCHAR). ${padded ? '이 시스템은 고정장이면 최대 길이로 크기를 계산해요' : '이 시스템은 고정 길이 문자열도 실제 길이로 저장해 크기는 같아요'}`}>
@@ -121,7 +126,7 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
         <tbody>{t.columns.map((c, i) => (
           // 글자 칸은 BlurInput이 값마다 새로 그려서 줄 키는 순서만 — 이름을 저장해도 옆 칸 포커스가 남는다
           <tr key={i}>
-            <td><BlurInput value={c.name} onSave={(v) => v && setCol(i, { name: v })} /></td>
+            <td><BlurInput value={c.name} onSave={(v) => { const r = v && renameColumn(t, c.name, v); if (r) upd(r); }} /></td>
             <td><Select value={c.type} onChange={(e) => setCol(i, { type: e.target.value as Column['type'] })}>
               {COLUMN_TYPES.map((x) => <option key={x}>{x}</option>)}
             </Select></td>
@@ -132,7 +137,7 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
             <td><input type="number" value={c.max_length ?? ''} aria-invalid={t.record === 'fixed' && (c.type === 'text' || c.type === 'bytes') && !c.max_length} onChange={(e) => setCol(i, { max_length: e.target.value ? Number(e.target.value) : undefined })} /></td>
             <td><input type="number" value={c.avg_bytes ?? ''} onChange={(e) => setCol(i, { avg_bytes: e.target.value ? Number(e.target.value) : undefined })} /></td>
             <td><input type="checkbox" checked={c.nullable} onChange={(e) => setCol(i, { nullable: e.target.checked })} /></td>
-            <td><button aria-label="컬럼 삭제" onClick={() => upd({ columns: t.columns.filter((_, k) => k !== i) })}>×</button></td>
+            <td><button aria-label="컬럼 삭제" onClick={() => upd(removeColumn(t, i))}>×</button></td>
           </tr>
         ))}</tbody>
       </table></div>
