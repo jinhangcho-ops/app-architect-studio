@@ -56,9 +56,13 @@ describe('설계서 전체', () => {
     );
     const titles = [...html.matchAll(/<h2 class="r-h">(\d+)\. (.*?)<\/h2>/g)].map((m) => `${m[1]}. ${m[2].replace(/<!-- -->/g, '')}`);
     expect(titles).toEqual([
-      '1. 요약', '2. 구동 방식', '3. 규모 가정', '4. 구조도', '5. 화면 설계 · API 호출', '6. 노드별 선택과 판정 근거', '7. 확장 한계 · 지연시간 · 월 비용',
+      '1. 요약', '2. 구동 방식', '3. 규모 가정', '4. 구조도', '5. 화면 설계 · API 호출 · 인터페이스 명세', '6. 노드별 선택과 판정 근거', '7. 확장 한계 · 지연시간 · 월 비용',
       '8. 최선 조합과 선택 조건', '9. 가용성 · 성장 타임라인', '10. 확인 필요 조문', '11. 미해결 ❌·⚠️ 목록', '12. 적용한 설정', '13. 카탈로그 출처',
     ]);
     expect(html.match(/class="r-card /g)).toHaveLength(p.nodes.length);
+    // 5절: 연결선의 인터페이스 명세 (주문 API → 세금 엔진 gRPC, → Kafka 메시지)
+    expect(html).toContain('서비스 내부 인터페이스 명세');
+    expect(html).toContain('gRPC QuoteTax');
+    expect(html).toContain('메시지 orders.created');
   });
 });

@@ -196,6 +196,41 @@ export const WireItem = z.object({
     per_session: z.number().nonnegative().default(1),
   }).optional(),
 });
+// 서비스 내부 인터페이스 명세: 연결선마다 주고받는 호출·메시지. OpenAPI(REST)·AsyncAPI(메시지)·proto(gRPC)로 내보내고, 호출 수와 크기는 부하·전송량 계산에 쓴다
+export const FIELD_TYPES = ['string', 'integer', 'number', 'boolean', 'datetime', 'uuid', 'object', 'array'] as const;
+export const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+export const SpecField = z.object({
+  /** 영문 식별자 (코드 생성 도구가 그대로 쓴다) */
+  name: z.string().regex(IDENT, '필드 이름은 영문·숫자·_ (숫자로 시작하지 않음)'),
+  type: z.enum(FIELD_TYPES),
+  required: z.boolean().default(true),
+  description: z.string().optional(),
+  /** 값의 평균 크기(바이트). 없으면 형식별 예시값 */
+  avg_bytes: z.number().positive().optional(),
+});
+export type SpecField = z.infer<typeof SpecField>;
+export const Interface = z.object({
+  /** 사람이 읽는 이름 (예: 주문 만들기) */
+  name: z.string().min(1),
+  /** rest = HTTP API, grpc = gRPC 메서드, message = 큐·이벤트로 보내는 메시지 */
+  kind: z.enum(['rest', 'grpc', 'message']),
+  method: z.enum(HTTP_METHODS).optional(),
+  /** rest: 경로(/orders/{id}), grpc: 메서드 이름(CreateOrder), message: 토픽·채널 이름 */
+  path: z.string().min(1),
+  description: z.string().optional(),
+  /** 보내는 노드가 받는 요청 1건당 이 인터페이스를 부르는 횟수. on = 어떤 요청에서 부르나 (전체·읽기 요청만·쓰기 요청만) */
+  per_request: z.number().nonnegative().default(1),
+  on: z.enum(['all', 'read', 'write']).default('all'),
+  /** 읽기인지 쓰기인지. 없으면 rest는 GET만 읽기, message는 쓰기, grpc는 읽기 */
+  op: z.enum(['read', 'write']).optional(),
+  request: z.array(SpecField).default([]),
+  response: z.array(SpecField).default([]),
+  /** 실측한 요청·응답 크기(바이트). 있으면 필드로 어림한 값보다 우선 */
+  request_bytes: z.number().nonnegative().optional(),
+  response_bytes: z.number().nonnegative().optional(),
+});
+export type Interface = z.infer<typeof Interface>;
+
 /** device가 없으면 구동 방식으로 정한다 (모바일 → 모바일, 나머지 → 데스크톱) */
 export const Screen = z.object({ name: z.string().min(1), device: z.enum(WIRE_DEVICES).optional(), items: z.array(WireItem).default([]) });
 
@@ -426,6 +461,8 @@ export const Project = z.object({
     carries: z.enum(['all', 'read', 'write']).default('all'),
     /** 12절 이 구간의 왕복 지연(ms) */
     rtt_ms: z.number().nonnegative().default(0),
+    /** 이 연결로 주고받는 인터페이스 명세. 있으면 호출 비율·흐르는 요청 대신 이것으로 부하를 나눈다 */
+    interfaces: z.array(Interface).default([]),
   })).default([]),
   /** 9절 목표 사용률: 필요 대수 = ceil(부하 / (대당 처리량 × 이 값)) */
   target_utilization: z.number().gt(0).max(1).default(0.7),
@@ -534,6 +571,15 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
   }
   for (const e of p.edges) {
     if (!nodeIds.has(e.from) || !nodeIds.has(e.to)) errors.push(`연결선 ${e.from} → ${e.to}: 없는 노드`);
+    const at = `연결선 ${e.from} → ${e.to}`;
+    for (const d of dupes(e.interfaces.map((i) => i.name))) errors.push(`${at}: 인터페이스 이름 중복 ${d}`);
+    for (const i of e.interfaces) {
+      if (i.kind === 'rest' && !i.method) errors.push(`${at} ${i.name}: REST는 메서드(GET·POST…)가 필요함`);
+      if (i.kind === 'rest' && !i.path.startsWith('/')) errors.push(`${at} ${i.name}: REST 경로는 /로 시작함`);
+      if (i.kind === 'grpc' && !IDENT.test(i.path)) errors.push(`${at} ${i.name}: gRPC 메서드 이름은 영문 식별자 (예: CreateOrder)`);
+      if (i.kind === 'message' && i.response.length) errors.push(`${at} ${i.name}: 메시지는 응답이 없음 (보내고 끝)`);
+      for (const side of ['request', 'response'] as const) for (const d of dupes(i[side].map((f) => f.name))) errors.push(`${at} ${i.name}: ${side === 'request' ? '요청' : '응답'} 필드 이름 중복 ${d}`);
+    }
   }
   for (const n of p.nodes) {
     for (const sc of n.wireframe?.screens ?? []) {

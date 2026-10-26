@@ -1,6 +1,7 @@
 // 노드별 부하: 화면 노드에서 시작해 연결선을 위상 정렬 순서로 따라가며 λ × callRatio를 더해 내려간다.
 import { callSplit } from './api';
 import { deployVars } from './deploy';
+import { interfaceRates } from './interfaces';
 import type { Scenario } from './judge';
 import { entryNodes, type Project, type ProjectEdge } from './schema';
 import type { Traffic } from './traffic';
@@ -49,13 +50,18 @@ export function readMiss(p: Project, e: ProjectEdge): number {
   return cache ? 1 - (p.nodes.find((n) => n.id === cache.to)!.hit_ratio ?? DEFAULT_HIT_RATIO) : 1;
 }
 
-/** 연결선 하나로 흐르는 요청과 그중 쓰기. 화면 와이어프레임에 API 호출이 있으면(split) 호출 비율대로, 없으면 carries × callRatio.
+/** 연결선 하나로 흐르는 요청과 그중 쓰기. 화면 와이어프레임에 API 호출이 있으면(split) 호출 비율대로, 인터페이스 명세가 있으면 그 호출 수로, 없으면 carries × callRatio.
  *  miss: 읽기 중 도착하는 몫 (readMiss, 캐시가 앞에 있으면 1보다 작다). 쓰기는 그대로 간다 */
 export function edgeFlow(e: ProjectEdge, from: NodeLoad, split: ReturnType<typeof callSplit>, s: 'normal' | 'event', miss = 1): { rps: number; write: number } {
   const w = from.writeRps[s], r = from.rps[s] - w;
   if (split) {
     const f = split.get(e.to) ?? { read: 0, write: 0 };
     return { rps: r * f.read * miss + w * f.write, write: w * f.write };
+  }
+  // 인터페이스 명세가 있으면: 인터페이스마다 (전체·읽기·쓰기) 요청 × 호출 수
+  if (e.interfaces.length) {
+    const rates = interfaceRates(e, from, s, miss);
+    return { rps: rates.reduce((a, x) => a + x.rps, 0), write: rates.filter((x) => x.write).reduce((a, x) => a + x.rps, 0) };
   }
   const reads = e.carries === 'write' ? 0 : r * miss, writes = e.carries === 'read' ? 0 : w;
   return { rps: (reads + writes) * e.callRatio, write: writes * e.callRatio };

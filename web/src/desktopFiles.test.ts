@@ -17,6 +17,7 @@ const files = require('../../electron/files.cjs') as {
   writePngs: (dir: string, files: { name: string; base64: string }[]) => string[];
   pngName: (name: string) => string;
   writeAtomic: (target: string, data: string | Buffer) => void;
+  writeTexts: (dir: string, files: { name: string; text: string }[]) => string[];
 };
 
 const dir = mkdtempSync(join(tmpdir(), 'aas-files-'));
@@ -128,5 +129,14 @@ describe('파일 형식 버전·마이그레이션', () => {
     expect(migrate({ a: 5 }, 'x', 3, steps)).toEqual({ a: 5, b: 5, c: 1 });
     expect(migrate({ a: 5, format_version: 2 }, 'x', 3, steps)).toEqual({ a: 5, c: 1 });
     expect(() => migrate({}, 'x', 3, { 1: steps[1] })).toThrow('2 → 3 변환이 없습니다');
+  });
+});
+
+describe('명세 파일 저장 (writeTexts)', () => {
+  it('.json·.proto와 영문 이름만 받고, 경로 문자는 막음', () => {
+    const [f] = files.writeTexts(dir, [{ name: 'N_09.proto', text: 'syntax = "proto3";' }]);
+    expect(readFileSync(f, 'utf8')).toBe('syntax = "proto3";');
+    expect(() => files.writeTexts(dir, [{ name: '../밖.json', text: '{}' }])).toThrow('이름 형식');
+    expect(() => files.writeTexts(dir, [{ name: 'a.exe', text: '' }])).toThrow('이름 형식');
   });
 });

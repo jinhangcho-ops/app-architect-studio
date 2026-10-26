@@ -30,4 +30,18 @@ describe('연결선 패널', () => {
     expect(out).toContain('API 호출이 이 연결의 부하를 정합니다');
     expect(out.match(/disabled/g)!.length).toBeGreaterThanOrEqual(2);
   });
+
+  it('인터페이스 명세가 있으면 그 호출 수가 부하를 정해 호출 비율·흐르는 요청 칸을 잠금', () => {
+    const ex = examples.find((e) => e.name === 'global-commerce.json')!;
+    const p = parseProject(ex.data, catalog.items, ex.name);
+    useStore.setState({ project: p });
+    const el = document.createElement('div');
+    const root = createRoot(el);
+    flushSync(() => root.render(<EdgePanel from="N-03" to="N-09" />));
+    const out = el.innerHTML;
+    root.unmount();
+    expect(out).toContain('인터페이스 명세 (1)');
+    expect(out).toContain('인터페이스 명세의 호출 수가 이 연결의 부하를 정합니다');
+    expect(out.match(/disabled/g)!.length).toBeGreaterThanOrEqual(2);
+  });
 });

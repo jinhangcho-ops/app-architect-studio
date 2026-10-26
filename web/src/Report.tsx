@@ -8,7 +8,9 @@ import { lawLine } from '../../engine/regulation';
 import { dayLabel } from '../../engine/industry';
 import { LAYER_NAMES, VERDICT_NAMES } from '../../engine/model';
 import type { OptimizeResult, Plan } from '../../engine/optimize';
-import { itemIds, nodeStorageProfile, selectedFeatures, type Project, type Screen } from '../../engine/schema';
+import { interfaceRates, requestBytes, responseBytes } from '../../engine/interfaces';
+import { readMiss } from '../../engine/load';
+import { itemIds, nodeStorageProfile, selectedFeatures, type Project, type Screen, type SpecField } from '../../engine/schema';
 import { PATTERNS } from '../../engine/traffic';
 import { catalog, laws, prices } from './data';
 import { worstVerdict } from './edit';
@@ -107,8 +109,9 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={5}>화면 설계 · API 호출</H>
+            <H n={5}>화면 설계 · API 호출 · 인터페이스 명세</H>
             <Screens project={p} analysis={a} />
+            <Interfaces project={p} analysis={a} />
           </section>
 
           <section>
@@ -256,6 +259,36 @@ function WireImage({ screen, frame }: { screen: Screen; frame: { w: number; h: n
   }, [screen, frame]);
   // 기기 너비 비율로 줄여 세로로 긴 모바일 화면이 한 쪽을 다 차지하지 않게 한다
   return <canvas ref={ref} className="r-wire" width={frame.w * 2} height={frame.h * 2} style={{ width: `${Math.min(100, frame.w / 12.8)}%` }} />;
+}
+
+/** 서비스 내부 인터페이스 명세: 연결선마다 호출·메시지, 필드, 피크 호출, 크기 */
+function Interfaces({ project: p, analysis: a }: { project: Project; analysis: Analysis }) {
+  const name = (id: string) => p.nodes.find((n) => n.id === id)?.name ?? id;
+  const edges = p.edges.filter((e) => e.interfaces.length);
+  if (!edges.length) return null;
+  const fields = (fs: SpecField[]) => fs.map((f) => `${f.name}${f.required ? '' : '?'}: ${f.type}`).join(', ') || '—';
+  return <>
+    <h3 className="r-sub">서비스 내부 인터페이스 명세</h3>
+    <table className="r-grid"><thead><tr><th>보내는 → 받는</th><th>이름</th><th>방식 · 경로</th><th>부르는 요청 × 횟수</th><th>요청 필드</th><th>응답 필드</th><th>크기 (요청/응답)</th><th>피크 / 이벤트 호출</th></tr></thead><tbody>
+      {edges.flatMap((e) => {
+        const from = a.nodes[e.from]?.load, miss = readMiss(p, e);
+        const rn = from && interfaceRates(e, from, 'normal', miss), re = from && interfaceRates(e, from, 'event', miss);
+        return e.interfaces.map((i, k) => (
+          <tr key={`${e.from}>${e.to}>${i.name}`}>
+            <td>{name(e.from)} → {name(e.to)}</td>
+            <td>{i.name}{i.description && <div className="muted">{i.description}</div>}</td>
+            <td>{i.kind === 'rest' ? `REST ${i.method ?? 'GET'} ${i.path}` : i.kind === 'grpc' ? `gRPC ${i.path}` : `메시지 ${i.path}`}</td>
+            <td>{{ all: '모든 요청', read: '읽기 요청', write: '쓰기 요청' }[i.on]} × {fmt(i.per_request)}</td>
+            <td>{fields(i.request)}</td>
+            <td>{i.kind === 'message' ? '— (보내고 끝)' : fields(i.response)}</td>
+            <td>{fmt(requestBytes(i))}B{i.kind !== 'message' && ` / ${fmt(responseBytes(i))}B`}</td>
+            <td>{rn && re ? `${fmt(rn[k].rps)} / ${fmt(re[k].rps)} RPS` : '—'}</td>
+          </tr>
+        ));
+      })}
+    </tbody></table>
+    <p className="muted">크기는 필드 형식별 예시 크기로 어림한 값입니다(실측을 넣으면 그 값). 같은 명세를 파일 › 인터페이스 명세 내보내기로 OpenAPI·AsyncAPI·proto 파일로 받을 수 있습니다.</p>
+  </>;
 }
 
 function Screens({ project: p, analysis: a }: { project: Project; analysis: Analysis }) {

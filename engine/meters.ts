@@ -9,6 +9,7 @@
 // 저장(GB·월), 인터넷 송신(GB), 리전이 다른 노드 사이 전송(GB)은 프로젝트 단위로 더한다.
 import type { LineItem } from './cost';
 import { callSplit } from './api';
+import { interfaceRates, requestBytes, responseBytes } from './interfaces';
 import { edgeFlow, readMiss, type NodeLoad } from './load';
 import type { TableAnalysis } from './tables';
 import { nodeRegion, type CatalogItem, type Project, type ProjectNode } from './schema';
@@ -113,9 +114,13 @@ export function costLines(
       // 연결선이 나르는 몫(호출 비율 포함): load.ts의 전파 규칙(edgeFlow)을 그대로 쓴다
       const l = loads?.get(e.from);
       const carried = l?.rps.normal ? edgeFlow(e, l, callSplit(p, byId.get(e.from)!), 'normal', readMiss(p, e)).rps / l.rps.normal : 0;
-      // shortcut: 노드 사이 응답 크기를 사용자 응답 평균 크기로 본다. 구간별 크기가 필요해지면 연결선에 payload_kb를 둔다
-      const gb = requestsPerMonth(byId.get(e.from)!) * carried * gbPerRequest;
-      lines.push({ key: '리전 간 전송', product: p.cost.transfer, region: a, quantities: { gb_interregion: gb }, how: { gb_interregion: `${e.from}→${e.to} 월 요청 × 호출 비율 × 요청당 응답 GB` } });
+      // 인터페이스 명세가 있으면 인터페이스마다 월 호출 × (요청 + 응답 크기), 없으면 사용자 응답 평균 크기로 어림한다
+      const spec = e.interfaces.length > 0 && l && l.rps.normal > 0;
+      const gb = spec
+        ? interfaceRates(e, l, 'normal', readMiss(p, e)).reduce((s, x) => s + requestsPerMonth(byId.get(e.from)!) * (x.rps / l.rps.normal) * (requestBytes(x.i) + responseBytes(x.i)), 0) / 1e9
+        : requestsPerMonth(byId.get(e.from)!) * carried * gbPerRequest;
+      lines.push({ key: '리전 간 전송', product: p.cost.transfer, region: a, quantities: { gb_interregion: gb },
+        how: { gb_interregion: spec ? `${e.from}→${e.to} Σ 인터페이스 월 호출 × (요청 + 응답 크기)` : `${e.from}→${e.to} 월 요청 × 호출 비율 × 요청당 응답 GB` } });
     }
     for (const n of p.nodes.filter((x) => (x.layer === 'db' || x.layer === 'analytics') && x.dr && x.dr.mode !== 'backup' && x.region !== 'local')) {
       const mine = tables.filter((x) => x.nodeId === n.id);

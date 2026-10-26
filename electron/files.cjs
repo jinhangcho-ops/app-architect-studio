@@ -72,6 +72,16 @@ function writePngs(dir, files) {
   });
 }
 
+/** 명세 파일 쓰기: 이름은 영문·숫자·_.- 와 .json·.proto만 (경로 문자가 섞이지 않게) */
+function writeTexts(dir, files) {
+  return files.map(({ name, text }) => {
+    if (!/^[A-Za-z0-9_.-]+\.(json|proto)$/.test(String(name))) throw new Error(`명세 파일 이름 형식이 아닙니다: ${name}`);
+    const file = path.join(dir, String(name));
+    writeAtomic(file, String(text));
+    return file;
+  });
+}
+
 /** Electron에 연결: dialog를 쓰는 열기·저장과, 위 시점 함수들 */
 function registerFileApi() {
   const { BrowserWindow, dialog, ipcMain } = require('electron');
@@ -106,8 +116,14 @@ function registerFileApi() {
     if (r.canceled || !r.filePaths[0]) return null;
     return writePngs(r.filePaths[0], files);
   });
+  ipcMain.handle('text:save', async (_e, files) => {
+    if (!Array.isArray(files) || !files.length) return null;
+    const r = await dialog.showOpenDialog(win(), { title: '명세 파일을 저장할 폴더', properties: ['openDirectory', 'createDirectory'] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    return writeTexts(r.filePaths[0], files);
+  });
   ipcMain.handle('snap:write', (_e, file, kind, name, text, max) => writeSnapshot(file, kind, name, text, max));
   ipcMain.handle('snap:list', (_e, file, kind) => listSnapshots(file, kind));
 }
 
-module.exports = { registerFileApi, writeSnapshot, listSnapshots, allow, writePngs, pngName, writeAtomic };
+module.exports = { registerFileApi, writeSnapshot, listSnapshots, allow, writePngs, pngName, writeAtomic, writeTexts };

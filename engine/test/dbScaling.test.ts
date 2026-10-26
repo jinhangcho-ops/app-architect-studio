@@ -79,7 +79,7 @@ describe('캐시 적중률만큼 DB 읽기가 줄어듦', () => {
   const withCache = (hit?: number): Project => ({
     ...base,
     nodes: [...base.nodes, NodeSchema.parse({ id: 'cache', name: '캐시', layer: 'cache', primary: 'redis_cache', ...(hit !== undefined && { hit_ratio: hit }) })],
-    edges: [...base.edges, { from: 'api', to: 'cache', carries: 'read', callRatio: 1, sync: true, rtt_ms: 0 }],
+    edges: [...base.edges, { from: 'api', to: 'cache', carries: 'read', callRatio: 1, sync: true, rtt_ms: 0, interfaces: [] }],
   });
   it('쓰기는 그대로, 읽기는 (1 − 적중률)', () => {
     const plain = run(base).nodes.db.load!, cached = run(withCache(0.9)).nodes.db.load!;

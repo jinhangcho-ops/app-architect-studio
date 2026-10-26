@@ -79,9 +79,18 @@
   "edges": [
     { "from": "N-02", "to": "N-08" },
     { "from": "N-08", "to": "N-03" },
-    { "from": "N-03", "to": "N-09", "rtt_ms": 1 },
+    { "from": "N-03", "to": "N-09", "rtt_ms": 1,
+      "interfaces": [
+        { "name": "세금·환율 계산", "kind": "grpc", "path": "QuoteTax", "description": "주문 금액에 나라별 세금과 환율을 적용한다",
+          "request": [{ "name": "tenant_id", "type": "integer" }, { "name": "country", "type": "string", "avg_bytes": 2 }, { "name": "currency", "type": "string", "avg_bytes": 3 }, { "name": "amount", "type": "number" }],
+          "response": [{ "name": "tax", "type": "number" }, { "name": "fx_rate", "type": "number" }, { "name": "total", "type": "number" }, { "name": "rule_version", "type": "string", "avg_bytes": 8, "required": false }] }
+      ] },
     { "from": "N-03", "to": "N-06" },
-    { "from": "N-03", "to": "N-04", "sync": false },
+    { "from": "N-03", "to": "N-04", "sync": false,
+      "interfaces": [
+        { "name": "주문 생성됨", "kind": "message", "path": "orders.created", "on": "write", "description": "주문이 저장된 뒤 정산·분석으로 보내는 이벤트",
+          "request": [{ "name": "order_id", "type": "uuid" }, { "name": "tenant_id", "type": "integer" }, { "name": "user_id", "type": "integer" }, { "name": "currency", "type": "string", "avg_bytes": 3 }, { "name": "amount", "type": "number" }, { "name": "created_at", "type": "datetime" }] }
+      ] },
     { "from": "N-04", "to": "N-05", "sync": false },
     { "from": "N-05", "to": "N-06", "carries": "write" },
     { "from": "N-05", "to": "N-07" },

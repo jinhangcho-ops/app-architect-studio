@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseProject } from '../../engine/data';
+import { interfaceFiles } from '../../engine/interfaces';
 import { LAYERS, LAYER_NAMES, type Layer } from '../../engine/model';
 import { Canvas, Legend } from './Canvas';
 import { catalog, examples } from './data';
@@ -139,6 +140,22 @@ export function App() {
     URL.revokeObjectURL(a.href);
   };
 
+  /** 인터페이스 명세 파일들. 데스크톱 앱은 폴더를 골라 한 번에, 브라우저는 파일마다 내려받기 */
+  const exportSpecs = async () => {
+    const files = interfaceFiles(project);
+    if (!files.length) return say('연결선에 인터페이스 명세가 없습니다. 연결선을 고르고 "인터페이스 명세"에서 추가하세요', 4000);
+    if (desktop) {
+      const out = await desktop.saveTexts(files);
+      if (out) say(`명세 파일 ${out.length}개를 저장했습니다`);
+      return;
+    }
+    for (const f of files) {
+      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([f.text], { type: 'text/plain' })), download: f.name });
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+  };
+
   // 윈도우 단축키. 글자 칸에서 치는 중이면 Ctrl+Z·Y는 브라우저의 글자 되돌리기에 맡긴다.
   // e.code(자판 위치)를 써서 한글 입력 상태에서도 같은 키로 동작한다. e.code가 비어 오는 환경(자동화 도구 등)은 e.key로 본다
   useEffect(() => {
@@ -200,7 +217,7 @@ export function App() {
     {tab === 'results' && <ResultsPanel analysis={analysis} />}
     {tab === 'optimize' && <OptimizePanel today={today} />}
     {tab === 'selected' && selected?.kind === 'node' && <NodePanel id={selected.id} analysis={analysis} />}
-    {tab === 'selected' && selected?.kind === 'edge' && <EdgePanel from={selected.from} to={selected.to} />}
+    {tab === 'selected' && selected?.kind === 'edge' && <EdgePanel from={selected.from} to={selected.to} analysis={analysis} />}
     {tab === 'selected' && selected?.kind === 'table' && <TableSidePanel nodeId={selected.node} table={selected.table} analysis={analysis} />}
     {tab === 'selected' && !selected && <p className="muted">캔버스에서 노드나 연결선을 고르세요.</p>}
   </>, [tab, selected, analysis]);
@@ -228,6 +245,7 @@ export function App() {
           <button role="menuitem" title="tools/analyze_py.py가 만든 JSON" onClick={() => { close(); codeRef.current?.click(); }}>코드 분석 불러오기</button>
           <hr />
           <button role="menuitem" onClick={() => { close(); exportFile(); }}>파일로 내보내기<small>Ctrl+Shift+S</small></button>
+          <button role="menuitem" title="연결선의 인터페이스 명세 → OpenAPI(REST)·AsyncAPI(메시지)·proto(gRPC)" onClick={() => { close(); void exportSpecs(); }}>인터페이스 명세 내보내기</button>
           <button role="menuitem" onClick={() => { close(); setHistory(!history); }}>저장 기록</button>
         </>}</Menu>
         <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => e.target.files?.[0] && open(e.target.files[0])} />

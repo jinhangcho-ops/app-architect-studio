@@ -1,3 +1,4 @@
+import { edgeCalls } from '../../engine/interfaces';
 import { Background, BackgroundVariant, BaseEdge, Controls, EdgeLabelRenderer, getBezierPath, Handle, MarkerType, Position, ReactFlow, type Edge, type EdgeProps, type Node, type NodeProps, type ReactFlowInstance } from '@xyflow/react';
 import { useEffect, useMemo, useRef } from 'react';
 import type { Analysis } from '../../engine/analyze';
@@ -130,7 +131,7 @@ export function Canvas({ analysis, onSelect, layout }: { analysis?: Analysis; on
     return project.edges.map((e, i): Edge => {
       const rps = flows[i];
       const color = !e.sync ? EDGE.async : health.get(e.to)?.health === 'bad' ? EDGE.bad : e.carries === 'read' ? EDGE.read : EDGE.base;
-      const label = [!e.sync ? `비동기${rps ? ` ${fmt(rps)} RPS` : ''}` : rps ? `${fmt(rps)} RPS` : '', e.carries === 'write' ? 'write' : e.carries === 'read' ? '읽기' : '', e.callRatio !== 1 ? `×${e.callRatio}` : '']
+      const label = [!e.sync ? `비동기${rps ? ` ${fmt(rps)} RPS` : ''}` : rps ? `${fmt(rps)} RPS` : '', e.carries === 'write' ? 'write' : e.carries === 'read' ? '읽기' : '', edgeCalls(e) !== 1 ? `×${fmt(edgeCalls(e))}` : '', e.interfaces.length ? `명세 ${e.interfaces.length}` : '']
         .filter(Boolean).join(' ');
       return {
         id: `${e.from}->${e.to}`,

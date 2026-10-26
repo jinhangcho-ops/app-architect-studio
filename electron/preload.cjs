@@ -8,4 +8,5 @@ contextBridge.exposeInMainWorld('desktop', {
   writeSnapshot: (file, kind, name, text, max) => ipcRenderer.invoke('snap:write', file, kind, name, text, max),
   listSnapshots: (file, kind) => ipcRenderer.invoke('snap:list', file, kind),
   savePngs: (files) => ipcRenderer.invoke('png:save', files),
+  saveTexts: (files) => ipcRenderer.invoke('text:save', files),
 });

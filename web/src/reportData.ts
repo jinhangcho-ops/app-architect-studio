@@ -1,5 +1,6 @@
 // 설계서(7절): 프로젝트와 분석 결과로 설계서 내용을 만든다. 화면 그리기(Report.tsx)와 나눠 두어 내용만 테스트한다.
 // 노드 카드는 설계서 7절 표의 행 순서를 그대로 따른다: 머리줄 → 판정 근거 → 선택 항목 → 동작 방식 → 계산 결과 → 대안 → 태그 → 연결 → 비고 → 설명.
+import { edgeCalls } from '../../engine/interfaces';
 import type { Analysis } from '../../engine/analyze';
 import { impactOf } from '../../engine/availability';
 import type { NodeJudgement } from '../../engine/judge';
@@ -36,7 +37,7 @@ export function nodeCard(p: Project, a: Analysis, byId: Map<string, CatalogItem>
   const features = sp ? selectedFeatures(sp, n).map((f) => f.label) : [];
   const cost = a.cost?.parts[nodeId];
   const edgeText = (e: Project['edges'][number]) =>
-    `${e.sync ? '동기' : '비동기'}${e.callRatio !== 1 ? `, ×${e.callRatio}` : ''}${e.carries !== 'all' ? `, ${e.carries === 'write' ? '쓰기만' : '읽기만'}` : ''}${e.rtt_ms ? `, RTT ${e.rtt_ms}ms` : ''}`;
+    `${e.sync ? '동기' : '비동기'}${edgeCalls(e) !== 1 ? `, ×${fmt(edgeCalls(e))}` : ''}${e.carries !== 'all' ? `, ${e.carries === 'write' ? '쓰기만' : '읽기만'}` : ''}${e.rtt_ms ? `, RTT ${e.rtt_ms}ms` : ''}`;
   const impact = Object.entries(impactOf(p, [nodeId])).map(([ui, how]) => `${name(ui)} ${how === 'stopped' ? '멈춤' : '반영 지연'}`);
   const unknown = j?.items.filter((i) => i.verdict === 'unknown').flatMap((i) => i.reasons) ?? [];
   const tables = a.tables.filter((x) => x.nodeId === nodeId);

@@ -16,6 +16,7 @@ import { fmtMetric, howMetric } from './format';
 import { usePick } from './store';
 import { StorageSection, TablesSection } from './TablesPanel';
 import { NodeSummary } from './NodeSummary';
+import { InterfacesSection } from './InterfacesPanel';
 
 const itemName = (id: string) => catalog.byId.get(id)?.name ?? id;
 
@@ -298,7 +299,7 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
   );
 }
 
-export function EdgePanel({ from, to }: { from: string; to: string }) {
+export function EdgePanel({ from, to, analysis }: { from: string; to: string; analysis?: Analysis }) {
   const { project, edit, select } = usePick('project', 'edit', 'select');
   const e = project.edges.find((x) => x.from === from && x.to === to);
   if (!e) return <p className="muted">연결선이 없습니다.</p>;
@@ -306,19 +307,23 @@ export function EdgePanel({ from, to }: { from: string; to: string }) {
   const upd = (patch: Parameters<typeof updateEdge>[3]) => edit((p) => updateEdge(p, from, to, patch));
   // 화면 와이어프레임에 호출이 있으면 엔진이 호출 비율로 나누고 이 연결의 호출 비율·흐르는 요청은 쓰지 않는다
   const byCalls = !!callSplit(project, project.nodes.find((n) => n.id === from)!);
+  // 인터페이스 명세가 있으면 그 호출 수로 나눈다 (와이어프레임 호출이 있으면 그쪽이 먼저)
+  const bySpec = !byCalls && e.interfaces.length > 0;
   return (
     <div className="panel">
       <Section title={`${name(from)} → ${name(to)}`}>
         {byCalls && <p className="muted">와이어프레임의 API 호출이 이 연결의 부하를 정합니다. 호출 비율·흐르는 요청은 화면 블록의 세부 구성 › 와이어프레임에서 바꾸세요.</p>}
+        {bySpec && <p className="muted">아래 인터페이스 명세의 호출 수가 이 연결의 부하를 정합니다.</p>}
         <Row label="동기 호출"><input type="checkbox" checked={e.sync} onChange={(x) => upd({ sync: x.target.checked })} /></Row>
-        <NumField label="호출 비율" value={e.callRatio} hint="요청 1건당 이 연결로 몇 번 부르는지" disabled={byCalls} onChange={(v) => upd({ callRatio: v ?? 1 })} />
+        <NumField label="호출 비율" value={e.callRatio} hint="요청 1건당 이 연결로 몇 번 부르는지" disabled={byCalls || bySpec} onChange={(v) => upd({ callRatio: v ?? 1 })} />
         <Row label="흐르는 요청">
-          <Select value={e.carries} disabled={byCalls} onChange={(x) => upd({ carries: x.target.value as typeof e.carries })}>
+          <Select value={e.carries} disabled={byCalls || bySpec} onChange={(x) => upd({ carries: x.target.value as typeof e.carries })}>
             <option value="all">전체</option><option value="read">읽기만</option><option value="write">쓰기만</option>
           </Select>
         </Row>
         <NumField label="왕복 지연(ms)" value={e.rtt_ms} onChange={(v) => upd({ rtt_ms: v ?? 0 })} />
       </Section>
+      <InterfacesSection e={e} analysis={analysis} />
       <button className="danger" onClick={() => { edit((p) => removeEdge(p, from, to)); select(null); }}>연결선 삭제</button>
     </div>
   );
