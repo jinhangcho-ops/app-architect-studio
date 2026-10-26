@@ -84,8 +84,8 @@ flowchart LR
 | 받는 쪽 기술 | 권장 방법 |
 |---|---|
 | FastAPI | pydantic 요청·응답 모델과 엔드포인트 뼈대를 먼저 만들고 자동 문서(/docs)를 프론트와 공유. 뼈대 파일을 내보내기에 넣어 줌 |
-| Spring Boot | springdoc-openapi로 컨트롤러·DTO에서 자동 문서 |
-| Fastify · NestJS | @fastify/swagger · @nestjs/swagger로 자동 문서 |
+| Spring Boot | springdoc-openapi로 컨트롤러·DTO에서 자동 문서. 에러를 problem+json으로 맞추려면 `spring.mvc.problemdetails.enabled=true` |
+| Fastify · NestJS | @fastify/swagger · @nestjs/swagger로 자동 문서. 검증 실패(기본 400)는 에러 처리기·예외 필터로 problem+json, NestJS POST는 기본 201이라 명세가 200이면 `@HttpCode(200)` |
 | 그 밖 | 내보낸 OpenAPI를 먼저 합의하고 양쪽이 그 파일에서 코드 생성 |
 | gRPC · 메시지 | .proto · AsyncAPI가 곧 계약 |
 

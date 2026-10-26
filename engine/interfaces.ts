@@ -83,6 +83,8 @@ const PROBLEM: Json = {
     code: { type: 'string', description: '앱이 정한 에러 코드 (예: SALES_DUPLICATE)' },
   },
 };
+const PROBLEM_CONTENT = { 'application/problem+json': { schema: { $ref: '#/components/schemas/Problem' } } };
+const VALIDATION_422 = 'VALIDATION_ERROR: 요청 값이 명세와 다름 (FastAPI 요청 검증)';
 const SECURITY: Record<'bearer' | 'api_key', Json> = {
   bearer: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT', description: 'Authorization: Bearer <토큰>' },
   api_key: { type: 'apiKey', in: 'header', name: 'X-API-Key', description: '서비스 간 호출용 키' },
@@ -94,6 +96,8 @@ export function openApiDocs(p: Project): { nodeId: string; doc: Json }[] {
   return [...restOps(p)].map(([nodeId, ops]) => {
     const paths: Record<string, Record<string, Json>> = {};
     const used = new Set(ops.map((o) => o.i.auth).filter((a): a is 'bearer' | 'api_key' => a === 'bearer' || a === 'api_key'));
+    // FastAPI는 경로 변수·질의·본문이 있는 작업에 요청 검증 실패(422)를 스스로 붙인다. 뼈대가 이것도 problem+json으로 돌려주므로 명세에도 적는다
+    const fastapi = p.nodes.find((n) => n.id === nodeId)?.primary === 'fastapi';
     for (const o of ops) {
       const { i } = o;
       (paths[i.path] ??= {})[o.method] = {
@@ -111,10 +115,12 @@ export function openApiDocs(p: Project): { nodeId: string; doc: Json }[] {
         // 인증이 정해진 작업만 security를 적는다 (none은 빈 배열 = 인증 없음)
         ...(i.auth && { security: i.auth === 'none' ? [] : [{ [i.auth]: [] }] }),
         responses: {
-          200: { description: 'OK', ...(i.response.length > 0 && { content: { 'application/json': { schema: objectSchema(i.response) } } }) },
+          // 응답 필드가 없으면 본문 없는 204
+          ...(i.response.length > 0 ? { 200: { description: 'OK', content: { 'application/json': { schema: objectSchema(i.response) } } } } : { 204: { description: 'No Content' } }),
+          ...(fastapi && o.inPath.length + o.query.length + o.body.length > 0 && { 422: { description: VALIDATION_422, content: PROBLEM_CONTENT } }),
           ...Object.fromEntries(groupErrors(i).map(([status, list]) => [status, {
             description: list.map((x) => `${x.code ? `${x.code}: ` : ''}${x.description}`).join(' / '),
-            content: { 'application/problem+json': { schema: { $ref: '#/components/schemas/Problem' } } },
+            content: PROBLEM_CONTENT,
           }])),
         },
       };
@@ -237,11 +243,11 @@ const REST_ADVICE: Record<string, { title: string; text: string }> = {
   },
   spring_boot: {
     title: 'Spring Boot: 컨트롤러·DTO 뼈대를 먼저, 자동 문서를 공유',
-    text: 'springdoc-openapi를 넣으면 컨트롤러와 DTO에서 OpenAPI(/v3/api-docs)와 Swagger UI를 자동으로 만들어 줍니다. 내보낸 OpenAPI를 기준으로 컨트롤러·DTO 뼈대를 먼저 만들고, 그 자동 문서를 프론트와 공유하세요.',
+    text: 'springdoc-openapi를 넣으면 컨트롤러와 DTO에서 OpenAPI(/v3/api-docs)와 Swagger UI를 자동으로 만들어 줍니다. 내보낸 OpenAPI를 기준으로 컨트롤러·DTO 뼈대를 먼저 만들고, 그 자동 문서를 프론트와 공유하세요. 기본 에러 본문은 Spring 형식이라, 명세처럼 problem+json으로 맞추려면 spring.mvc.problemdetails.enabled=true를 켭니다.',
   },
   node_fastify: {
     title: 'Fastify·NestJS: 스키마·데코레이터에서 자동 문서',
-    text: 'Fastify는 @fastify/swagger가 라우트의 JSON 스키마로, NestJS는 @nestjs/swagger가 DTO 데코레이터로 OpenAPI를 만들어 줍니다. 라우트·DTO 뼈대를 먼저 만들고 그 자동 문서를 프론트와 공유하세요.',
+    text: 'Fastify는 @fastify/swagger가 라우트의 JSON 스키마로, NestJS는 @nestjs/swagger가 DTO 데코레이터로 OpenAPI를 만들어 줍니다. 라우트·DTO 뼈대를 먼저 만들고 그 자동 문서를 프론트와 공유하세요. 검증 실패는 기본 400(Fastify 형식)이라 setErrorHandler(Fastify)·예외 필터(NestJS)로 problem+json을 맞추고, NestJS의 POST는 기본 201이라 명세가 200이면 @HttpCode(200)을 붙입니다.',
   },
 };
 
@@ -284,14 +290,14 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
           return `${pyName(f.name)}: ${f.required ? t : `Optional[${t}]`} = Query(${args.join(', ')})`;
         }),
         ...(o.body.length ? [`body: ${P}Request`] : []),
-        ...(i.auth === 'bearer' ? ['_token: HTTPAuthorizationCredentials = Depends(bearer)'] : i.auth === 'api_key' ? ['_key: str = Depends(api_key)'] : []),
+        ...(i.auth === 'bearer' ? ['_token: HTTPAuthorizationCredentials = Depends(require_bearer)'] : i.auth === 'api_key' ? ['_key: str = Depends(require_api_key)'] : []),
       ];
       const ret = i.response.length ? `${P}Response` : 'None';
       const errs = groupErrors(i);
       const deco = [
-        py(i.path), ...(i.response.length ? [`response_model=${P}Response`] : []), `summary=${py(i.name)}`,
+        py(i.path), ...(i.response.length ? [`response_model=${P}Response`] : ['status_code=204', 'response_class=Response']), `summary=${py(i.name)}`,
         ...(i.description ? [`description=${py(i.description)}`] : []),
-        ...(errs.length ? [`responses={${errs.map(([st, list]) => `${st}: {"model": Problem, "description": ${py(list.map((x) => `${x.code ? `${x.code}: ` : ''}${x.description}`).join(' / '))}}`).join(', ')}}`] : []),
+        ...(errs.length ? [`responses={${errs.map(([st, list]) => `${st}: {"description": ${py(list.map((x) => `${x.code ? `${x.code}: ` : ''}${x.description}`).join(' / '))}, "content": PROBLEM_JSON}`).join(', ')}}`] : []),
       ];
       return [
         `@app.${o.method}(${deco.join(', ')})`,
@@ -299,7 +305,7 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
         `    """부르는 노드: ${o.callers.join(', ').replace(/"/g, "'")}"""`,
         ...i.errors.map((x) => `    # ${x.status}${x.code ? ` ${x.code}` : ''}: ${x.description.replace(/\n/g, ' ')} → raise ApiError(${x.status}, ${py(x.description)}${x.code ? `, ${py(x.code)}` : ''})`),
         ...(i.auth === undefined ? ['    # TODO: 인증 방식이 정해지지 않았습니다 (명세 점검)'] : []),
-        '    raise HTTPException(status_code=501, detail="구현 필요")',
+        '    raise ApiError(501, "구현 필요", "NOT_IMPLEMENTED")',
         '', '',
       ];
     });
@@ -307,20 +313,23 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
       `# ${nameOf(nodeId)} — FastAPI 엔드포인트 뼈대 (${p.name})`,
       '# App Architect Studio의 인터페이스 명세에서 만들었습니다. 모델과 엔드포인트만 있고, 각 함수는 501(구현 필요)을 돌려줍니다.',
       `# 실행: pip install "fastapi[standard]"  →  fastapi dev ${fastApiName(nodeId)}  →  http://127.0.0.1:8000/docs 를 프론트와 공유`,
-      '# 요청 검증에 실패하면 FastAPI가 422(자체 형식)를 돌려줍니다. 앱 에러는 ApiError로 problem+json 형식을 맞춥니다.',
+      '# 에러는 모두 problem+json(Problem)입니다: 앱 에러는 ApiError로 내고, 요청 검증 실패(422)·인증 실패(401)·그 밖의 HTTP 에러도 같은 형식으로 바꿉니다.',
       'from datetime import datetime',
       'from typing import Any, Optional',
       'from uuid import UUID',
       '',
-      'from fastapi import Depends, FastAPI, HTTPException, Query, Request',
+      `from fastapi import Depends, FastAPI, Query, Request${ops.some((o) => !o.i.response.length) ? ', Response' : ''}`,
+      'from fastapi.exceptions import RequestValidationError',
+      'from fastapi.openapi.utils import get_openapi',
+      'from fastapi.responses import JSONResponse',
       ...(auth.has('bearer') || auth.has('api_key')
         ? [`from fastapi.security import ${[...(auth.has('api_key') ? ['APIKeyHeader'] : []), ...(auth.has('bearer') ? ['HTTPAuthorizationCredentials', 'HTTPBearer'] : [])].join(', ')}`] : []),
-      'from fastapi.responses import JSONResponse',
       `from pydantic import BaseModel, ${ops.some((o) => [...o.body, ...o.i.response].some((f) => PY_KEYWORDS.has(f.name))) ? 'ConfigDict, ' : ''}Field`,
       '',
+      'from starlette.exceptions import HTTPException as StarletteHTTPException',
+      '',
       `app = FastAPI(title=${py(nameOf(nodeId))}, version="1.0.0")`,
-      ...(auth.has('bearer') ? ['bearer = HTTPBearer()  # Authorization: Bearer <토큰>'] : []),
-      ...(auth.has('api_key') ? ['api_key = APIKeyHeader(name="X-API-Key")  # 서비스 간 호출용 키'] : []),
+      'PROBLEM_JSON = {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}',
       '', '',
       'class Problem(BaseModel):',
       '    """에러 응답 (RFC 9457 problem details + 앱 에러 코드)"""',
@@ -334,13 +343,61 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
       '    def __init__(self, status: int, title: str, code: Optional[str] = None, detail: Optional[str] = None):',
       '        self.problem = Problem(title=title, status=status, code=code, detail=detail)',
       '', '',
+      'def problem_response(problem: Problem) -> JSONResponse:',
+      '    return JSONResponse(status_code=problem.status, content=problem.model_dump(exclude_none=True), media_type="application/problem+json")',
+      '', '',
       '@app.exception_handler(ApiError)',
       'async def api_error(_request: Request, e: ApiError) -> JSONResponse:',
-      '    return JSONResponse(status_code=e.problem.status, content=e.problem.model_dump(exclude_none=True), media_type="application/problem+json")',
+      '    return problem_response(e.problem)',
       '', '',
+      '@app.exception_handler(RequestValidationError)',
+      'async def validation_error(_request: Request, e: RequestValidationError) -> JSONResponse:',
+      `    detail = "; ".join(f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in e.errors())`,
+      '    return problem_response(Problem(title="요청 값이 명세와 다릅니다", status=422, code="VALIDATION_ERROR", detail=detail))',
+      '', '',
+      '@app.exception_handler(StarletteHTTPException)',
+      'async def http_error(_request: Request, e: StarletteHTTPException) -> JSONResponse:',
+      '    return problem_response(Problem(title=str(e.detail), status=e.status_code))',
+      '', '',
+      ...(auth.has('bearer') ? [
+        '_bearer = HTTPBearer(auto_error=False)  # Authorization: Bearer <토큰>',
+        '', '',
+        'def require_bearer(cred: Optional[HTTPAuthorizationCredentials] = Depends(_bearer)) -> HTTPAuthorizationCredentials:',
+        '    if cred is None:',
+        '        raise ApiError(401, "인증이 필요합니다", "UNAUTHORIZED")',
+        '    return cred  # TODO: 토큰 검증',
+        '', '',
+      ] : []),
+      ...(auth.has('api_key') ? [
+        '_api_key = APIKeyHeader(name="X-API-Key", auto_error=False)  # 서비스 간 호출용 키',
+        '', '',
+        'def require_api_key(key: Optional[str] = Depends(_api_key)) -> str:',
+        '    if key is None:',
+        '        raise ApiError(401, "API 키가 필요합니다", "UNAUTHORIZED")',
+        '    return key  # TODO: 키 검증',
+        '', '',
+      ] : []),
       ...models,
       ...routes,
-    ].join('\n').replace(/\n{3,}$/, '\n');
+      'def custom_openapi() -> dict[str, Any]:',
+      '    \"\"\"/docs 명세: 에러 응답은 모두 problem+json(Problem). FastAPI가 붙이는 요청 검증(422)도 같은 형식으로 적는다\"\"\"',
+      '    if app.openapi_schema:',
+      '        return app.openapi_schema',
+      '    schema = get_openapi(title=app.title, version=app.version, routes=app.routes)',
+      '    schemas = schema.setdefault("components", {}).setdefault("schemas", {})',
+      '    schemas["Problem"] = Problem.model_json_schema()',
+      '    for name in ("HTTPValidationError", "ValidationError"):',
+      '        schemas.pop(name, None)',
+      '    for item in schema.get("paths", {}).values():',
+      '        for op in item.values():',
+      '            r = op.get("responses", {}).get("422")',
+      '            if r is not None:',
+      `                op["responses"]["422"] = {"description": ${py(VALIDATION_422)} if r.get("description") == "Validation Error" else r["description"], "content": PROBLEM_JSON}`,
+      '    app.openapi_schema = schema',
+      '    return schema',
+      '', '',
+      'app.openapi = custom_openapi',
+    ].join('\n') + '\n';
     return { nodeId, name: fastApiName(nodeId), text };
   });
 }

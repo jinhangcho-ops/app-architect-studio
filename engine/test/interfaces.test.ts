@@ -135,7 +135,11 @@ describe('OpenAPI 인증·에러', () => {
   });
   it('에러는 상태 코드마다 problem+json(공통 Problem 스키마)', () => {
     const r = doc.paths['/api/sales'].post.responses;
-    expect(Object.keys(r)).toEqual(['200', '400', '401', '409']);
+    // 받는 쪽이 FastAPI라 요청 검증 실패(422)도 problem+json으로 적는다
+    expect(Object.keys(r)).toEqual(['200', '400', '401', '409', '422']);
+    expect(r['422'].content!['application/problem+json']).toBeDefined();
+    // 응답 필드가 없으면 본문 없는 204, 입력이 없으면 422도 없음
+    expect(Object.keys(doc.paths['/api/receipts'].post.responses)).toEqual(['204']);
     expect(r['409'].content!['application/problem+json']).toEqual({ schema: { $ref: '#/components/schemas/Problem' } });
     expect(doc.components.schemas.Problem).toBeDefined();
   });
@@ -147,11 +151,16 @@ describe('FastAPI 뼈대', () => {
     expect(f.name).toBe('B_01_fastapi.py');
     expect(f.text).toContain('class PostApiSalesRequest(BaseModel):');
     expect(f.text).toContain('@app.post("/api/sales", response_model=PostApiSalesResponse');
-    expect(f.text).toContain('_token: HTTPAuthorizationCredentials = Depends(bearer)');
+    expect(f.text).toContain('_token: HTTPAuthorizationCredentials = Depends(require_bearer)');
+    expect(f.text).toContain('raise ApiError(401, "인증이 필요합니다", "UNAUTHORIZED")');
+    expect(f.text).toContain('@app.exception_handler(RequestValidationError)');
+    expect(f.text).toContain('409: {"description": "SALES_DUPLICATE: 같은 날 매출이 이미 있음", "content": PROBLEM_JSON}');
+    expect(f.text).toContain('@app.post("/api/receipts", status_code=204, response_class=Response');
+    expect(f.text).toContain('app.openapi = custom_openapi');
     expect(f.text).toContain('date: Optional[str] = Query(None');
     expect(f.text).toContain('raise ApiError(409, "같은 날 매출이 이미 있음", "SALES_DUPLICATE")');
     expect(f.text).toContain('# TODO: 인증 방식이 정해지지 않았습니다');
-    expect(f.text.match(/status_code=501/g)!.length).toBe(4);
+    expect(f.text.match(/raise ApiError\(501, "구현 필요", "NOT_IMPLEMENTED"\)/g)!.length).toBe(4);
     expect(fastApiFiles(gc)).toEqual([]);
     expect(interfaceFiles(ledger).map((x) => x.name)).toEqual(['openapi-B_01.json', 'B_01_fastapi.py']);
   });

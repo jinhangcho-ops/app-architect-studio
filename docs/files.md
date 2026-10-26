@@ -8,7 +8,7 @@
 | 열기 / 파일로 내보내기 | 프로젝트를 JSON으로 열고 저장 |
 | 코드 분석 불러오기 | `tools/analyze_py.py`가 파이썬 코드를 분석해 만든 JSON을 합침 (서비스·워커 후보) |
 | 저장 기록 | 저장한 시점 목록. 시점으로 되돌리거나 자동 저장 간격을 바꿈 |
-| 인터페이스 명세 내보내기 | 연결선의 명세를 표준 파일로: REST → `openapi-노드.json` (OpenAPI 3.0, 인증·에러 응답 포함), gRPC → `노드.proto`, 메시지 → `asyncapi.json` (AsyncAPI 3.0), 받는 노드가 FastAPI면 `노드_fastapi.py` (pydantic 모델 + 엔드포인트 뼈대, 각 함수는 501). 데스크톱 앱은 폴더를 골라 한 번에, 브라우저는 파일마다 내려받기 |
+| 인터페이스 명세 내보내기 | 연결선의 명세를 표준 파일로: REST → `openapi-노드.json` (OpenAPI 3.0, 인증·에러 응답 포함), gRPC → `노드.proto`, 메시지 → `asyncapi.json` (AsyncAPI 3.0), 받는 노드가 FastAPI면 `노드_fastapi.py` (pydantic 모델 + 엔드포인트 뼈대, 각 함수는 501, 에러·인증 실패·요청 검증 실패를 모두 problem+json으로 돌려줌. 띄우면 `/docs`가 내보낸 OpenAPI와 같음). 응답 필드가 없는 인터페이스는 204(본문 없음)로 적습니다. 데스크톱 앱은 폴더를 골라 한 번에, 브라우저는 파일마다 내려받기 |
 
 ## 저장
 
