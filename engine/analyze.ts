@@ -108,15 +108,17 @@ export function primaryShape(n: ProjectNode, catalog: Map<string, CatalogItem>, 
  *  주 서버 1대 DB는 쓰기를 주 서버 1대가 모두 받는다: 대수를 늘려도 쓰기 한계는 그대로이고, 읽기 복제본이 있을 때만 읽기를 복제본 대수로 나눈다.
  *  사용률은 가장 바쁜 서버 기준 (주 서버와 복제본 중 큰 쪽), p99는 주 서버의 대기열 */
 export function sizeAt(n: ProjectNode, perRps: number, maxInstances: number, rps: number, u: number, db?: PrimaryShape) {
+  // 늘 떠 있는 대수: 최소 대수와 이중화(2대 이상) 중 큰 쪽, 최대 대수 이하 (비용·가용성·연결 수·장애가 같은 대수를 쓰게)
+  const floor = Math.max(n.min_instances, n.replicas > 1 ? Math.min(maxInstances, n.replicas) : 0);
   if (!db) {
-    const N = instancesNeeded(rps, perRps, u, n.min_instances, maxInstances);
+    const N = instancesNeeded(rps, perRps, u, floor, maxInstances);
     return { N, util: N ? rps / (N * perRps) : 0, p99: n.perf && nodeP99(rps, n.perf.service_ms, N * n.perf.workers, n.perf.service_p99_ms) };
   }
   const reads = rps * (1 - db.writeShare), onPrimary = db.replicas ? rps - reads : rps;
   // 최소 대수를 올리면 그만큼 복제본이 늘 떠 있으므로 읽기도 나눠 받는다 (비용이 세는 대수와 용량이 세는 대수를 같게)
   const replicas = db.replicas && reads > 0 ? Math.min(Math.max(0, maxInstances - 1), Math.max(Math.ceil(reads / (perRps * u)), n.min_instances - 1)) : 0;
   const util = Math.max(onPrimary / perRps, replicas ? reads / (replicas * perRps) : 0);
-  return { N: Math.max(n.min_instances, 1 + replicas), util, p99: n.perf && nodeP99(onPrimary, n.perf.service_ms, n.perf.workers, n.perf.service_p99_ms) };
+  return { N: Math.max(floor, 1 + replicas), util, p99: n.perf && nodeP99(onPrimary, n.perf.service_ms, n.perf.workers, n.perf.service_p99_ms) };
 }
 
 /** today = 'YYYY-MM-DD' (가격 기준일 경고용). reuse.traffic: 항목만 바꿔 여러 번 분석할 때 같은 트래픽을 재사용 */

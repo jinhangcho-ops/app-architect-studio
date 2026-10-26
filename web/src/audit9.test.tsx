@@ -1,0 +1,36 @@
+// @vitest-environment happy-dom
+// 감사 9: 지운 노드의 옛 결과를 그려도 패널이 깨지지 않음, HTML 가져오기에서 화면 밖 요소
+import { flushSync } from 'react-dom';
+import { createRoot } from 'react-dom/client';
+import { describe, expect, it } from 'vitest';
+import { parseProject } from '../../engine/data';
+import { catalog, examples } from './data';
+import { DEVICES } from './wireDraw';
+import { paginate } from './htmlRender';
+import { TableLab } from './ResultsPanel';
+import { useStore } from './store';
+
+describe('결과 패널: 지운 노드의 테이블', () => {
+  it('노드가 없으면 실험 칸을 그리지 않고 오류도 없음', () => {
+    const ex = examples.find((e) => e.name === 'global-commerce.json')!;
+    useStore.setState({ project: parseProject(ex.data, catalog.items, ex.name), past: [], future: [] });
+    const el = document.createElement('div');
+    const errors: unknown[] = [];
+    flushSync(() => createRoot(el, { onUncaughtError: (e) => errors.push(e) }).render(<TableLab nodeId="없는-노드" table="orders" />));
+    expect(errors).toEqual([]);
+    expect(el.innerHTML).toBe('');
+  });
+});
+
+describe('HTML 가져오기: 화면 밖 요소', () => {
+  it('위·왼쪽으로 숨긴 것과 30장보다 아래 둔 것은 빼서 빈 장을 만들지 않음', () => {
+    const f = DEVICES.mobile;
+    const pages = paginate([
+      { kind: 'header', label: 'h', x: 0, y: 0, w: 390, h: 60 },
+      { kind: 'text', label: '본문으로 건너뛰기', x: 0, y: -40, w: 100, h: 20 },
+      { kind: 'text', label: 'left', x: -500, y: 10, w: 100, h: 20 },
+      { kind: 'text', label: 'far', x: 0, y: f.h * 300, w: 100, h: 20 },
+    ], f, '홈');
+    expect(pages.map((p) => [p.name, p.items.map((i) => i.label)])).toEqual([['홈', ['h']]]);
+  });
+});

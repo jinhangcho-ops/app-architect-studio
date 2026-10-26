@@ -62,10 +62,13 @@ export function measure(doc: Document): Entry[] {
 }
 
 /** 틀 높이마다 한 장씩 나눈다. 상자는 위쪽 끝이 있는 장에 들어가고, 틀을 넘는 부분은 자른다 */
+// shortcut: 한 화면을 틀 높이 30장까지만 나눈다. 그보다 긴 페이지가 흔하면 올린다
+const MAX_PAGES = 30;
 export function paginate(entries: Entry[], frame: { w: number; h: number }, name: string): Screen[] {
   const pages: Omit<WireItem, 'id'>[][] = [];
   for (const e of entries) {
-    if (e.x >= frame.w) continue;
+    // 화면 밖으로 숨긴 것(본문 바로가기 링크 top:-40px 등)과 아주 아래 둔 것은 그리지 않는다
+    if (e.x >= frame.w || e.x + e.w <= 0 || e.y + e.h <= 0 || e.y >= frame.h * MAX_PAGES) continue;
     const page = Math.max(0, Math.floor(e.y / frame.h));
     const y = e.y - page * frame.h;
     (pages[page] ??= []).push({ ...e, x: Math.max(0, e.x), y, w: Math.min(e.w, frame.w - Math.max(0, e.x)), h: Math.min(e.h, frame.h - y) });

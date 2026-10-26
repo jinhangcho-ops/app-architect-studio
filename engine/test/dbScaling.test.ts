@@ -34,7 +34,8 @@ describe('주 서버 1대 DB (single_primary)', () => {
 
   it('사용자를 50배로 늘려도 PostgreSQL은 1대 그대로이고 주 서버 처리량을 넘어 안 됨이 됨 (예전에는 11대로 늘었다)', () => {
     const a = run(users(base, 50));
-    expect(a.nodes.db.instances!.event.value).toBe(1);
+    // 대수는 부하로 늘지 않고 이중화(replicas 2, 대기 서버)만큼 — 비용이 세는 대수와 같다 (감사 9)
+    expect(a.nodes.db.instances!.event.value).toBe(2);
     const pg = a.judgements.find((j) => j.nodeId === 'db')!.items[0];
     expect(pg.verdict).toBe('fail');
     expect(pg.reasons.join(' ')).toContain('주 DB 서버가 받는');

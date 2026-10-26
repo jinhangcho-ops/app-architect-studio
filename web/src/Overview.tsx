@@ -56,10 +56,10 @@ export function dayUtilization(p: Project, a: Analysis, total: number[]): Series
   const t = a.traffic;
   if (!t || !t.peakRps.value || !p.scale) return [];
   return p.nodes.flatMap((n) => {
-    const na = a.nodes[n.id], per = na?.perInstanceRps?.value, N = na?.instances?.normal.value;
-    if (!na?.load || !per || !N) return [];
-    const share = na.load.rps.normal / t.peakRps.value;
-    return [{ id: n.id, name: `${n.name} (${N}대)`, color: COLOR[healthOf(a, p.scale!.users, n.id).health], pts: dayPts(total.map((r) => (share * r) / (N * per))) }];
+    const na = a.nodes[n.id], util = na?.utilization?.normal.value, N = na?.instances?.normal.value;
+    if (!na?.load || util === undefined || !N) return [];
+    // 엔진의 피크 사용률을 트래픽 곡선 비율로 줄인다 (주 서버 DB·대기 서버처럼 대수로 나누면 틀리는 노드도 맞게)
+    return [{ id: n.id, name: `${n.name} (${N}대)`, color: COLOR[healthOf(a, p.scale!.users, n.id).health], pts: dayPts(total.map((r) => (util * r) / t.peakRps.value)) }];
   });
 }
 

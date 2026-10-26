@@ -112,7 +112,7 @@ function registerFileApi() {
     if (files.length === 1) {
       const r = await dialog.showSaveDialog(win(), { defaultPath: pngName(files[0].name), filters: [{ name: 'PNG 그림', extensions: ['png'] }] });
       if (r.canceled || !r.filePath) return null;
-      const [out] = writePngs(path.dirname(r.filePath), [{ ...files[0], name: path.basename(r.filePath, '.png') }]);
+      const [out] = writePngs(path.dirname(r.filePath), [{ ...files[0], name: path.parse(r.filePath).name }]);
       return [out];
     }
     const r = await dialog.showOpenDialog(win(), { title: 'PNG를 저장할 폴더', properties: ['openDirectory', 'createDirectory'] });

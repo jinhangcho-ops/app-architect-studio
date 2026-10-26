@@ -29,7 +29,7 @@ export const PATTERNS: Record<Persona['pattern'], Pattern> = {
   dormant: { label: '휴면 직전', sessions_per_day: 0.02, reads_per_session: 5, writes_per_session: 0, session_minutes: 2, write_kb: 1, response_kb: 20, sync_per_session: 1 },
 };
 
-// shortcut: 패턴마다 최대 20만 명만 뽑고 실제 인원 비율로 키운다. 피크가 들쭉날쭉하면 상한을 올린다
+// shortcut: 페르소나마다 접속 약 20만 회 분량의 사람만 뽑고 실제 인원 비율로 키운다(하루 접속이 잦으면 사람을 덜 뽑아 계산 시간이 일정). 피크가 들쭉날쭉하면 상한을 올린다
 const SIM_CAP = 200_000;
 
 export type Traffic = {
@@ -261,7 +261,7 @@ export function traffic(p: Project): Traffic | undefined {
   for (const ps of p.personas) {
     const pt = patternOf(ps);
     const n = Math.round(users * ps.share);
-    const sim = Math.min(n, SIM_CAP);
+    const sim = Math.min(n, Math.ceil(SIM_CAP / Math.max(1, pt.sessions_per_day)));
     if (!sim) continue;
     const scale = n / sim;
     const { bumps, weight, inWindow: inWin } = startModel(ps, p.scale);

@@ -2,7 +2,7 @@
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { analyze } from '../analyze';
+import { analyze, sizeAt } from '../analyze';
 import { readProject } from '../data';
 import { schemaWarnings, tableDdl } from '../ddl';
 import { loadCatalog, loadLaws, loadPrices } from '../io';
@@ -68,6 +68,27 @@ describe('10 기본값이 코드 값 목록에 없으면 경고', () => {
     const t = { name: 'orders_x', columns: [{ name: 'id', type: 'bigint', nullable: false }, { name: 'status', type: 'text', nullable: false, default_value: 'NEW', codes: [{ code: 'PAID', label: '' }, { code: 'DONE', label: '' }] }], primary_key: ['id'], indexes: [] };
     const q = { ...p, nodes: p.nodes.map((x) => (x === n ? { ...x, tables: [t] } : x)) } as unknown as Project;
     expect(schemaWarnings(q, catalog.byId).map((w) => w.text)).toContain('status: 기본값 NEW가 코드 값 목록에 없음 (CHECK 제약 때문에 기본값으로 행을 넣지 못함)');
+  });
+});
+
+describe('감사 9: 하루 접속이 잦은 페르소나도 트래픽 계산이 몇 초 안에 끝남', () => {
+  it('사용자 1억, 페르소나 모두 하루 100회', () => {
+    const p = readProject(raw('global-commerce'), catalog.items);
+    const q = { ...p, scale: { ...p.scale!, users: 1e8 }, personas: p.personas.map((x) => ({ ...x, sessions_per_day: 100 })) };
+    const t0 = Date.now();
+    const t = traffic(q)!;
+    expect(Date.now() - t0).toBeLessThan(5000);
+    expect(t.peakRps.value).toBeGreaterThan(0);
+  });
+});
+
+describe('감사 9: 이중화 대수는 필요 대수·사용률에도 들어감', () => {
+  it('replicas 3이면 부하가 작아도 3대, 사용률은 3대로 나눔', () => {
+    const p = readProject(raw('actions'), catalog.items);
+    const n = { ...p.nodes.find((x) => x.layer === 'backend')!, replicas: 3, min_instances: 1 };
+    const r = sizeAt(n, 1000, 20, 300, 0.7);
+    expect(r.N).toBe(3);
+    expect(r.util).toBeCloseTo(300 / 3000);
   });
 });
 

@@ -250,8 +250,10 @@ function PersonaTable({ t }: { t: Traffic }) {
 export function TableLab({ nodeId, table }: { nodeId: string; table: string }) {
   const { project, edit } = usePick('project', 'edit');
   const [state, setState] = useState<{ running?: boolean; result?: LabResult; error?: string }>({});
-  const node = project.nodes.find((n) => n.id === nodeId)!;
-  const t = node.tables.find((x) => x.name === table)!;
+  // 노드·테이블을 지운 직후에는 계산(useDeferredValue)이 한 번 늦어 옛 결과가 남아 있다
+  const node = project.nodes.find((n) => n.id === nodeId);
+  const t = node?.tables.find((x) => x.name === table);
+  if (!node || !t) return null;
   const sp = nodeStorageProfile(node, catalog.byId);
   const isSqlite = !!sp && sp === storageProfileOf(catalog.byId.get('sqlite'), catalog.byId);
   const run = async () => {
