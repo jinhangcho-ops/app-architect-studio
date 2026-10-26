@@ -106,7 +106,8 @@ export function tableDdl(t: Table, d: Dialect, withIndexes = true): string {
     if (!c.nullable) parts.push('NOT NULL');
     if (c.default_value !== undefined) parts.push(`DEFAULT ${defaultSql(c, d, type)}`);
     if (c.codes?.length) parts.push(`CHECK (${q(d, c.name)} IN (${c.codes.map((x) => valueSql(c, x.code, d)).join(', ')}))`);
-    if (d === 'mysql' && comment(c)) parts.push(`COMMENT ${lit(comment(c), d)}`);
+    // MySQL 설명 한도: 컬럼 1024글자, 테이블 2048글자 (넘으면 CREATE가 실패). 데이터 사전 CSV에는 전체가 남는다
+    if (d === 'mysql' && comment(c)) parts.push(`COMMENT ${lit([...comment(c)].slice(0, 1024).join(''), d)}`);
     return `  ${parts.join(' ')}`;
   });
   if (t.primary_key.length) cols.push(`  PRIMARY KEY (${t.primary_key.map((c) => q(d, c)).join(', ')})`);
@@ -114,7 +115,7 @@ export function tableDdl(t: Table, d: Dialect, withIndexes = true): string {
   const body = d === 'sqlite'
     ? cols.map((l, k) => { const c = t.columns[k]; return `${l}${k < cols.length - 1 ? ',' : ''}${c && comment(c) ? ` -- ${comment(c).replace(/\r?\n/g, ' ')}` : ''}`; }).join('\n')
     : cols.join(',\n');
-  const out = [`${d === 'sqlite' && comment(t) ? `-- ${comment(t).replace(/\r?\n/g, ' ')}\n` : ''}CREATE TABLE ${q(d, t.name)} (\n${body}\n)${d === 'mysql' && comment(t) ? ` COMMENT=${lit(comment(t), d)}` : ''};`];
+  const out = [`${d === 'sqlite' && comment(t) ? `-- ${comment(t).replace(/\r?\n/g, ' ')}\n` : ''}CREATE TABLE ${q(d, t.name)} (\n${body}\n)${d === 'mysql' && comment(t) ? ` COMMENT=${lit([...comment(t)].slice(0, 2048).join(''), d)}` : ''};`];
   for (const ix of withIndexes ? t.indexes : []) out.push(`CREATE ${ix.unique ? 'UNIQUE ' : ''}INDEX ${q(d, ix.name)} ON ${q(d, t.name)} (${ix.columns.map((c) => q(d, c)).join(', ')});`);
   if (d === 'postgres' || d === 'generic') {
     if (comment(t)) out.push(`COMMENT ON TABLE ${q(d, t.name)} IS ${lit(comment(t), d)};`);

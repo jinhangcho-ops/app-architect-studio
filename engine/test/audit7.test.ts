@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { analyze } from '../analyze';
 import { readProject } from '../data';
-import { schemaWarnings } from '../ddl';
+import { schemaWarnings, tableDdl } from '../ddl';
 import { loadCatalog, loadLaws, loadPrices } from '../io';
 import { erlangC } from '../latency';
 import { Project } from '../schema';
@@ -68,6 +68,17 @@ describe('10 기본값이 코드 값 목록에 없으면 경고', () => {
     const t = { name: 'orders_x', columns: [{ name: 'id', type: 'bigint', nullable: false }, { name: 'status', type: 'text', nullable: false, default_value: 'NEW', codes: [{ code: 'PAID', label: '' }, { code: 'DONE', label: '' }] }], primary_key: ['id'], indexes: [] };
     const q = { ...p, nodes: p.nodes.map((x) => (x === n ? { ...x, tables: [t] } : x)) } as unknown as Project;
     expect(schemaWarnings(q, catalog.byId).map((w) => w.text)).toContain('status: 기본값 NEW가 코드 값 목록에 없음 (CHECK 제약 때문에 기본값으로 행을 넣지 못함)');
+  });
+});
+
+describe('감사 8: MySQL 설명은 컬럼 1024·테이블 2048글자까지', () => {
+  it('긴 설명은 MySQL DDL에서만 자름', () => {
+    const t = { name: 't', description: '가'.repeat(3000), columns: [{ name: 'id', type: 'bigint', nullable: false, description: '나'.repeat(1200) }], primary_key: ['id'], indexes: [] } as unknown as Parameters<typeof tableDdl>[0];
+    const my = tableDdl(t, 'mysql');
+    expect(my).toContain(`COMMENT '${'나'.repeat(1024)}'`);
+    expect(my).not.toContain('나'.repeat(1025));
+    expect(my).toContain(`COMMENT='${'가'.repeat(2048)}'`);
+    expect(tableDdl(t, 'postgres')).toContain('나'.repeat(1200));
   });
 });
 

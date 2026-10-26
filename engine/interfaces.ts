@@ -201,11 +201,13 @@ export function asyncApiDoc(p: Project): Json | undefined {
 const PROTO_TYPE: Record<FieldType, string> = {
   string: 'string', integer: 'int64', number: 'double', boolean: 'bool', datetime: 'google.protobuf.Timestamp', uuid: 'string', object: 'google.protobuf.Struct', array: 'repeated google.protobuf.Value',
 };
+/** 주석 한 줄에 넣는 글자: 줄바꿈이 섞이면 다음 줄이 코드로 읽힌다 */
+const oneLine = (s: string) => s.replace(/[\r\n]+/g, ' ');
 const protoMessage = (name: string, fs: SpecField[]) => [
   `message ${name} {`,
   ...fs.map((f, k) => {
     const t = PROTO_TYPE[f.type], opt = !f.required && !t.startsWith('repeated') && !t.startsWith('google') ? 'optional ' : '';
-    return `  ${opt}${t} ${f.name} = ${k + 1};${f.description ? ` // ${f.description.replace(/\n/g, ' ')}` : ''}`;
+    return `  ${opt}${t} ${f.name} = ${k + 1};${f.description ? ` // ${oneLine(f.description)}` : ''}`;
   }),
   '}',
 ];
@@ -231,11 +233,11 @@ export function protoFiles(p: Project): { nodeId: string; text: string }[] {
     const used = list.flatMap((i) => [...i.request, ...i.response]).map((f) => f.type);
     const svc = `${safe(nodeId)}Service`;
     const text = [
-      'syntax = "proto3";', '', `// ${nameOf(nodeId)} — ${p.name} (App Architect Studio에서 만든 내부 인터페이스 명세)`, `package aas.${safe(nodeId).toLowerCase()};`, '',
+      'syntax = "proto3";', '', `// ${oneLine(`${nameOf(nodeId)} — ${p.name}`)} (App Architect Studio에서 만든 내부 인터페이스 명세)`, `package aas.${safe(nodeId).toLowerCase()};`, '',
       ...(used.includes('datetime') ? ['import "google/protobuf/timestamp.proto";'] : []),
       ...(used.includes('object') || used.includes('array') ? ['import "google/protobuf/struct.proto";'] : []),
       '', `service ${svc} {`,
-      ...list.flatMap((i) => [`  // ${i.name}${i.description ? `: ${i.description.replace(/\n/g, ' ')}` : ''}`, `  rpc ${i.path} (${i.path}Request) returns (${i.path}Response);`]),
+      ...list.flatMap((i) => [`  // ${oneLine(`${i.name}${i.description ? `: ${i.description}` : ''}`)}`, `  rpc ${i.path} (${i.path}Request) returns (${i.path}Response);`]),
       '}', '',
       ...list.flatMap((i) => [...protoMessage(`${i.path}Request`, i.request), '', ...protoMessage(`${i.path}Response`, i.response), '']),
     ].join('\n');
@@ -261,6 +263,7 @@ export function specGaps(i: Interface): string[] {
     const inPath = [...i.path.matchAll(PATH_VAR)].map((x) => x[1]);
     for (const v of inPath.filter((v) => !i.request.some((f) => f.name === v))) gaps.push(`경로 변수 {${v}}의 형식이 없음 (문자열로 가정)`);
     for (const v of new Set(inPath.filter((v, k) => inPath.indexOf(v) !== k))) gaps.push(`경로 변수 {${v}}가 두 번 나옴 (FastAPI 뼈대에서는 두 번째 이름을 바꿈)`);
+    for (const v of inPath.filter((v) => ['object', 'array'].includes(i.request.find((f) => f.name === v)?.type ?? ''))) gaps.push(`경로 변수 {${v}}의 형식이 객체·배열 (경로로는 문자열만 받을 수 있음)`);
     for (const v of inPath.filter((v) => !IDENT.test(v))) gaps.push(`경로 변수 {${v}}가 영문 식별자가 아님 (FastAPI·Spring 등이 그대로 받지 못해 FastAPI 뼈대에서는 이름을 바꿈)`);
     if (['POST', 'PUT', 'PATCH'].includes(i.method ?? 'GET') && !i.request.some((f) => !inPath.includes(f.name))) gaps.push('요청 본문 필드가 없음');
   }
@@ -323,8 +326,10 @@ const PY_KEYWORDS = new Set(['False', 'None', 'True', 'and', 'as', 'assert', 'as
 /** 파이썬 문자열 (JSON 문자열 표기는 파이썬에서도 같은 뜻) */
 const py = (s: string) => JSON.stringify(s);
 /** 파이썬 이름으로 그대로 못 쓰는 이름: 예약어, 영문 식별자가 아님, pydantic이 막는 _·model_로 시작. 다른 이름을 쓰고 alias로 원래 이름을 붙인다 */
-const needsAlias = (n: string) => PY_KEYWORDS.has(n) || !/^[A-Za-z][A-Za-z0-9_]*$/.test(n) || n.startsWith('model_');
-const pyName = (n: string) => (!needsAlias(n) ? n : PY_KEYWORDS.has(n) ? `${n}_` : `f_${safe(n)}`);
+// 모델 필드가 이 이름이면 클래스 안에서 뒤 필드의 형식 이름(str, datetime …)을 가린다
+const PY_SHADOW = new Set(['str', 'int', 'float', 'bool', 'dict', 'list', 'datetime', 'UUID', 'Any', 'Optional', 'Annotated', 'Field', 'BaseModel', 'ConfigDict']);
+const needsAlias = (n: string) => PY_KEYWORDS.has(n) || PY_SHADOW.has(n) || !/^[A-Za-z][A-Za-z0-9_]*$/.test(n) || n.startsWith('model_');
+const pyName = (n: string) => (!needsAlias(n) ? n : PY_KEYWORDS.has(n) || PY_SHADOW.has(n) ? `${n}_` : `f_${safe(n)}`);
 const pascal = (s: string) => s.split('_').filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join('');
 
 function pyModel(name: string, fs: SpecField[]): string[] {
@@ -362,7 +367,8 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
       // 경로를 한 번 훑으며 인자를 만든다. Annotated: 기본값 없는 인자라 뒤에 오는 본문(body) 인자와 순서가 어긋나지 않는다
       const pathArgs: string[] = [], seen = new Set<string>();
       const route = i.path.replace(PATH_VAR, (m, v: string) => {
-        const t = PY_TYPE[o.inPath.find((f) => f.name === v)!.type], again = seen.has(v);
+        // 객체·배열은 경로로 받을 수 없어(FastAPI가 거부) 질의처럼 문자열로 받는다
+        const ft = o.inPath.find((f) => f.name === v)!.type, t = ft === 'object' || ft === 'array' ? 'str' : PY_TYPE[ft], again = seen.has(v);
         seen.add(v);
         if (!again && IDENT.test(v) && !PY_KEYWORDS.has(v)) { pathArgs.push(`${v}: ${t}`); return m; }
         // 예약어는 경로 이름을 두고 alias로 받는다 (OpenAPI와 같은 이름)
@@ -394,7 +400,7 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
         `@app.${o.method}(${deco.join(', ')})`,
         `def ${o.opId}(${params.join(', ')}) -> ${ret}:`,
         `    ${py(`부르는 노드: ${o.callers.join(', ')}`)}`,
-        ...i.errors.map((x) => `    # ${x.status}${x.code ? ` ${x.code}` : ''}: ${x.description.replace(/\n/g, ' ')} → raise ApiError(${x.status}, ${py(x.description)}${x.code ? `, ${py(x.code)}` : ''})`),
+        ...i.errors.map((x) => `    # ${x.status}${x.code ? ` ${oneLine(x.code)}` : ''}: ${oneLine(x.description)} → raise ApiError(${x.status}, ${py(x.description)}${x.code ? `, ${py(x.code)}` : ''})`),
         ...(i.auth === undefined ? ['    # TODO: 인증 방식이 정해지지 않았습니다 (명세 점검)'] : []),
         '    raise ApiError(501, "구현 필요", "NOT_IMPLEMENTED")',
         '', '',
@@ -402,7 +408,7 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
     });
     const pathAlias = routes.some((l) => l.includes('Path(alias='));
     const text = [
-      `# ${nameOf(nodeId)} — FastAPI 엔드포인트 뼈대 (${p.name})`,
+      `# ${oneLine(`${nameOf(nodeId)} — FastAPI 엔드포인트 뼈대 (${p.name})`)}`,
       '# App Architect Studio의 인터페이스 명세에서 만들었습니다. 모델과 엔드포인트만 있고, 각 함수는 501(구현 필요)을 돌려줍니다.',
       `# 실행: pip install "fastapi[standard]"  →  fastapi dev ${fastApiName(nodeId)}  →  http://127.0.0.1:8000/docs 를 프론트와 공유`,
       '# 에러는 모두 problem+json(Problem)입니다: 앱 에러는 ApiError로 내고, 요청 검증 실패(422)·인증 실패(401)·그 밖의 HTTP 에러도 같은 형식으로 바꿉니다.',
@@ -412,7 +418,8 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
       '',
       `from fastapi import Depends, FastAPI, ${pathAlias ? 'Path, ' : ''}Query, Request${ops.some((o) => !o.i.response.length) ? ', Response' : ''}`,
       'from fastapi.exceptions import RequestValidationError',
-      'from fastapi.openapi.utils import get_openapi',
+      // GET /openapi의 함수 이름 get_openapi가 가리지 않게
+      'from fastapi.openapi.utils import get_openapi as _get_openapi',
       'from fastapi.responses import JSONResponse',
       ...(auth.has('bearer') || auth.has('api_key')
         ? [`from fastapi.security import ${[...(auth.has('api_key') ? ['APIKeyHeader'] : []), ...(auth.has('bearer') ? ['HTTPAuthorizationCredentials', 'HTTPBearer'] : [])].join(', ')}`] : []),
@@ -452,7 +459,7 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
       '    return problem_response(Problem(title=str(e.detail), status=e.status_code))',
       '', '',
       ...(auth.has('bearer') ? [
-        '_bearer = HTTPBearer(auto_error=False)  # Authorization: Bearer <토큰>',
+        '_bearer = HTTPBearer(auto_error=False, scheme_name="bearer")  # Authorization: Bearer <토큰>',
         '', '',
         'def require_bearer(cred: Optional[HTTPAuthorizationCredentials] = Depends(_bearer)) -> HTTPAuthorizationCredentials:',
         '    if cred is None:',
@@ -461,7 +468,7 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
         '', '',
       ] : []),
       ...(auth.has('api_key') ? [
-        '_api_key = APIKeyHeader(name="X-API-Key", auto_error=False)  # 서비스 간 호출용 키',
+        '_api_key = APIKeyHeader(name="X-API-Key", auto_error=False, scheme_name="api_key")  # 서비스 간 호출용 키',
         '', '',
         'def require_api_key(key: Optional[str] = Depends(_api_key)) -> str:',
         '    if key is None:',
@@ -475,7 +482,7 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
       '    \"\"\"/docs 명세: 에러 응답은 모두 problem+json(Problem). FastAPI가 붙이는 요청 검증(422)도 같은 형식으로 적는다\"\"\"',
       '    if app.openapi_schema:',
       '        return app.openapi_schema',
-      '    schema = get_openapi(title=app.title, version=app.version, routes=app.routes)',
+      '    schema = _get_openapi(title=app.title, version=app.version, routes=app.routes)',
       '    schemas = schema.setdefault("components", {}).setdefault("schemas", {})',
       '    schemas["Problem"] = Problem.model_json_schema()',
       '    for name in ("HTTPValidationError", "ValidationError"):',

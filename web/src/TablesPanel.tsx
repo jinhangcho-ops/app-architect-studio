@@ -94,10 +94,12 @@ export function TableEditor({ node, t, at, open, onRename }: { node: ProjectNode
       <summary><b>{t.name}</b>{t.label && ` ${t.label}`} <span className="muted">{t.record === 'fixed' ? '고정장 · ' : ''}컬럼 {t.columns.length} · 인덱스 {t.indexes.length}{t.partition ? ' · 파티션' : ''}</span></summary>
       {warns.length > 0 && <div className="warn">{warns.map((w, i) => <div key={i}>⚠️ {w.text}</div>)}</div>}
       <Row label="이름"><input defaultValue={t.name} onBlur={(e) => {
-        if (!e.target.value || e.target.value === t.name) return;
+        // 앞뒤 공백은 화면에서 안 보이는데 MySQL이 이름으로 받지 않는다
+        const v = e.target.value.trim();
+        if (!v || v === t.name) { e.target.value = t.name; return; }
         // 같은 노드에 이미 있는 이름이면 두 테이블이 한꺼번에 고쳐지므로 받지 않는다
-        if (node.tables.some((x) => x.name === e.target.value)) { e.target.value = t.name; return; }
-        upd({ name: e.target.value }); onRename?.(e.target.value);
+        if (node.tables.some((x) => x.name === v)) { e.target.value = t.name; return; }
+        upd({ name: v }); onRename?.(v);
       }} /></Row>
       <TextField label="논리명" value={t.label} onChange={(v) => upd({ label: v || undefined })} />
       <TextField label="설명" value={t.description} onChange={(v) => upd({ description: v || undefined })} />
@@ -128,7 +130,7 @@ export function TableEditor({ node, t, at, open, onRename }: { node: ProjectNode
         <tbody>{t.columns.map((c, i) => (
           // 글자 칸은 BlurInput이 값마다 새로 그려서 줄 키는 순서만 — 이름을 저장해도 옆 칸 포커스가 남는다
           <tr key={i}>
-            <td><BlurInput value={c.name} onSave={(v) => { const r = v && renameColumn(t, i, v); if (r) upd(r); }} /></td>
+            <td><BlurInput value={c.name} onSave={(v) => { const r = v.trim() && renameColumn(t, i, v.trim()); if (r) upd(r); }} /></td>
             <td><Select value={c.type} onChange={(e) => setCol(i, { type: e.target.value as Column['type'] })}>
               {COLUMN_TYPES.map((x) => <option key={x}>{x}</option>)}
             </Select></td>

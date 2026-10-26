@@ -304,6 +304,25 @@ describe('감사 6: 명세 파일 정확성', () => {
     expect(specGaps(g).join()).toContain('필드 userId의 JSON 이름(userId)이 user_id과 겹침');
     expect(specGaps({ ...g, request: [{ name: 'a', type: 'string', required: true }, { name: 'a_', type: 'string', required: true }] }).join()).toContain('필드 a_의 JSON 이름(a)이 a과 겹침');
   });
+  it('FastAPI: 형식 이름과 같은 필드(datetime·str), GET /openapi, 배열 경로 변수, 인증 이름, 이름의 줄바꿈 (감사 8)', () => {
+    const p = withEdge(ledger, 'U-01', 'B-01', [
+      iface({ name: 'a', kind: 'rest', method: 'POST', path: '/a', request: [{ name: 'datetime', type: 'datetime', required: true }, { name: 'str', type: 'string', required: true }, { name: 'x', type: 'string', required: true }] }),
+      iface({ name: 'o', kind: 'rest', method: 'GET', path: '/openapi', auth: 'bearer', response: [{ name: 'x', type: 'string', required: true }] }),
+      iface({ name: 'line1\nline2 garbage', kind: 'rest', method: 'GET', path: '/b/{ids}', auth: 'api_key', request: [{ name: 'ids', type: 'array', required: true }],
+        errors: [{ status: 404, code: 'X\rimport os', description: 'none\rimport os' }] }),
+    ]);
+    const text = fastApiFiles(p)[0].text;
+    expect(text).toContain('datetime_: datetime = Field(..., alias="datetime")');
+    expect(text).toContain('str_: str = Field(..., alias="str")');
+    expect(text).toContain('from fastapi.openapi.utils import get_openapi as _get_openapi');
+    expect(text).toContain('def get_b_ids(ids: str');
+    expect(text).toContain('HTTPBearer(auto_error=False, scheme_name="bearer")');
+    expect(text).toContain('APIKeyHeader(name="X-API-Key", auto_error=False, scheme_name="api_key")');
+    expect(text.split('\n').filter((l) => /^\s*import os/.test(l))).toEqual([]);
+    expect(specGaps(p.edges.find((e) => e.from === 'U-01' && e.to === 'B-01')!.interfaces.at(-1)!).join()).toContain('경로 변수 {ids}의 형식이 객체·배열');
+    const proto = protoFiles(two([iface({ name: 'line1\nline2 garbage', kind: 'grpc', path: 'Get' })]))[0].text;
+    expect(proto.split('\n').some((l) => l.startsWith('line2'))).toBe(false);
+  });
   it('경로 변수 {order-id}·{주문}도 OpenAPI parameter가 됨', () => {
     const doc = openApiDocs(two([iface({ name: 'a', kind: 'rest', method: 'GET', path: '/o/{order-id}/{주문}' })]))[0].doc as { paths: Record<string, { get: { parameters: { name: string; in: string }[] } }> };
     expect(doc.paths['/o/{order-id}/{주문}'].get.parameters.filter((x) => x.in === 'path').map((x) => x.name)).toEqual(['order-id', '주문']);
