@@ -226,6 +226,8 @@ export function specGaps(i: Interface): string[] {
     if (!i.request.length) gaps.push('레코드 필드가 없음');
     const noLen = i.request.filter((f) => !f.length).map((f) => f.name);
     if (i.record?.format === 'fixed' && noLen.length) gaps.push(`고정장 필드 길이가 없음: ${noLen.join(', ')}`);
+    // 필드 이름은 영문·숫자·_라서, 구분자가 그 밖의 글자여야 머리줄·값과 섞이지 않는다
+    if (i.record?.format === 'delimited' && /[A-Za-z0-9_]/.test(i.record.delimiter)) gaps.push(`구분자 "${i.record.delimiter}"에 영문·숫자·_가 있어 필드 이름·값과 섞일 수 있음`);
   }
   if (i.kind === 'rest') {
     const inPath = [...i.path.matchAll(/\{(\w+)\}/g)].map((x) => x[1]);

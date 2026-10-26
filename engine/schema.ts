@@ -691,6 +691,12 @@ export function checkTable(t: Table): string[] {
   return errors;
 }
 
+/** YYYY-MM-DD가 달력에 있는 날인지 (2024-13-01·2024-02-30은 아님) */
+const realDay = (v: string) => {
+  const [y, m, d] = v.slice(0, 10).split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d));
+  return t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
+};
 /** 기본값 글자 null (대소문자 무관) = SQL NULL */
 export const isNullText = (v: string) => /^null$/i.test(v);
 /** 기본값·코드 값 글자가 컬럼 타입에 맞는지. 시각·날짜는 CURRENT_TIMESTAMP·CURRENT_DATE 또는 날짜 글자 */
@@ -699,8 +705,9 @@ export function fitsType(type: Column['type'], v: string): boolean {
     case 'int': case 'bigint': return /^[+-]?\d+$/.test(v);
     case 'float': case 'numeric': return /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(v);
     case 'bool': return /^(true|false|1|0)$/i.test(v);
-    case 'timestamp': return /^current_timestamp$/i.test(v) || /^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?)?(Z|[+-]\d{2}(:?\d{2})?)?$/.test(v);
-    case 'date': return /^current_date$/i.test(v) || /^\d{4}-\d{2}-\d{2}$/.test(v);
+    // 시간대는 시각 뒤에만 (SQLite julianday·MySQL은 날짜 바로 뒤 시간대를 못 읽음)
+    case 'timestamp': return /^current_timestamp$/i.test(v) || (/^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}(:?\d{2})?)?)?$/.test(v) && realDay(v));
+    case 'date': return /^current_date$/i.test(v) || (/^\d{4}-\d{2}-\d{2}$/.test(v) && realDay(v));
     case 'uuid': return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
     case 'json': try { JSON.parse(v); return true; } catch { return false; }
     default: return true;

@@ -1,7 +1,7 @@
 // 노드 패널의 데이터 부분: 명세서 붙여넣기, 테이블 편집, 저장 기능 선택.
 import { Select } from './Select';
 import { useState } from 'react';
-import { COLUMN_TYPES, nodeStorageProfile, selectedFeatures, STORAGE_FORMATS, STORAGE_NAMES, type ProjectNode } from '../../engine/schema';
+import { COLUMN_TYPES, nodeStorageProfile, selectedFeatures, STORAGE_FORMATS, STORAGE_NAMES, type Project, type ProjectNode } from '../../engine/schema';
 import { parseSpec } from '../../engine/spec';
 import { schemaWarnings } from '../../engine/ddl';
 import { catalog } from './data';
@@ -71,10 +71,18 @@ export function TablesSection({ node }: { node: ProjectNode }) {
   );
 }
 
+// 편집기마다 프로젝트 전체 경고를 세지 않게 같은 프로젝트(객체)면 한 번만
+const warnCache = new WeakMap<Project, ReturnType<typeof schemaWarnings>>();
+const warningsOf = (p: Project) => {
+  let w = warnCache.get(p);
+  if (!w) warnCache.set(p, (w = schemaWarnings(p, catalog.byId)));
+  return w;
+};
+
 export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t: Table; open?: boolean; onRename?: (name: string) => void }) {
   const { project, edit } = usePick('project', 'edit');
   const upd = (patch: Partial<Table>) => edit((p) => updateTable(p, node.id, t.name, patch));
-  const warns = schemaWarnings(project, catalog.byId).filter((w) => w.node === node.id && w.table === t.name);
+  const warns = warningsOf(project).filter((w) => w.node === node.id && w.table === t.name);
   const setCol = (i: number, patch: Partial<Column>) => upd({ columns: patchAt(t.columns, i, patch) });
   const setIx = (i: number, patch: Partial<Table['indexes'][number]>) => upd({ indexes: patchAt(t.indexes, i, patch) });
   const padded = !!nodeStorageProfile(node, catalog.byId)?.fixed_width_padded;

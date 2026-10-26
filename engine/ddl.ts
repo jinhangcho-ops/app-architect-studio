@@ -132,6 +132,8 @@ export function schemaWarnings(p: Project, byId: Map<string, CatalogItem>): { no
         if (v !== undefined && isNullText(v)) { if (!c.nullable) warn(`${c.name}: 필수(NOT NULL)인데 기본값이 null`); }
         else if (v !== undefined && !fitsType(c.type, v)) warn(`${c.name}: 기본값이 타입(${c.type})과 안 맞음: ${v}`);
         for (const x of c.codes ?? []) if (!fitsType(c.type, x.code)) warn(`${c.name}: 코드 값이 타입(${c.type})과 안 맞음: ${x.code}`);
+        // 화면의 코드 값 칸은 ;로 나누므로, ;가 든 코드·라벨은 칸을 고치면 쪼개진다
+        if (c.codes?.some((x) => x.code.includes(';') || x.label.includes(';'))) warn(`${c.name}: 코드 값·라벨에 ;가 있어 화면에서 고치면 나뉨`);
       }
       // MySQL(InnoDB) 키 한도 3072바이트. utf8mb4 CHAR·VARCHAR(n)은 n × 4바이트
       if (d === 'mysql') {
@@ -151,10 +153,6 @@ export function schemaWarnings(p: Project, byId: Map<string, CatalogItem>): { no
     if ((d === 'postgres' || d === 'sqlite' || d === 'generic') && nodeStorageProfile(n, byId)?.layout !== 'columnar') {
       for (const x of dupes([...n.tables.map((t) => t.name), ...n.tables.flatMap((t) => [...new Set(t.indexes.map((ix) => ix.name))])])) out.push({ node: n.id, text: `테이블·인덱스 이름 중복 ${x} (이 DB는 한 이름 공간이라 DDL이 실패함)` });
     }
-  }
-  for (const e of p.edges) for (const i of e.interfaces) {
-    // 필드 이름은 영문·숫자·_라서, 구분자가 그 밖의 글자여야 머리줄·값과 섞이지 않는다
-    if (i.kind === 'file' && i.record?.format === 'delimited' && /[A-Za-z0-9_]/.test(i.record.delimiter)) out.push({ node: e.to, text: `${i.name}: 구분자 "${i.record.delimiter}"에 영문·숫자·_가 있어 필드 이름·값과 섞일 수 있음` });
   }
   return out;
 }

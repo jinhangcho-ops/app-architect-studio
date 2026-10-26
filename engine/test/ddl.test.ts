@@ -6,6 +6,7 @@ import { dataDictionaryCsv, ddlFiles, dialectOf, schemaFiles, schemaWarnings, ta
 import { loadCatalog } from '../io';
 import { Project, Table } from '../schema';
 import { featureTables, unusedTables } from '../tables';
+import { specGaps } from '../interfaces';
 
 const catalog = loadCatalog(fileURLToPath(new URL('../../data/catalog', import.meta.url)));
 
@@ -208,6 +209,20 @@ describe('1.2.0 파일 열기와 스키마 경고 (리뷰 1)', () => {
     ],
   };
 
+  it('날짜 바로 뒤 시간대·없는 날짜 기본값, ;가 든 코드 라벨은 경고', () => {
+    const t = Table.parse({ name: 't', columns: [
+      { name: 'at', type: 'timestamp', default_value: '2024-01-01Z' },
+      { name: 'd', type: 'date', default_value: '2024-13-01' },
+      { name: 'c', type: 'text', codes: [{ code: 'A', label: 'x;y' }] },
+    ] });
+    const p = Project.parse({ name: 'p', nodes: [{ id: 'db', name: 'DB', layer: 'db', primary: 'sqlite', tables: [t] }] });
+    expect(schemaWarnings(p, catalog.byId).map((w) => w.text)).toEqual([
+      'at: 기본값이 타입(timestamp)과 안 맞음: 2024-01-01Z',
+      'd: 기본값이 타입(date)과 안 맞음: 2024-13-01',
+      'c: 코드 값·라벨에 ;가 있어 화면에서 고치면 나뉨',
+    ]);
+  });
+
   it('1.2.0에서 만든 파일이 열리고, 품질 문제는 경고로 나옴', () => {
     const p = parseProject(old, catalog.items);
     expect(schemaWarnings(p, catalog.byId)).toEqual([
@@ -216,10 +231,11 @@ describe('1.2.0 파일 열기와 스키마 경고 (리뷰 1)', () => {
       { node: 'db', table: 'a', text: 'yn: 기본값이 타입(bool)과 안 맞음: Y' },
       { node: 'db', table: 'a', text: 'memo: 필수(NOT NULL)인데 기본값이 null' },
       { node: 'db', text: '테이블·인덱스 이름 중복 idx_1 (이 DB는 한 이름 공간이라 DDL이 실패함)' },
-      { node: 'api', text: '정산 파일: 구분자 "x"에 영문·숫자·_가 있어 필드 이름·값과 섞일 수 있음' },
     ]);
     expect(ddlFiles(p, catalog.byId)[0].text).toContain('-- 주의: 테이블·인덱스 이름 중복 idx_1');
     expect(ddlFiles(p, catalog.byId)[0].text).toContain('-- 주의: a.k: 기본값이 타입(int)과 안 맞음: A');
+    // 구분자는 인터페이스 명세 점검에
+    expect(specGaps(p.edges[1].interfaces[0])).toContain('구분자 "x"에 영문·숫자·_가 있어 필드 이름·값과 섞일 수 있음');
     // 한 기능 안의 같은 (노드, 테이블, 읽기·쓰기)는 하나로
     expect(featureTables(p).map((f) => f.tables)).toEqual([[{ node: 'db', table: 'a', op: 'write' }], [{ node: 'db', table: 'a', op: 'read' }]]);
   });

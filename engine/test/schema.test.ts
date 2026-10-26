@@ -44,6 +44,12 @@ describe('테이블·연결 검증 (감사 2)', () => {
     expect(['2024-01-01T09:00+09', '2024-01-01 09:00:00+0900', '2024-01-01T00:00:00.5Z', '2024-01-01T09:00:00-05:30'].every((v) => fitsType('timestamp', v))).toBe(true);
   });
 
+  it('fitsType: 날짜 바로 뒤 시간대, 없는 달·날은 안 맞음 (SQLite julianday가 NULL을 돌려줌)', () => {
+    expect(['2024-01-01Z', '2024-01-01+09', '2024-01-01-05', '2024-13-01', '2024-02-30T00:00'].some((v) => fitsType('timestamp', v))).toBe(false);
+    expect(['2024-13-01', '2024-02-30', '2023-02-29'].some((v) => fitsType('date', v))).toBe(false);
+    expect(['2024-02-29', '2024-12-31'].every((v) => fitsType('date', v))).toBe(true);
+  });
+
   it('노드 안 테이블·인덱스 이름 겹침은 오류 아님(경고), 테이블 이름 중복은 오류', () => {
     const p = Project.parse({ name: 'p', nodes: [{ id: 'db', name: 'DB', layer: 'db', tables: [
       tbl('a', { indexes: [{ name: 'ix', columns: ['k'] }] }), tbl('b', { indexes: [{ name: 'ix', columns: ['k'] }, { name: 'a', columns: ['k'] }] }),
