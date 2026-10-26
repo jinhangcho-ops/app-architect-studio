@@ -83,7 +83,8 @@ export function restOps(p: Project): Map<string, RestOp[]> {
     const same = list.find((o) => o.i.path === i.path && o.method === method);
     if (same) { same.callers.push(nameOf(e.from)); continue; }
     // 경로 변수인데 요청 필드에 없으면 문자열로 본다
-    const inPath = [...i.path.matchAll(PATH_VAR)].map((x) => i.request.find((f) => f.name === x[1]) ?? { name: x[1], type: 'string' as const, required: true });
+    // 같은 변수가 두 번 나와도(명세 점검이 알림) parameter는 하나
+    const inPath = [...new Set([...i.path.matchAll(PATH_VAR)].map((x) => x[1]))].map((v) => i.request.find((f) => f.name === v) ?? { name: v, type: 'string' as const, required: true });
     const rest = i.request.filter((f) => !inPath.some((x) => x.name === f.name));
     // /orders/{id}와 /orders/id처럼 안전 이름이 같아지면 _2, _3 (OpenAPI operationId와 FastAPI 함수·모델 이름이 같이 씀)
     const base = `${method}_${safe(i.path)}`.replace(/_+/g, '_').replace(/_$/, '');
@@ -220,7 +221,9 @@ export function protoFiles(p: Project): { nodeId: string; text: string }[] {
     if (orig.includes(x.path)) continue;
     const base = IDENT.test(x.path) ? x.path : pascal(safe(x.path)) || 'Method1';
     let name = base;
-    for (let k = 2; list.some((y) => y.path === name); k++) name = `${base}_${k}`;
+    // rpc 이름은 다른 메서드의 Request·Response 메시지 이름과도 겹치면 안 된다 (Get과 GetRequest)
+    const taken = (m: string) => list.some((y) => [y.path, `${y.path}Request`, `${y.path}Response`].includes(m) || [`${m}Request`, `${m}Response`].includes(y.path));
+    for (let k = 2; taken(name); k++) name = `${base}_${k}`;
     byTarget.set(e.to, [...list, { ...x, path: name }]);
     origOf.set(e.to, [...orig, x.path]);
   }
@@ -257,6 +260,7 @@ export function specGaps(i: Interface): string[] {
   if (i.kind === 'rest') {
     const inPath = [...i.path.matchAll(PATH_VAR)].map((x) => x[1]);
     for (const v of inPath.filter((v) => !i.request.some((f) => f.name === v))) gaps.push(`경로 변수 {${v}}의 형식이 없음 (문자열로 가정)`);
+    for (const v of new Set(inPath.filter((v, k) => inPath.indexOf(v) !== k))) gaps.push(`경로 변수 {${v}}가 두 번 나옴 (FastAPI 뼈대에서는 두 번째 이름을 바꿈)`);
     for (const v of inPath.filter((v) => !IDENT.test(v))) gaps.push(`경로 변수 {${v}}가 영문 식별자가 아님 (FastAPI·Spring 등이 그대로 받지 못해 FastAPI 뼈대에서는 이름을 바꿈)`);
     if (['POST', 'PUT', 'PATCH'].includes(i.method ?? 'GET') && !i.request.some((f) => !inPath.includes(f.name))) gaps.push('요청 본문 필드가 없음');
   }
@@ -264,6 +268,11 @@ export function specGaps(i: Interface): string[] {
   if (i.kind === 'rest' && !i.path.startsWith('/')) gaps.push('REST 경로가 /로 시작하지 않음');
   if (i.kind === 'grpc' && !IDENT.test(i.path)) gaps.push('gRPC 메서드 이름이 영문 식별자가 아님 (예: CreateOrder)');
   if (i.kind === 'grpc' && !i.request.length) gaps.push('요청 필드가 없음');
+  // proto3는 필드마다 JSON 이름(밑줄을 빼고 camelCase)을 만들고, 겹치면 protoc가 거부한다 (user_id와 userId)
+  if (i.kind === 'grpc') for (const fs of [i.request, i.response]) {
+    const json = fs.map((f) => f.name.replace(/_+([^_])/g, (_, c: string) => c.toUpperCase()));
+    for (const [k, f] of fs.entries()) if (json.indexOf(json[k]) < k) gaps.push(`필드 ${f.name}의 JSON 이름(${json[k]})이 ${fs[json.indexOf(json[k])].name}과 겹침 (protoc가 거부함)`);
+  }
   if (call && !i.response.length && !(i.kind === 'rest' && i.method === 'DELETE')) gaps.push('응답 형식이 없음');
   if (call && !i.errors.length) gaps.push('에러 응답이 없음 (실패할 때 무엇을 돌려줄지)');
   if (call && !i.auth) gaps.push('인증 방식이 정해지지 않음');
@@ -320,12 +329,17 @@ const pascal = (s: string) => s.split('_').filter(Boolean).map((w) => w[0].toUpp
 
 function pyModel(name: string, fs: SpecField[]): string[] {
   if (!fs.length) return [];
+  const used = new Set<string>();
   return [
     `class ${name}(BaseModel):`,
     ...(fs.some((f) => needsAlias(f.name)) ? ['    model_config = ConfigDict(populate_by_name=True)'] : []),
     ...fs.map((f) => {
-      const t = PY_TYPE[f.type], args = [f.required ? '...' : 'None', ...(needsAlias(f.name) ? [`alias=${py(f.name)}`] : []), ...(f.description ? [`description=${py(f.description)}`] : [])];
-      return `    ${pyName(f.name)}: ${f.required ? t : `Optional[${t}]`} = Field(${args.join(', ')})`;
+      // class와 class_처럼 파이썬 이름이 겹치면 _2 (앞 필드가 조용히 사라지지 않게)
+      let n = pyName(f.name);
+      for (let k = 2; used.has(n); k++) n = `${pyName(f.name)}_${k}`;
+      used.add(n);
+      const t = PY_TYPE[f.type], args = [f.required ? '...' : 'None', ...(n !== f.name ? [`alias=${py(f.name)}`] : []), ...(f.description ? [`description=${py(f.description)}`] : [])];
+      return `    ${n}: ${f.required ? t : `Optional[${t}]`} = Field(${args.join(', ')})`;
     }),
     '', '',
   ];
@@ -344,14 +358,23 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
       const arg = (n: string) => { let x = n; for (let k = 2; used.has(x); k++) x = `${n}_${k}`; used.add(x); return x; };
       // Starlette는 영문 식별자 경로 변수만 받으므로 그 밖의 이름({order-id}, {주문})은 이 파일의 경로에서도 파이썬 이름으로 바꾼다 (명세 점검이 알림)
       let route = i.path;
+      // Annotated: 기본값 없는 인자라 뒤에 오는 본문(body) 인자와 순서가 어긋나지 않는다
+      const pathArgs = o.inPath.map((f) => {
+        const t = PY_TYPE[f.type];
+        if (!IDENT.test(f.name)) { const n = arg(`f_${safe(f.name)}`); route = route.split(`{${f.name}}`).join(`{${n}}`); return `${n}: ${t}`; }
+        const n = arg(PY_KEYWORDS.has(f.name) ? `${f.name}_` : f.name);
+        return n === f.name ? `${n}: ${t}` : `${n}: Annotated[${t}, Path(alias=${py(f.name)})]`;
+      });
+      // 같은 경로 변수가 두 번 나오면(명세 점검이 알림) Starlette가 거부하므로 두 번째부터 새 이름
+      const seen = new Set<string>();
+      route = route.replace(PATH_VAR, (m, v: string) => {
+        if (!seen.has(v)) { seen.add(v); return m; }
+        const n = arg(v);
+        pathArgs.push(`${n}: str`);
+        return `{${n}}`;
+      });
       const params = [
-        // Annotated: 기본값 없는 인자라 뒤에 오는 본문(body) 인자와 순서가 어긋나지 않는다
-        ...o.inPath.map((f) => {
-          const t = PY_TYPE[f.type];
-          if (!IDENT.test(f.name)) { const n = arg(`f_${safe(f.name)}`); route = route.replace(`{${f.name}}`, `{${n}}`); return `${n}: ${t}`; }
-          const n = arg(PY_KEYWORDS.has(f.name) ? `${f.name}_` : f.name);
-          return n === f.name ? `${n}: ${t}` : `${n}: Annotated[${t}, Path(alias=${py(f.name)})]`;
-        }),
+        ...pathArgs,
         ...o.query.map((f) => {
           // 객체·배열은 질의 문자열로 못 받아 JSON 문자열로 받는다
           const t = f.type === 'object' || f.type === 'array' ? 'str' : PY_TYPE[f.type], n = arg(pyName(f.name));
@@ -364,7 +387,7 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
       const ret = i.response.length ? `${P}Response` : 'None';
       const errs = groupErrors(i);
       const deco = [
-        py(route), ...(i.response.length ? [`response_model=${P}Response`] : ['status_code=204', 'response_class=Response']), `summary=${py(i.name)}`,
+        py(route), ...(i.response.length ? [`response_model=${P}Response`] : ['status_code=204', 'response_class=Response']), `operation_id=${py(o.opId)}`, `summary=${py(i.name)}`,
         ...(i.description ? [`description=${py(i.description)}`] : []),
         ...(errs.length ? [`responses={${errs.map(([st, list]) => `${st}: {"description": ${py(list.map((x) => `${x.code ? `${x.code}: ` : ''}${x.description}`).join(' / '))}, "content": PROBLEM_JSON}`).join(', ')}}`] : []),
       ];

@@ -102,7 +102,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
                 ['이벤트 피크 RPS', fmtMetric(t.peakRpsEvent)], ['이벤트 쓰기', fmtMetric(t.peakWriteRpsEvent)], ['하루 송신', fmtMetric(t.egressGbPerDay)],
                 ['저장량', a.storage?.tablesGb ? `테이블 합계 ${fmtMetric(a.storage.tablesGb)} (페르소나 추정 ${fmtMetric(a.storage.personaGb)})` : fmtMetric(t.storageGbWithOverhead)],
               ]} />
-              {t.assumptions.length > 0 && <ul>{t.assumptions.map((s) => <li key={s}>⚠️ {s}</li>)}</ul>}
+              {t.assumptions.length > 0 && <ul>{t.assumptions.map((s, k) => <li key={k}>⚠️ {s}</li>)}</ul>}
             </>}
             {p.actions.length > 0 && <p>행동: {p.actions.map((x) => `${x.name}(접속당 ${x.per_session}회 → ${x.writes.map((w) => `${w.node}.${w.table}${w.rows !== 1 ? ` ${w.rows}행` : ''}`).join(', ')})`).join(' · ')}</p>}
           </section>
@@ -135,7 +135,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
                 <div key={n.id} className={`r-card v-${c.verdict ?? 'none'}`}>
                   <div className="r-card-head"><b>{c.title}</b><span>{c.verdict ? VERDICT_NAMES[c.verdict] : '항목 없음'}</span></div>
                   <table><tbody>{c.rows.map((r) => (
-                    <tr key={r.label}><th>{r.label}</th><td>{r.lines.length ? r.lines.map((l) => <div key={l}>{l}</div>) : <span className="muted">없음</span>}</td></tr>
+                    <tr key={r.label}><th>{r.label}</th><td>{r.lines.length ? r.lines.map((l, k) => <div key={k}>{l}</div>) : <span className="muted">없음</span>}</td></tr>
                   ))}</tbody></table>
                 </div>
               );
@@ -171,7 +171,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
             <H n={10}>가용성 · 성장 타임라인</H>
             <ul>{a.paths.map((pa) => <li key={pa.nodes.join()}>{pa.nodes.map(name).join(' → ')}: 가용성 {fmtMetric(pa.availability)}, 월 중단 {fmtMetric(pa.downtime)}</li>)}</ul>
             {a.spof.length > 0 && <p>단일 장애점: {a.spof.map(name).join(', ')}</p>}
-            {a.failure && a.failure.regions.length > 0 && <ul>{regionLines(a.failure, name).map((l) => <li key={l}>{l}</li>)}</ul>}
+            {a.failure && a.failure.regions.length > 0 && <ul>{regionLines(a.failure, name).map((l, k) => <li key={k}>{l}</li>)}</ul>}
             {a.growth && <ul>
               {a.growth.milestones.map((ms) => <li key={ms.nodeId}>{name(ms.nodeId)}: {milestoneText(ms)}</li>)}
               {a.growth.tables.map((ms) => <li key={ms.nodeId}>{ms.nodeId}: {ms.month === undefined ? '서버 메모리에 닿지 않음' : `${ms.month}개월째 서버 메모리를 넘음, ${ms.startMonth}개월째 파티션 착수`}</li>)}
@@ -189,7 +189,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
 
           <section>
             <H n={12}>미해결 ❌·⚠️ 목록</H>
-            {(() => { const xs = openIssues(p, a, catalog.byId); return xs.length ? <ul>{xs.map((x) => <li key={x}>{x}</li>)}</ul> : <p className="muted">없습니다.</p>; })()}
+            {(() => { const xs = openIssues(p, a, catalog.byId); return xs.length ? <ul>{xs.map((x, k) => <li key={k}>{x}</li>)}</ul> : <p className="muted">없습니다.</p>; })()}
           </section>
 
           <section>

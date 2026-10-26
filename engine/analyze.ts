@@ -113,7 +113,8 @@ export function sizeAt(n: ProjectNode, perRps: number, maxInstances: number, rps
     return { N, util: N ? rps / (N * perRps) : 0, p99: n.perf && nodeP99(rps, n.perf.service_ms, N * n.perf.workers, n.perf.service_p99_ms) };
   }
   const reads = rps * (1 - db.writeShare), onPrimary = db.replicas ? rps - reads : rps;
-  const replicas = db.replicas && reads > 0 ? Math.min(Math.max(0, maxInstances - 1), Math.ceil(reads / (perRps * u))) : 0;
+  // 최소 대수를 올리면 그만큼 복제본이 늘 떠 있으므로 읽기도 나눠 받는다 (비용이 세는 대수와 용량이 세는 대수를 같게)
+  const replicas = db.replicas && reads > 0 ? Math.min(Math.max(0, maxInstances - 1), Math.max(Math.ceil(reads / (perRps * u)), n.min_instances - 1)) : 0;
   const util = Math.max(onPrimary / perRps, replicas ? reads / (replicas * perRps) : 0);
   return { N: Math.max(n.min_instances, 1 + replicas), util, p99: n.perf && nodeP99(onPrimary, n.perf.service_ms, n.perf.workers, n.perf.service_p99_ms) };
 }

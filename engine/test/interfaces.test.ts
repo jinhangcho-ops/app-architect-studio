@@ -280,6 +280,29 @@ describe('감사 6: 명세 파일 정확성', () => {
     expect(text).toContain('(f___: str, f____2: str, body: str, body_2: PostOBodyRequest, _token: HTTPAuthorizationCredentials');
     expect(specGaps(p.edges.find((e) => e.from === 'U-01' && e.to === 'B-01')!.interfaces.at(-1)!).join()).toContain('경로 변수 {주문}가 영문 식별자가 아님');
   });
+  it('같은 경로 변수가 두 번이면 OpenAPI parameter는 하나, FastAPI는 두 번째 이름을 바꿈, 명세 점검이 알림', () => {
+    const x = iface({ name: 'k', kind: 'rest', method: 'GET', path: '/users/{id}/orders/{id}' });
+    const doc = openApiDocs(two([x]))[0].doc as { paths: Record<string, { get: { parameters: { name: string; in: string }[] } }> };
+    expect(doc.paths['/users/{id}/orders/{id}'].get.parameters.filter((y) => y.in === 'path').map((y) => y.name)).toEqual(['id']);
+    const text = fastApiFiles(withEdge(ledger, 'U-01', 'B-01', [x]))[0].text;
+    expect(text).toContain('@app.get("/users/{id}/orders/{id_2}"');
+    expect(text).toContain('def get_users_id_orders_id(id: str, id_2: str');
+    expect(text).toContain('operation_id="get_users_id_orders_id"');
+    expect(specGaps(x).join()).toContain('경로 변수 {id}가 두 번 나옴');
+  });
+  it('FastAPI 모델: class와 class_가 같이 있어도 둘 다 남음', () => {
+    const p = withEdge(ledger, 'U-01', 'B-01', [iface({ name: 'k', kind: 'rest', method: 'POST', path: '/k',
+      request: [{ name: 'class', type: 'string', required: true }, { name: 'class_', type: 'string', required: true }] })]);
+    const text = fastApiFiles(p)[0].text;
+    expect(text).toContain('class_: str = Field(..., alias="class")');
+    expect(text).toContain('class__2: str = Field(..., alias="class_")');
+  });
+  it('proto: 메서드 이름이 다른 메서드의 Request 메시지와 겹치면 _2, JSON 이름이 겹치는 필드는 명세 점검이 알림', () => {
+    const rpcs = protoFiles(two(['Get', 'GetRequest'].map((path, k) => iface({ name: `g${k}`, kind: 'grpc', path }))))[0].text.match(/rpc \w+/g);
+    expect(rpcs).toEqual(['rpc Get', 'rpc GetRequest_2']);
+    const g = iface({ name: 'g', kind: 'grpc', path: 'Get', request: [{ name: 'user_id', type: 'string', required: true }, { name: 'userId', type: 'string', required: true }] });
+    expect(specGaps(g).join()).toContain('필드 userId의 JSON 이름(userId)이 user_id과 겹침');
+  });
   it('경로 변수 {order-id}·{주문}도 OpenAPI parameter가 됨', () => {
     const doc = openApiDocs(two([iface({ name: 'a', kind: 'rest', method: 'GET', path: '/o/{order-id}/{주문}' })]))[0].doc as { paths: Record<string, { get: { parameters: { name: string; in: string }[] } }> };
     expect(doc.paths['/o/{order-id}/{주문}'].get.parameters.filter((x) => x.in === 'path').map((x) => x.name)).toEqual(['order-id', '주문']);
@@ -298,5 +321,29 @@ describe('감사 6: 명세 파일 정확성', () => {
     const rpcs = (paths: string[]) => protoFiles(two(paths.map((path, k) => iface({ name: `g${k}`, kind: 'grpc', path }))))[0].text.match(/rpc \w+/g);
     expect(rpcs(['주문 생성', '결제'])).toEqual(['rpc Method1', 'rpc Method1_2']);
     expect(rpcs(['CreateOrder', 'create-order', 'CreateOrder'])).toEqual(['rpc CreateOrder', 'rpc CreateOrder_2']);
+  });
+});
+
+// 진짜 파서가 거부하는 모양을 JS로 검사: OpenAPI 작업 안 (in, name) 중복, FastAPI 함수 인자 중복·경로 변수 중복, proto rpc와 메시지 이름 충돌
+describe('내보낸 명세의 구조 규칙 (예시 전체 + 까다로운 이름)', () => {
+  const tricky = withEdge(ledger, 'U-01', 'B-01', ['/a/{id}/b/{id}', '/o/{주문}/{번호}/{body}', '/k/{1}/{class}/{order-id}', '/x/{_token}/{body_2}'].map((path, k) =>
+    iface({ name: `r${k}`, kind: 'rest', method: k % 2 ? 'POST' : 'GET', path, auth: 'bearer', request: [{ name: 'class', type: 'string', required: true }, { name: 'class_', type: 'string', required: false }] })));
+  const grpc = withEdge(gc, 'N-03', 'N-09', ['Get', 'GetRequest', 'get', '주문', '결제', 'GetResponse'].map((path, k) => iface({ name: `g${k}`, kind: 'grpc', path })));
+  const projects = [...['actions', 'global-commerce', 'ledger-fastapi', 'phase1', 'phase2', 'phase3'].map((x) => loadProject(root(`examples/${x}.json`), catalog.items)), tricky, grpc];
+  it.each(projects.map((p, k) => [k, p] as const))('프로젝트 %i', (_, p) => {
+    for (const { doc } of openApiDocs(p)) for (const ops of Object.values((doc as { paths: Record<string, Record<string, { parameters?: { in: string; name: string }[] }>> }).paths)) {
+      for (const op of Object.values(ops)) { const keys = (op.parameters ?? []).map((x) => `${x.in}:${x.name}`); expect(new Set(keys).size).toBe(keys.length); }
+    }
+    for (const f of fastApiFiles(p)) {
+      for (const m of f.text.matchAll(/^def \w+\((.*)\) ->/gm)) { const names = m[1] ? m[1].split(/, (?=\w+:)/).map((x) => x.split(':')[0]) : []; expect(new Set(names).size, m[0]).toBe(names.length); }
+      for (const m of f.text.matchAll(/^@app\.\w+\("([^"]*)"/gm)) { const vars = [...m[1].matchAll(/\{([^}]*)\}/g)].map((x) => x[1]); expect(new Set(vars).size).toBe(vars.length); for (const v of vars) expect(v).toMatch(/^[A-Za-z_]\w*$/); }
+      for (const m of f.text.matchAll(/^class \w+\(BaseModel\):\n((?: {4}.*\n)*)/gm)) { const names = [...m[1].matchAll(/^ {4}(\w+): /gm)].map((x) => x[1]); expect(new Set(names).size).toBe(names.length); }
+    }
+    for (const { text } of protoFiles(p)) {
+      const rpcs = [...text.matchAll(/rpc (\w+)/g)].map((x) => x[1]), msgs = [...text.matchAll(/^message (\w+)/gm)].map((x) => x[1]);
+      expect(new Set(rpcs).size).toBe(rpcs.length);
+      expect(new Set(msgs).size).toBe(msgs.length);
+      expect(rpcs.filter((r) => msgs.includes(r))).toEqual([]);
+    }
   });
 });

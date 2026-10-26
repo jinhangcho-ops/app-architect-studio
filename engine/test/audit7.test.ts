@@ -70,3 +70,16 @@ describe('10 기본값이 코드 값 목록에 없으면 경고', () => {
     expect(schemaWarnings(q, catalog.byId).map((w) => w.text)).toContain('status: 기본값 NEW가 코드 값 목록에 없음 (CHECK 제약 때문에 기본값으로 행을 넣지 못함)');
   });
 });
+
+describe('감사 7: 키에 같은 컬럼 두 번, 이름 길이 한도', () => {
+  it('PostgreSQL DB 노드', () => {
+    const p = readProject(raw('global-commerce'), catalog.items);
+    const n = p.nodes.find((x) => x.layer === 'db')!;
+    const long = 'x'.repeat(64);
+    const t = { name: 'orders_x', columns: [{ name: 'id', type: 'bigint', nullable: false }, { name: long, type: 'text', nullable: true }], primary_key: ['id', 'id'], indexes: [] };
+    const q = { ...p, nodes: p.nodes.map((x) => (x === n ? { ...x, tables: [t] } : x)) } as unknown as Project;
+    const texts = schemaWarnings(q, catalog.byId).map((w) => w.text);
+    expect(texts).toContain('기본 키: 컬럼 id가 두 번 들어 있음 (PostgreSQL·MySQL이 거부함)');
+    expect(texts).toContain(`이름이 PostgreSQL 한도 63바이트를 넘음: ${long}`);
+  });
+});

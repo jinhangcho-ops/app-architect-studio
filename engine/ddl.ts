@@ -144,6 +144,14 @@ export function schemaWarnings(p: Project, byId: Map<string, CatalogItem>): { no
         if (t.record === 'fixed' && c.type === 'json') warn(`${c.name}: 고정장 테이블의 JSON 컬럼은 길이가 정해지지 않아 가변장으로 저장됨`);
         else if (t.record === 'fixed' && (c.type === 'text' || c.type === 'bytes') && !c.max_length) warn(`${c.name}: 고정장 테이블인데 최대 길이(바이트)가 없어 가변장으로 저장됨`);
       }
+      // PostgreSQL·MySQL은 키 안에 같은 컬럼이 두 번 있으면 CREATE를 거부한다 (SQLite는 받음)
+      for (const [name, cols] of [['기본 키', t.primary_key], ...t.indexes.map((ix) => [`인덱스 ${ix.name}`, ix.columns])] as [string, string[]][]) {
+        const twice = [...new Set(cols.filter((c, k) => cols.indexOf(c) !== k))];
+        if (twice.length) warn(`${name}: 컬럼 ${twice.join(', ')}가 두 번 들어 있음 (PostgreSQL·MySQL이 거부함)`);
+      }
+      // 이름 길이 한도: PostgreSQL 63바이트(넘으면 잘려 다른 이름과 겹칠 수 있음), MySQL 64글자(넘으면 거부)
+      const limit = d === 'postgres' ? (x: string) => new TextEncoder().encode(x).length > 63 : d === 'mysql' ? (x: string) => [...x].length > 64 : undefined;
+      if (limit) for (const x of [t.name, ...t.columns.map((c) => c.name), ...t.indexes.map((ix) => ix.name)].filter(limit)) warn(`이름이 ${d === 'postgres' ? 'PostgreSQL 한도 63바이트' : 'MySQL 한도 64글자'}를 넘음: ${x}`);
       // MySQL(InnoDB) 키 한도 3072바이트. utf8mb4 CHAR·VARCHAR(n)은 n × 4바이트
       if (d === 'mysql') {
         const keys = keyCols(t);

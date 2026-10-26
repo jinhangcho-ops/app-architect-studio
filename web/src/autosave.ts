@@ -88,7 +88,7 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 let forceNew = false;
 
 /** 다음 자동 저장은 최신 시점을 덮어쓰지 않고 새 시점으로 (예전 시점을 복구했거나 복구 안내를 닫았을 때 최신 시점을 지키려고) */
-export function startNewSnapshot() { forceNew = true; }
+export function startNewSnapshot() { forceNew = true; folderLatest = undefined; }
 
 /** 마지막 편집 뒤 WAIT_MS만큼 조용하면 저장한다 (한 글자마다 쓰지 않게). 못 쓰면 onFail (복구 시점이 없다고 알리게) */
 export function scheduleAutosave(p: Project, positions: Record<string, XY>, onFail?: () => void, storage: Store = local()) {
