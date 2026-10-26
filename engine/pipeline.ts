@@ -2,7 +2,7 @@
 // 큐: 소비자 그룹마다 모든 메시지를 받는다(Kafka 소비자 그룹). 도착 = 큐 → 소비자 연결선으로 흐르는 양, 처리량 = 병렬 수 × (1000 / 평균 처리 ms).
 //     병렬 수 = 소비자 대수 × 대당 동시 처리, 파티션 수가 있으면 그것을 넘지 못한다(파티션 하나는 소비자 하나만 읽는다).
 //     하루를 시간 칸으로 돌려 적체(건)를 쌓고 빼며, 지연 = 적체 / 처리량 + 1건 처리 시간. 하루 평균 도착이 처리량 이상이면 적체가 끝없이 는다.
-// 배치(batch.every_min이 있는 노드): 주기 동안 들어온 양을 한 번에 처리한다. 1회 실행 = 그 양 / 처리량, 실행 창(window_min, 없으면 주기) 안에 끝나야 한다.
+// 배치(batch.every_min이 있는 노드): 주기 동안 들어온 양을 한 번에 처리한다 (1회 양은 하루 중 주기 길이 창의 가장 큰 합). 1회 실행 = 그 양 / 처리량, 실행 창(window_min, 없으면 주기) 안에 끝나야 한다.
 //     데이터가 늦어지는 최대 시간(신선도) = 주기 + 1회 실행.
 // 자동 확장 소비자(autoscale): KEDA처럼 도는 하루를 30초 칸(KEDA 확인 주기 기본값)으로 시뮬레이션한다. 도착은 1분 단위 트래픽 곡선(페르소나·하루 피크의 기대 곡선, dayCurve).
 //     확인 주기(poll_s)마다 필요 대수 = ceil(지금 도착 × 처리 초 / (대당 동시 처리 × 목표 사용률))를 최소 대수 ~ 최대 대수(없으면 파티션 수 / 대당 동시 처리)로 자른다.
@@ -148,7 +148,6 @@ export function pipelineFlows(p: Project, loads: Map<string, NodeLoad>, shape: n
     const flow: PipelineFlow = { from: e.from, to: e.to, kind, arrival, limit: limitOf };
     if (to.perf) {
       const perf = to.perf, cap = kind === 'queue' && from.partitions ? from.partitions : Infinity;
-      const day = (s: 'normal' | 'event') => shape.map((x) => arrival[s] * x);
       const a = kind === 'queue' ? to.autoscale : undefined;
       const fixedN = (s: 'normal' | 'event') => instances(to.id, s) ?? Math.max(1, to.replicas, to.min_instances);
       const step = a ? 1 : p.scale?.queue_step_min ?? 60;
@@ -191,9 +190,18 @@ export function pipelineFlows(p: Project, loads: Map<string, NodeLoad>, shape: n
         flow.lag = pair((s) => m(res(s).lag, '초', lagHow, { 적체: res(s).backlog }));
       } else {
         const every = to.batch!.every_min;
+        // 1회 양 = 1분 곡선에서 주기 길이 창(자정을 넘어 이어짐)의 가장 큰 합. 하루 이상 주기는 하루 합 × 주기 / 1440
+        const mins = minute ?? shape.flatMap((x) => Array<number>(60).fill(x));
+        // 분 단위가 아닌 주기는 가장 가까운 정수 분 창으로 찾고 비율만큼 늘인다
+        const k = Math.max(1, Math.round(every));
+        const peakWin = k >= mins.length ? (sum(mins) * every) / mins.length : (() => {
+          let w = sum(mins.slice(0, k)), best = w;
+          for (let i = 1; i < mins.length; i++) { w += mins[(i + k - 1) % mins.length] - mins[i - 1]; if (w > best) best = w; }
+          return (best * every) / k;
+        })();
         const run = (s: 'normal' | 'event') => {
-          const perRun = (day(s).reduce((a, x) => a + x, 0) * 3600 * every) / 1440;
-          return m(perRun / at(s).mu, '초', '주기 동안 들어온 양 / 처리량', { 주기분: every, 건수: perRun, 처리량: at(s).mu });
+          const perRun = arrival[s] * peakWin * 60;
+          return m(perRun / at(s).mu, '초', '주기 길이 창에 들어온 가장 큰 양 / 처리량', { 주기분: every, 건수: perRun, 처리량: at(s).mu });
         };
         flow.run = { normal: run('normal'), event: run('event') };
         flow.lag = {

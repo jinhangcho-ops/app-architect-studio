@@ -5,7 +5,7 @@ import { COLUMN_TYPES, nodeStorageProfile, selectedFeatures, STORAGE_FORMATS, ST
 import { parseSpec } from '../../engine/spec';
 import { schemaWarnings } from '../../engine/ddl';
 import { catalog } from './data';
-import { addTable, importTables, patchAt, removeColumn, removeTable, renameColumn, setFeature, updateNode, updateTable } from './edit';
+import { addTable, freeK, importTables, patchAt, removeColumn, removeTable, renameColumn, setFeature, updateNode, updateTable } from './edit';
 import { NumField, Row, Section, TextField } from './fields';
 import { usePick } from './store';
 
@@ -65,7 +65,8 @@ export function TablesSection({ node }: { node: ProjectNode }) {
         {report.ok && <p>{report.ok}</p>}
         {report.errors.length > 0 && <ul className="warn">{report.errors.map((e) => <li key={e}>{e}</li>)}</ul>}
       </details>
-      {node.tables.map((t) => <TableEditor key={t.name} node={node} t={t} />)}
+      {/* 이름이 겹친 깨진 파일에서도 키가 겹치지 않게 순서를 더한다 */}
+      {node.tables.map((t, i) => <TableEditor key={`${i}:${t.name}`} node={node} t={t} />)}
       <button onClick={() => edit((p) => addTable(p, node.id))}>테이블 추가</button>
     </Section>
   );
@@ -126,7 +127,7 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
         <tbody>{t.columns.map((c, i) => (
           // 글자 칸은 BlurInput이 값마다 새로 그려서 줄 키는 순서만 — 이름을 저장해도 옆 칸 포커스가 남는다
           <tr key={i}>
-            <td><BlurInput value={c.name} onSave={(v) => { const r = v && renameColumn(t, c.name, v); if (r) upd(r); }} /></td>
+            <td><BlurInput value={c.name} onSave={(v) => { const r = v && renameColumn(t, i, v); if (r) upd(r); }} /></td>
             <td><Select value={c.type} onChange={(e) => setCol(i, { type: e.target.value as Column['type'] })}>
               {COLUMN_TYPES.map((x) => <option key={x}>{x}</option>)}
             </Select></td>
@@ -141,7 +142,7 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
           </tr>
         ))}</tbody>
       </table></div>
-      <button onClick={() => upd({ columns: [...t.columns, { name: `col_${t.columns.length + 1}`, type: 'text', nullable: false, personal: false }] })}>컬럼 추가</button>
+      <button onClick={() => upd({ columns: [...t.columns, { name: `col_${freeK(t.columns.map((c) => c.name), (k) => `col_${k}`, t.columns.length + 1)}`, type: 'text', nullable: false, personal: false }] })}>컬럼 추가</button>
 
       <details>
         <summary>데이터 사전 (논리명·도메인·코드 값·기본값·개인정보)</summary>

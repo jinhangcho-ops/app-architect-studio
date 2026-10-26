@@ -8,6 +8,8 @@
 v2 analyze_python_file의 핵심(상시/지연 import 판별)만 옮겼다. 한국어 설명 문장 생성은 하지 않는다.
 """
 import ast
+import contextlib
+import io
 import json
 import os
 import re
@@ -33,11 +35,22 @@ def module_id(root: str, path: str) -> str:
 
 
 def analyze_file(root: str, path: str) -> dict:
-    with open(path, encoding="utf-8") as f:
+    with open(path, encoding="utf-8-sig") as f:  # utf-8-sig: 맨 앞 BOM이 있어도 읽는다
         tree = ast.parse(f.read(), filename=path)
-    eager, lazy, hints = [], [], set()
+    name = module_id(root, path)
+    # 상대 import 기준 패키지: __init__.py면 자기 자신, 아니면 부모
+    package = name.split(".") if os.path.basename(path) == "__init__.py" else name.split(".")[:-1]
+    eager, lazy, hints, relative = [], [], set(), set()
     for node in ast.walk(tree):
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
+        if isinstance(node, ast.ImportFrom) and node.level:
+            # from .x import y → 패키지.x, from . import y → 패키지.y. 폴더 밖으로 올라가면 버린다
+            if node.level - 1 > len(package):
+                continue
+            base = package[:len(package) - (node.level - 1)]
+            names = [".".join(base + [node.module])] if node.module else [".".join(base + [a.name]) for a in node.names]
+            relative.update(names)  # 프로젝트 안 모듈이므로 바깥 라이브러리 매칭에 쓰지 않는다
+            (eager if node in tree.body else lazy).extend(names)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
             names = [a.name for a in node.names] if isinstance(node, ast.Import) else [node.module or ""]
             # 파일 맨 위(모듈 본문 바로 아래)에 있으면 상시, 함수·클래스 안이면 지연 로드
             (eager if node in tree.body else lazy).extend(n for n in names if n)
@@ -47,11 +60,11 @@ def analyze_file(root: str, path: str) -> dict:
             hints.add(node.attr)
         elif isinstance(node, ast.Constant) and isinstance(node.value, str) and PRIVACY_HINT.fullmatch(node.value):
             hints.add(node.value)
-    name = module_id(root, path)
     lowered = name.lower()
     layer = "batch" if re.search(r"(worker|batch|job|cron|consumer)", lowered) else "backend"
     return {"id": name, "file": os.path.relpath(path, root), "layer": layer,
-            "eager": sorted(set(eager)), "lazy": sorted(set(lazy)), "privacy_hints": sorted(hints)}
+            "eager": sorted(set(eager)), "lazy": sorted(set(lazy)), "privacy_hints": sorted(hints),
+            "relative": relative}  # analyze_folder가 쓰고 지운다(출력 형식 그대로)
 
 
 def analyze_folder(root: str) -> dict:
@@ -60,10 +73,15 @@ def analyze_folder(root: str) -> dict:
         dirnames[:] = [d for d in dirnames if not d.startswith((".", "__pycache__", "venv", ".venv", "node_modules"))]
         for fn in sorted(filenames):
             if fn.endswith(".py"):
-                modules.append(analyze_file(root, os.path.join(dirpath, fn)))
+                path = os.path.join(dirpath, fn)
+                try:
+                    modules.append(analyze_file(root, path))
+                except (SyntaxError, UnicodeDecodeError) as e:  # 파일 하나 때문에 폴더 전체가 멈추지 않게
+                    print(f"건너뜀: {os.path.relpath(path, root)} ({type(e).__name__}: {e})", file=sys.stderr)
     ids = {m["id"] for m in modules}
     edges, matches = [], []
     for m in modules:
+        relative = m.pop("relative")
         for imp in m["eager"] + m["lazy"]:
             # 같은 폴더 안의 모듈을 부르면 연결선, 아니면 바깥 라이브러리로 본다
             # 패키지(services)와 그 안의 모듈(services.order_worker)이 둘 다 맞으면 더 구체적인 쪽(긴 이름)
@@ -72,7 +90,7 @@ def analyze_folder(root: str) -> dict:
                 edges.append({"from": m["id"], "to": target})
                 continue
             top = imp.split(".")[0]
-            if top in LIBRARY_ITEM:
+            if top in LIBRARY_ITEM and imp not in relative:
                 matches.append({"module": m["id"], "library": top, "item": LIBRARY_ITEM[top], "eager": imp in m["eager"]})
     uniq = lambda xs: [dict(t) for t in {tuple(sorted(x.items())) for x in xs}]
     return {"source": os.path.abspath(root), "modules": modules,
@@ -97,6 +115,24 @@ def self_test() -> None:
         assert {"from": "main", "to": "services.order_worker"} in r["edges"], r["edges"]
         assert {"module": "main", "library": "redis", "item": "valkey", "eager": True} in r["matches"]
         assert {"module": "services.order_worker", "library": "sqlite3", "item": "sqlite", "eager": False} in r["matches"]
+    # 상대 import는 프로젝트 안 모듈로 풀고 바깥 라이브러리로 보지 않는다. 문법 오류 파일은 건너뛰고 BOM 파일은 읽는다
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, "app"))
+        files = {"app/__init__.py": "", "app/redis.py": "def cache(): pass\n", "app/models.py": "x = 1\n",
+                 "app/service.py": "from .redis import cache\nfrom . import models\n",
+                 "top.py": "from .redis import y\n", "bad.py": "x = (\n", "bom.py": "\ufeffimport os\n"}
+        for rel, text in files.items():
+            with open(os.path.join(d, rel), "w", encoding="utf-8") as f:
+                f.write(text)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            r = analyze_folder(d)
+        ids = {m["id"]: m for m in r["modules"]}
+        assert "bad" not in ids and "건너뜀" in err.getvalue() and "bad.py" in err.getvalue(), err.getvalue()
+        assert ids["bom"]["eager"] == ["os"], ids["bom"]
+        assert {"from": "app.service", "to": "app.redis"} in r["edges"], r["edges"]
+        assert {"from": "app.service", "to": "app.models"} in r["edges"], r["edges"]
+        assert not [x for x in r["matches"] if x["library"] == "redis"], r["matches"]
     print("SELF_TEST_OK")
 
 

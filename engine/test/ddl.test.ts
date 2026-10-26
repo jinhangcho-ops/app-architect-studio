@@ -275,24 +275,40 @@ describe('1.2.0 파일 열기와 스키마 경고 (리뷰 1)', () => {
     expect(() => readProject({ name: 1 }, catalog.items)).toThrow(/검증 실패/);
   });
 
-  it('MySQL: VARCHAR 한도(16383) 넘으면 TEXT, 행 합 65535바이트·JSON 키·TEXT 키는 경고', () => {
+  // TEXT는 65535바이트(utf8mb4 16383글자)까지라 그보다 긴 글자는 MEDIUMTEXT (감사 4 H4)
+  it('MySQL: VARCHAR 한도(16383) 넘으면 MEDIUMTEXT, 행 합 65535바이트·JSON 키·MEDIUMTEXT 키는 경고', () => {
     const t = Table.parse({ name: 'm', columns: [
-      { name: 'memo', type: 'text', max_length: 65535 }, { name: 'j', type: 'json' }, { name: 'k', type: 'text', max_length: 20000 },
+      { name: 'memo', type: 'text', max_length: 65535, default_value: 'x' }, { name: 'j', type: 'json' }, { name: 'k', type: 'text', max_length: 20000 },
       { name: 'a', type: 'text', max_length: 10000 }, { name: 'b', type: 'text', max_length: 10000 },
     ], primary_key: ['k'], indexes: [{ name: 'ij', columns: ['j'] }] });
     const s = tableDdl(t, 'mysql');
-    expect(s).toContain('`memo` TEXT NOT NULL');
-    expect(s).toContain('`k` TEXT NOT NULL');
+    expect(s).toContain("`memo` MEDIUMTEXT NOT NULL DEFAULT ('x')");
+    expect(s).toContain('`k` MEDIUMTEXT NOT NULL');
     expect(s).toContain('`a` VARCHAR(10000) NOT NULL');
     const p = Project.parse({ name: 'p', nodes: [{ id: 'db', name: 'DB', layer: 'db', primary: 'mysql', tables: [t] }] });
     expect(schemaWarnings(p, catalog.byId).map((w) => w.text)).toEqual([
-      // 10000 × 4 × 2
-      'VARCHAR·CHAR·VARBINARY·BINARY 합이 utf8mb4로 최대 80000바이트라 MySQL 행 한도 65535바이트를 넘음 (긴 컬럼은 길이를 비워 TEXT로)',
+      // (10000 × 4 + 2) × 2 + MEDIUMTEXT·JSON 포인터 12 × 3
+      '컬럼 크기 합이 utf8mb4로 최대 80040바이트라 MySQL 행 한도 65535바이트를 넘음 (긴 컬럼은 길이를 비워 TEXT로)',
       'j: MySQL은 JSON 컬럼을 기본 키·인덱스에 쓸 수 없음',
-      'k: 최대 길이 20000가 VARCHAR 한도 16383를 넘어 TEXT가 되는데, MySQL은 TEXT를 키로 쓸 수 없음',
+      'k: 최대 길이 20000가 VARCHAR 한도 16383를 넘어 MEDIUMTEXT가 되는데, MySQL은 MEDIUMTEXT를 키로 쓸 수 없음',
     ]);
     // PostgreSQL은 그대로 VARCHAR
     expect(tableDdl(t, 'postgres')).toContain('"memo" VARCHAR(65535)');
+  });
+
+  it('MySQL 행 크기: VARCHAR 길이 접두 2바이트와 고정 크기 타입도 셈 (감사 4 H5)', () => {
+    const warns = (columns: object[]) => schemaWarnings(Project.parse({ name: 'p', nodes: [{ id: 'db', name: 'DB', layer: 'db', primary: 'mysql',
+      tables: [{ name: 't', columns }] }] }), catalog.byId).map((w) => w.text);
+    // BIGINT 8 + VARCHAR(16383) 16383 × 4 + 2 + DATETIME(6) 8 = 65550
+    expect(warns([{ name: 'id', type: 'bigint' }, { name: 'body', type: 'text', max_length: 16383 }, { name: 'created', type: 'timestamp' }]))
+      .toEqual(['컬럼 크기 합이 utf8mb4로 최대 65550바이트라 MySQL 행 한도 65535바이트를 넘음 (긴 컬럼은 길이를 비워 TEXT로)']);
+    // VARCHAR(16000) 64002 + INT 4 + DOUBLE 8 + DECIMAL 9 + BOOLEAN 1 + DATE 3 + BINARY(16) 16 + CHAR(36) 144 + TEXT 12 = 64199 → 경고 없음
+    expect(warns([{ name: 'v', type: 'text', max_length: 16000 }, { name: 'i', type: 'int' }, { name: 'f', type: 'float' }, { name: 'n', type: 'numeric' },
+      { name: 'b', type: 'bool' }, { name: 'd', type: 'date' }, { name: 'u1', type: 'uuid', storage: 'blob' }, { name: 'u2', type: 'uuid', storage: 'text' }, { name: 'm', type: 'text' }])).toEqual([]);
+    // 같은 묶음에 VARBINARY(1400) 1402를 더하면 65601 → 경고
+    expect(warns([{ name: 'v', type: 'text', max_length: 16000 }, { name: 'i', type: 'int' }, { name: 'f', type: 'float' }, { name: 'n', type: 'numeric' },
+      { name: 'b', type: 'bool' }, { name: 'd', type: 'date' }, { name: 'u1', type: 'uuid', storage: 'blob' }, { name: 'u2', type: 'uuid', storage: 'text' }, { name: 'm', type: 'text' },
+      { name: 'vb', type: 'bytes', max_length: 1400 }])).toEqual(['컬럼 크기 합이 utf8mb4로 최대 65601바이트라 MySQL 행 한도 65535바이트를 넘음 (긴 컬럼은 길이를 비워 TEXT로)']);
   });
 });
 

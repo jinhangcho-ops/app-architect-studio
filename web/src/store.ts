@@ -29,8 +29,9 @@ type State = {
   /** 되돌리기(Ctrl+Z)·다시 하기(Ctrl+Y)용 이전·다음 프로젝트 */
   past: Project[];
   future: Project[];
-  undo: () => void;
-  redo: () => void;
+  /** 되돌린 뒤 다른 프로젝트를 불러오기 전으로 넘어갔으면 true (열린 파일 경로가 더는 맞지 않는다) */
+  undo: () => boolean;
+  redo: () => boolean;
   /** Ctrl+C로 복사한 노드 */
   clipboard?: Project['nodes'][number];
   /** 찾기에서 고른 노드로 캔버스를 옮기라는 요청 (캔버스가 처리하고 지운다) */
@@ -42,6 +43,8 @@ const HISTORY = 100;
 // 숫자 칸을 한 글자씩 고칠 때마다 기록이 쌓이지 않게, 이 시간 안에 이어진 편집은 한 번으로 묶는다
 const MERGE_MS = 500;
 let lastEdit = 0;
+/** load로 들어온 프로젝트. 되돌리기·다시 하기가 이것을 지나면 불러오기 경계를 넘은 것 */
+const loaded = new WeakSet<Project>();
 /** 지금 프로젝트를 되돌리기 기록에 넣는다 (바로 전 편집과 묶이면 넣지 않는다) */
 const remember = (s: State, merge: boolean): Pick<State, 'past' | 'future'> => {
   const now = Date.now();
@@ -53,7 +56,7 @@ const remember = (s: State, merge: boolean): Pick<State, 'past' | 'future'> => {
 const first = examples.find((e) => e.name === 'phase3.json') ?? examples[0];
 const initial = parseProject(first.data, catalog.items, first.name);
 
-export const useStore = create<State>((set) => ({
+export const useStore = create<State>((set, get) => ({
   project: initial,
   baseline: initial,
   past: [],
@@ -61,7 +64,7 @@ export const useStore = create<State>((set) => ({
   positions: autoLayout(initial),
   selected: null,
   // 다른 프로젝트를 불러오는 것도 되돌릴 수 있다
-  load: (p, positions) => set((s) => ({ ...remember(s, false), project: p, baseline: p, positions: { ...autoLayout(p), ...positions }, selected: null, focus: undefined })),
+  load: (p, positions) => { loaded.add(p); set((s) => ({ ...remember(s, false), project: p, baseline: p, positions: { ...autoLayout(p), ...positions }, selected: null, focus: undefined })); },
   edit: (fn) => set((s) => {
     const project = fn(s.project);
     if (project === s.project) return {};
@@ -78,16 +81,20 @@ export const useStore = create<State>((set) => ({
   focusTab: 'servers',
   setFocus: (focus, tab = 'servers') => set({ focus, focusTab: tab, selected: null }),
   set: (patch) => set(patch),
-  undo: () => set((s) => {
-    if (!s.past.length) return {};
+  undo: () => {
+    const s = get();
+    if (!s.past.length) return false;
     lastEdit = 0;
-    return { project: s.past.at(-1)!, past: s.past.slice(0, -1), future: [s.project, ...s.future] };
-  }),
-  redo: () => set((s) => {
-    if (!s.future.length) return {};
+    set({ project: s.past.at(-1)!, past: s.past.slice(0, -1), future: [s.project, ...s.future] });
+    return loaded.has(s.project);
+  },
+  redo: () => {
+    const s = get();
+    if (!s.future.length) return false;
     lastEdit = 0;
-    return { project: s.future[0], future: s.future.slice(1), past: [...s.past, s.project] };
-  }),
+    set({ project: s.future[0], future: s.future.slice(1), past: [...s.past, s.project] });
+    return loaded.has(s.future[0]);
+  },
 }));
 
 /** 저장 파일: 프로젝트 + 노드 위치(pos). 엔진 스키마는 pos를 모르고 무시한다. */
@@ -95,11 +102,24 @@ export function exportProject(p: Project, positions: Record<string, XY>) {
   return { format_version: FORMAT_VERSION, ...p, nodes: p.nodes.map((n) => ({ ...n, pos: positions[n.id] })) };
 }
 
-/** 저장 파일 → 프로젝트와 노드 위치 (exportProject의 반대). 모양이 틀린 파일이면 던지고, checkProject 오류는 run()이 배너로 보인다 */
-export function importProject(data: unknown, name: string): { project: Project; positions: Record<string, XY> } {
+/** 저장 파일 → 프로젝트와 노드 위치 (exportProject의 반대). 모양이 틀린 파일이면 던지고, checkProject 오류는 run()이 배너로 보인다.
+ *  화면에서 고를 수도 지울 수도 없는 것(없는 노드에 닿은 연결선, 페르소나의 없는 행동 비율)은 걸러 내고 dropped로 알린다 */
+export function importProject(data: unknown, name: string): { project: Project; positions: Record<string, XY>; dropped?: string } {
   const nodes = (data as { nodes?: { id: string; pos?: XY }[] }).nodes ?? [];
   const positions = Object.fromEntries(nodes.filter((n) => n.pos).map((n) => [n.id, n.pos!]));
-  return { project: readProject(data, catalog.items, name), positions };
+  const p = readProject(data, catalog.items, name);
+  const ids = new Set(p.nodes.map((n) => n.id));
+  const acts = new Set(p.actions.map((a) => a.name));
+  const edges = p.edges.filter((e) => ids.has(e.from) && ids.has(e.to));
+  let rates = 0;
+  const personas = p.personas.map((ps) => {
+    const keep = Object.entries(ps.action_rates).filter(([k]) => acts.has(k));
+    rates += Object.keys(ps.action_rates).length - keep.length;
+    return keep.length < Object.keys(ps.action_rates).length ? { ...ps, action_rates: Object.fromEntries(keep) } : ps;
+  });
+  const lost = [p.edges.length > edges.length && `없는 노드에 닿은 연결선 ${p.edges.length - edges.length}개`, rates && `페르소나의 없는 행동 비율 ${rates}개`].filter(Boolean);
+  if (!lost.length) return { project: p, positions };
+  return { project: { ...p, edges, personas }, positions, dropped: `파일에서 고칠 수 없는 항목을 뺐습니다: ${lost.join(', ')}` };
 }
 
 /** 필요한 값만 구독한다. 노드를 끄는 동안 위치(positions)만 바뀌면 이것을 쓰는 패널은 다시 그리지 않는다 */

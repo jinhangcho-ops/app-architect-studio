@@ -19,7 +19,14 @@ const analysis = {
 };
 
 describe('관문: 코드 분석을 불러오면 카탈로그 항목이 매칭됨', () => {
-  const p = mergeCodeAnalysis(Project.parse({ name: 'p', nodes: [] }), analysis);
+  const p = mergeCodeAnalysis(Project.parse({ name: 'p', nodes: [] }), analysis).project;
+
+  it('순환 import(models ↔ service)는 그 연결선만 건너뛰고 세어 알림, 계산은 됨', () => {
+    const r = mergeCodeAnalysis(Project.parse({ name: 'p', nodes: [] }), { ...analysis, edges: [...analysis.edges, { from: 'services.order_worker', to: 'main' }] });
+    expect(r.skipped).toBe(1);
+    expect(r.project.edges.some((e) => e.from === 'py:services.order_worker' && e.to === 'py:main')).toBe(false);
+    expect(run(r.project, '2026-10-23').analysis).toBeDefined();
+  });
 
   it('모듈은 노드, import는 연결선, 라이브러리는 카탈로그 항목 노드', () => {
     expect(p.nodes.map((n) => [n.id, n.layer, n.primary])).toEqual([

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { updateNode } from './edit';
-import { useStore } from './store';
+import { exportProject, importProject, useStore } from './store';
 
 const s = () => useStore.getState();
 const nameOf = (id: string) => s().project.nodes.find((n) => n.id === id)!.name;
@@ -48,7 +48,24 @@ describe('되돌리기·다시 하기 (Ctrl+Z / Ctrl+Y)', () => {
   it('다른 프로젝트를 불러온 것도 되돌릴 수 있음', () => {
     const p = s().project;
     s().load({ ...p, name: '다른 프로젝트' });
-    s().undo();
+    expect(s().undo()).toBe(true);
     expect(s().project.name).toBe(p.name);
+    // 다시 하기도 불러오기를 넘으면 알림, 보통 편집은 아님
+    expect(s().redo()).toBe(true);
+    rename('편집');
+    expect(s().undo()).toBe(false);
+  });
+});
+
+describe('파일 불러오기에서 화면으로 고칠 수 없는 것을 걸러 냄', () => {
+  it('없는 노드에 닿은 연결선, 페르소나의 없는 행동 비율은 빼고 알림', () => {
+    const p = exportProject(s().project, {});
+    const data = { ...p, edges: [...p.edges, { from: 'api', to: 'ghost' }, { from: 'ghost', to: 'ghost2' }], personas: p.personas.map((ps, i) => (i ? ps : { ...ps, action_rates: { ...ps.action_rates, 없는행동: 1 } })) };
+    const r = importProject(JSON.parse(JSON.stringify(data)), 'x.json');
+    expect(r.project.edges).toHaveLength(p.edges.length);
+    expect(r.project.personas[0].action_rates).not.toHaveProperty('없는행동');
+    expect(r.dropped).toContain('연결선 2개');
+    expect(r.dropped).toContain('행동 비율 1개');
+    expect(importProject(JSON.parse(JSON.stringify(p)), 'x.json').dropped).toBeUndefined();
   });
 });

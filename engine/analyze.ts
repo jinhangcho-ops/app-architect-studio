@@ -1,6 +1,6 @@
 // 분석의 유일한 입구. 정해진 순서로 계산하고, 판정은 모든 계산값을 변수로 받아 맨 마지막에 한다.
 // deploy → traffic → load → calibrate/capacity → latency·availability·cost → limits → growth → judge
-import { monthlyDowntimeHours, nodeAvailability, pathAvailability, singlePointsOfFailure } from './availability';
+import { monthlyDowntimeHours, nodeAvailability, pathAvailability, singlePointsOfFailure, standingInstances } from './availability';
 import { calibrate } from './calibrate';
 import { instancesNeeded } from './capacity';
 import { monthlyCost, type CostResult } from './cost';
@@ -81,7 +81,12 @@ const minuteOf = new WeakMap<Traffic, number[]>();
 /** 대당 처리량(사양·실측으로 보정)과 최대 대수. 화면의 세부 구성도 같은 값을 쓴다 */
 export function perInstance(node: ProjectNode, catalog: Map<string, CatalogItem>) {
   const th = node.primary ? catalog.get(node.primary)?.thresholds : undefined;
-  const rps = th?.rps && calibrate(th.rps, node.spec, node.measured.rps);
+  const cal = th?.rps && calibrate(th.rps, node.spec, node.measured.rps);
+  // 처리 시간·workers가 있으면 p99(nodeP99, c = 대수 × workers, μ = 1000/처리 시간)와 같은 한계로 자른다
+  const perf = cal && node.perf && (node.perf.workers * 1000) / node.perf.service_ms;
+  const rps = cal && perf !== undefined && perf < cal.value
+    ? { ...cal, value: perf, formula: `min(${cal.formula}, workers × 1000 / 처리 시간)`, inputs: { ...cal.inputs, 보정값: cal.value, workers: node.perf!.workers, 처리ms: node.perf!.service_ms } }
+    : cal;
   const max = th?.max_instances && calibrate(th.max_instances, node.spec, node.measured.max_instances);
   return { rps, max: max?.value ?? Infinity };
 }
@@ -123,11 +128,12 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     const load = loads?.get(n.id);
     const per = perOf.get(n.id)!;
     const db = primaryShape(n, d.catalog, load);
-    const a = nodeAvailability(n.availability ?? p.default_availability, n.replicas);
+    const standing = standingInstances(n, per.max);
+    const a = nodeAvailability(n.availability ?? p.default_availability, standing);
     const na: NodeAnalysis = {
       load,
       perInstanceRps: per.rps,
-      availability: m(a, '비율', '1 − (1 − 1대 가용성)^이중화 대수', { 가용성1대: n.availability ?? p.default_availability, 대수: n.replicas }),
+      availability: m(a, '비율', '1 − (1 − 1대 가용성)^늘 떠 있는 대수 (max(이중화, 최소 대수), 최대 대수 이하)', { 가용성1대: n.availability ?? p.default_availability, 대수: standing }),
     };
     if (load && per.rps && enabled(p.deploy, 'scale')) {
       const at = (s: 'normal' | 'event') => {
@@ -159,8 +165,8 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     const c = p.nodes.find((x) => x.id === id)!, cl = loads?.get(id), per = perOf.get(id)!;
     return cl && per.rps && enabled(p.deploy, 'scale') ? sizeAt(c, per.rps.value, per.max, cl.rps[s] * f, u, primaryShape(c, d.catalog, cl)).N : undefined;
   };
-  // 큐 소비자는 1분 단위 트래픽 곡선(페르소나·하루 피크·일시적 급증의 기대 곡선)으로 돈다
-  const queued = p.nodes.some((n) => n.layer === 'queue');
+  // 큐 소비자·배치 1회 양은 1분 단위 트래픽 곡선(페르소나·하루 피크·일시적 급증의 기대 곡선)으로 돈다
+  const queued = p.nodes.some((n) => n.layer === 'queue' || n.batch);
   let minute = t && queued ? minuteOf.get(t) : undefined;
   if (t && !minute && queued) {
     // 하루 양은 급증 없는 곡선으로 트래픽 계산과 맞추고, 급증은 그 위에 더한다 (급증만큼 하루 도착이 는다)
@@ -276,7 +282,7 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     return {
       ...(na.instances && { N: { normal: na.instances.normal.value, event: na.instances.event.value } }),
       ...(na.utilization && { util: { normal: na.utilization.normal.value, event: na.utilization.event.value } }),
-      singlePrimary: !!primaryShape(n, d.catalog), dataGb: dataGb(n.id),
+      max: perOf.get(n.id)!.max, singlePrimary: !!primaryShape(n, d.catalog), dataGb: dataGb(n.id),
     };
   }) : undefined;
 
@@ -344,7 +350,7 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     traffic: t,
     nodes,
     paths: pathResults,
-    spof: singlePointsOfFailure(p, paths),
+    spof: singlePointsOfFailure(p, paths, (n) => perOf.get(n.id)!.max),
     cost,
     bottleneck,
     growth,

@@ -5,7 +5,7 @@
 // 백업: RPO = 백업 주기(시점 복구면 로그 보관 간격), RTO = 새 서버 준비 + 데이터 크기 / 되살리는 속도.
 //     넘긴 직후 복사본의 사용률: active는 같은 대수가 떠 있어 그대로, standby는 지금 사용률 × 대수 / 대기 대수 (대기 복사본이 대수를 늘리기 전).
 // shortcut: 존·리전 장애 직후(자동 확장이 대수를 다시 채우기 전)의 사용률만 본다. active도 한쪽이 전부 받는 크기로 두 리전에 띄운다고 본다 (평소 나눠 받아 절반만 쓰는 것은 세지 않음)
-import { impactOf } from './availability';
+import { impactOf, standingInstances } from './availability';
 import type { Vars } from './expr';
 import { metric as m, type Metric } from './model';
 import { secs } from './pipeline';
@@ -24,8 +24,11 @@ export const PITR_RPO_S = 300;
 export const RESTORE_MB_S = 100;
 export const PROVISION_S = 600;
 
-/** analyze가 넘기는 노드 정보: 계산된 대수·사용률, 주 서버 1대 DB인지, 저장 데이터 크기 */
-export type NodeInfo = { N?: { normal: number; event: number }; util?: { normal: number; event: number }; singlePrimary: boolean; dataGb?: number };
+/** analyze가 넘기는 노드 정보: 계산된 대수·사용률, 최대 대수, 주 서버 1대 DB인지, 저장 데이터 크기 */
+export type NodeInfo = { N?: { normal: number; event: number }; util?: { normal: number; event: number }; max?: number; singlePrimary: boolean; dataGb?: number };
+
+/** 장애 때 떠 있는 서버 수: 계산된 대수와 늘 떠 있는 대수 중 큰 것, 최대 대수 이하 (용량 계산과 같은 대수) */
+const serversOf = (n: ProjectNode, x: NodeInfo, s: 'normal' | 'event') => Math.max(x.N?.[s] ?? 0, standingInstances(n, x.max));
 
 export type ZoneCase = { nodeId: string; zones: number; servers: number; lost: number; down: boolean; util?: { normal: Metric; event: Metric }; rto: Metric };
 export type RegionCase = {
@@ -53,7 +56,7 @@ export function failureScenarios(p: Project, info: (n: ProjectNode) => NodeInfo)
   const servers = p.nodes.filter(isServer);
   const zone = servers.map((n): ZoneCase => {
     const x = info(n), zones = n.zones ?? 1;
-    const count = (s: 'normal' | 'event') => Math.max(1, x.N?.[s] ?? 0, n.replicas, n.min_instances);
+    const count = (s: 'normal' | 'event') => serversOf(n, x, s);
     const N = count('normal'), lost = zones === 1 ? N : Math.ceil(N / zones), down = lost >= N;
     const after = (s: 'normal' | 'event') => {
       const all = count(s), alive = all - (zones === 1 ? all : Math.ceil(all / zones));
@@ -77,7 +80,7 @@ export function failureScenarios(p: Project, info: (n: ProjectNode) => NodeInfo)
       if (!x.util) return [];
       const copy = n.dr!.mode === 'active' ? undefined : n.dr!.instances ?? 1;
       const at = (s: 'normal' | 'event') => {
-        const all = Math.max(1, x.N?.[s] ?? 0, n.replicas, n.min_instances);
+        const all = serversOf(n, x, s);
         return copy === undefined
           ? m(x.util![s], '비율', '복사본(active)이 같은 대수로 떠 있어 사용률 그대로', { 사용률: x.util![s] })
           : m((x.util![s] * all) / copy, '비율', '지금 사용률 × 대수 / 대기 대수 (대기 복사본이 대수를 늘리기 전)', { 사용률: x.util![s], 대수: all, 대기대수: copy });

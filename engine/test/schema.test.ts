@@ -50,6 +50,25 @@ describe('테이블·연결 검증 (감사 2)', () => {
     expect(['2024-02-29', '2024-12-31'].every((v) => fitsType('date', v))).toBe(true);
   });
 
+  it('fitsType: 시 00–23, 분·초 00–59 밖은 안 맞음 (감사 4 H6)', () => {
+    expect(['2024-01-01T24:00', '2024-01-01 23:60', '2024-01-01T23:59:60', '2024-01-01T99:00:00Z'].some((v) => fitsType('timestamp', v))).toBe(false);
+    expect(['2024-01-01T00:00', '2024-01-01 23:59:59.999', '2024-01-01T19:30:00+09:00'].every((v) => fitsType('timestamp', v))).toBe(true);
+  });
+
+  it('노드 id 중복은 맨 먼저 오류 (감사 4 H7)', () => {
+    const p = Project.parse({ name: 'p', nodes: [{ id: 'a', name: 'A', layer: 'backend' }, { id: 'a', name: 'B', layer: 'backend' }], edges: [{ from: 'a', to: 'a' }] });
+    expect(checkProject(p, [])[0]).toBe('노드 id 중복 a');
+  });
+
+  it('화면 노드 진입 몫 합이 1을 넘으면 오류, 비운 몫은 1 / 화면 수 (감사 4 K9)', () => {
+    const ui = (id: string, entry_share?: number) => ({ id, name: id, layer: 'ui', ...(entry_share !== undefined && { entry_share }) });
+    const err = (nodes: object[]) => checkProject(Project.parse({ name: 'p', nodes }), []);
+    expect(err([ui('a', 0.7), ui('b', 0.7)])).toEqual(['화면 노드 진입 몫(entry_share) 합이 1을 넘음 (1.4)']);
+    expect(err([ui('a', 0.9), ui('b')])).toEqual(['화면 노드 진입 몫(entry_share) 합이 1을 넘음 (1.4)']);
+    expect(err([ui('a', 0.3), ui('b', 0.7)])).toEqual([]);
+    expect(err([ui('a'), ui('b'), ui('c')])).toEqual([]);
+  });
+
   it('노드 안 테이블·인덱스 이름 겹침은 오류 아님(경고), 테이블 이름 중복은 오류', () => {
     const p = Project.parse({ name: 'p', nodes: [{ id: 'db', name: 'DB', layer: 'db', tables: [
       tbl('a', { indexes: [{ name: 'ix', columns: ['k'] }] }), tbl('b', { indexes: [{ name: 'ix', columns: ['k'] }, { name: 'a', columns: ['k'] }] }),

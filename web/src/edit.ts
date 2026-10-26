@@ -70,7 +70,7 @@ export const removeNode = (p: Project, id: string): Project => {
 export const patchAt = <T,>(xs: T[], i: number, patch: Partial<T>): T[] => xs.map((x, k) => (k === i ? { ...x, ...patch } : x));
 
 /** make(k)가 taken에 없는 가장 작은 k (from부터) */
-const freeK = (taken: string[], make: (k: number) => string, from = 1) => {
+export const freeK = (taken: string[], make: (k: number) => string, from = 1) => {
   let k = from;
   while (taken.includes(make(k))) k++;
   return k;
@@ -153,10 +153,19 @@ export function importTables(p: Project, nodeId: string, tables: Table[]): { pro
   return { project, replaced };
 }
 
+/** 이름이 name인 첫 테이블만 바꾸거나(fn) 지운다(fn이 없을 때). 이름이 겹친 깨진 파일에서도 하나씩 고칠 수 있게 */
+const atFirst = (p: Project, nodeId: string, name: string, fn?: (t: Table) => Table): Project =>
+  mapTables(p, nodeId, (ts) => {
+    const i = ts.findIndex((t) => t.name === name);
+    return ts.flatMap((t, k) => (k !== i ? [t] : fn ? [fn(t)] : []));
+  });
+/** 같은 이름 테이블이 아직 남아 있으면 그 이름을 가리키는 행동·인터페이스는 그대로 둔다 */
+const still = (p: Project, nodeId: string, name: string) => !!p.nodes.find((n) => n.id === nodeId)?.tables.some((t) => t.name === name);
+
 /** 테이블 고치기. 이름이 바뀌면 그 테이블을 가리키는 행동도 같이 고친다 */
 export function updateTable(p: Project, nodeId: string, name: string, patch: Partial<Table>): Project {
-  const next = mapTables(p, nodeId, (ts) => ts.map((t) => (t.name === name ? { ...t, ...patch } : t)));
-  if (patch.name === undefined || patch.name === name) return next;
+  const next = atFirst(p, nodeId, name, (t) => ({ ...t, ...patch }));
+  if (patch.name === undefined || patch.name === name || still(next, nodeId, name)) return next;
   const rename = <T extends { node: string; table: string }>(w: T): T => (w.node === nodeId && w.table === name ? { ...w, table: patch.name! } : w);
   return {
     ...next,
@@ -167,7 +176,8 @@ export function updateTable(p: Project, nodeId: string, name: string, patch: Par
 
 /** 테이블을 지우면 그 테이블에 쓰는 행동 줄도 지우고, 쓸 곳이 없어진 행동은 없앤다 */
 export function removeTable(p: Project, nodeId: string, name: string): Project {
-  const next = mapTables(p, nodeId, (ts) => ts.filter((t) => t.name !== name));
+  const next = atFirst(p, nodeId, name);
+  if (still(next, nodeId, name)) return next;
   const actions = next.actions
     .map((a) => ({ ...a, writes: a.writes.filter((w) => !(w.node === nodeId && w.table === name)) }))
     .filter((a) => a.writes.length > 0);
@@ -185,13 +195,17 @@ export function addTable(p: Project, nodeId: string): Project {
   return mapTables(p, nodeId, (ts) => [...ts, TableSchema.parse({ name: `table_${k}`, columns: [{ name: 'id', type: 'bigint' }], primary_key: ['id'] })]);
 }
 
-/** 컬럼 이름 바꾸기: 같은 테이블의 기본 키·인덱스·파티션도 새 이름으로. 이미 있는 이름이면 undefined (저장하지 않음) */
-export function renameColumn(t: Table, from: string, to: string): Table | undefined {
+/** 같은 이름 컬럼이 i번째 말고도 있으면(깨진 파일) 키 참조는 남은 컬럼을 가리키므로 그대로 둔다 */
+const dupCol = (t: Table, i: number) => t.columns.some((c, k) => k !== i && c.name === t.columns[i].name);
+
+/** i번째 컬럼 이름 바꾸기: 같은 테이블의 기본 키·인덱스·파티션도 새 이름으로. 이미 있는 이름이면 undefined (저장하지 않음) */
+export function renameColumn(t: Table, i: number, to: string): Table | undefined {
   if (t.columns.some((c) => c.name === to)) return undefined;
+  const from = dupCol(t, i) ? undefined : t.columns[i].name;
   const ren = (x: string) => (x === from ? to : x);
   return {
     ...t,
-    columns: t.columns.map((c) => (c.name === from ? { ...c, name: to } : c)),
+    columns: patchAt(t.columns, i, { name: to }),
     primary_key: t.primary_key.map(ren),
     indexes: t.indexes.map((i) => ({ ...i, columns: i.columns.map(ren) })),
     partition: t.partition && { ...t.partition, column: ren(t.partition.column) },
@@ -200,7 +214,7 @@ export function renameColumn(t: Table, from: string, to: string): Table | undefi
 
 /** i번째 컬럼 지우기: 기본 키·인덱스에서 빼고, 컬럼이 없어진 인덱스와 그 컬럼의 파티션은 지운다 */
 export function removeColumn(t: Table, i: number): Table {
-  const name = t.columns[i].name;
+  const name = dupCol(t, i) ? undefined : t.columns[i].name;
   const keep = (x: string) => x !== name;
   return {
     ...t,

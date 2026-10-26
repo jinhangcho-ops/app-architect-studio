@@ -23,6 +23,8 @@ const q = (d: Dialect, s: string) => (d === 'mysql' ? `\`${s.replace(/`/g, '``')
 // MySQL은 문자열 안의 백슬래시를 이스케이프로 읽는다
 const lit = (s: string, d: Dialect) => `'${(d === 'mysql' ? s.replace(/\\/g, '\\\\') : s).replace(/'/g, "''")}'`;
 const MYSQL_VARCHAR_MAX = 16383;
+/** MySQL 고정 크기 타입의 행 안 바이트 (InnoDB 저장 크기 문서) */
+const MYSQL_FIXED_BYTES: Record<string, number> = { INT: 4, BIGINT: 8, DOUBLE: 8, 'DECIMAL(19,4)': 9, BOOLEAN: 1, 'DATETIME(6)': 8, DATE: 3 };
 /** 기본 키·인덱스에 쓰이는 컬럼 */
 export const keyCols = (t: Table) => new Set([...t.primary_key, ...t.indexes.flatMap((ix) => ix.columns)]);
 
@@ -46,8 +48,8 @@ export function sqlType(c: Column, d: Dialect, fixed = false, key = false): stri
     case 'json': return d === 'postgres' ? 'JSONB' : d === 'mysql' ? 'JSON' : 'TEXT';
     case 'text':
       if (d === 'sqlite') return 'TEXT';
-      // MySQL utf8mb4 VARCHAR는 16383글자까지 (65535바이트 ÷ 4)
-      if (d === 'mysql' && (n ?? 0) > MYSQL_VARCHAR_MAX) return 'TEXT';
+      // MySQL utf8mb4 VARCHAR·TEXT는 16383글자까지 (65535바이트 ÷ 4), 그보다 길면 MEDIUMTEXT
+      if (d === 'mysql' && (n ?? 0) > MYSQL_VARCHAR_MAX) return 'MEDIUMTEXT';
       if (n) return `${fix ? 'CHAR' : 'VARCHAR'}(${n})`;
       return d === 'generic' ? 'VARCHAR(4000)' : d === 'mysql' && key ? 'VARCHAR(255)' : 'TEXT';
     case 'bytes':
@@ -91,7 +93,7 @@ function valueSql(c: Column, v: string, d: Dialect): string {
 function defaultSql(c: Column, d: Dialect, type: string): string {
   if (isNullText(c.default_value!)) return 'NULL';
   const v = valueSql(c, c.default_value!, d);
-  return d === 'mysql' && /^(TEXT|BLOB|JSON)$/.test(type) && !v.startsWith('(') ? `(${v})` : v;
+  return d === 'mysql' && /^(MEDIUM)?(TEXT|BLOB)$|^JSON$/.test(type) && !v.startsWith('(') ? `(${v})` : v;
 }
 const comment = (x: { label?: string; description?: string }) => [x.label, x.description].filter(Boolean).join(' — ');
 
@@ -153,12 +155,16 @@ export function schemaWarnings(p: Project, byId: Map<string, CatalogItem>): { no
           const sum = cols.reduce((s, col) => s + bytes(col), 0);
           if (sum > 3072) warn(`${name} (${cols.join(', ')}): utf8mb4로 최대 ${sum}바이트라 MySQL 키 한도 3072바이트를 넘음 (최대 길이를 정하세요)`);
         }
-        const row = t.columns.reduce((s, c) => s + bytes(c.name), 0);
-        if (row > 65535) warn(`VARCHAR·CHAR·VARBINARY·BINARY 합이 utf8mb4로 최대 ${row}바이트라 MySQL 행 한도 65535바이트를 넘음 (긴 컬럼은 길이를 비워 TEXT로)`);
+        // 행 한도: VAR 타입은 길이 접두 2바이트 더, 고정 크기 타입은 그 바이트, TEXT·BLOB·JSON은 행 안 포인터 12바이트
+        const row = t.columns.reduce((s, c) => {
+          const type = sqlType(c, d, t.record === 'fixed', keys.has(c.name));
+          return s + (/^VAR/.test(type) ? bytes(c.name) + 2 : bytes(c.name) || (MYSQL_FIXED_BYTES[type] ?? 12));
+        }, 0);
+        if (row > 65535) warn(`컬럼 크기 합이 utf8mb4로 최대 ${row}바이트라 MySQL 행 한도 65535바이트를 넘음 (긴 컬럼은 길이를 비워 TEXT로)`);
         for (const c of t.columns) {
           if (!keys.has(c.name)) continue;
           if (c.type === 'json') warn(`${c.name}: MySQL은 JSON 컬럼을 기본 키·인덱스에 쓸 수 없음`);
-          else if (c.type === 'text' && (c.max_length ?? 0) > MYSQL_VARCHAR_MAX) warn(`${c.name}: 최대 길이 ${c.max_length}가 VARCHAR 한도 ${MYSQL_VARCHAR_MAX}를 넘어 TEXT가 되는데, MySQL은 TEXT를 키로 쓸 수 없음`);
+          else if (c.type === 'text' && (c.max_length ?? 0) > MYSQL_VARCHAR_MAX) warn(`${c.name}: 최대 길이 ${c.max_length}가 VARCHAR 한도 ${MYSQL_VARCHAR_MAX}를 넘어 MEDIUMTEXT가 되는데, MySQL은 MEDIUMTEXT를 키로 쓸 수 없음`);
         }
       }
     }

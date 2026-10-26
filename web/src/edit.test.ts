@@ -246,7 +246,7 @@ describe('컬럼 이름 바꾸기·삭제가 기본 키·인덱스·파티션을
   });
 
   it('이름을 바꾸면 같은 테이블의 기본 키·인덱스·파티션도 새 이름으로', () => {
-    const r = renameColumn(t, 'at', 'created_at')!;
+    const r = renameColumn(t, 1, 'created_at')!;
     expect(r.columns.map((c) => c.name)).toEqual(['id', 'created_at', 'who']);
     expect(r.primary_key).toEqual(['id', 'created_at']);
     expect(r.indexes.map((i) => i.columns)).toEqual([['created_at'], ['who', 'created_at']]);
@@ -254,7 +254,7 @@ describe('컬럼 이름 바꾸기·삭제가 기본 키·인덱스·파티션을
   });
 
   it('이미 있는 컬럼 이름으로는 바꾸지 않음', () => {
-    expect(renameColumn(t, 'at', 'who')).toBeUndefined();
+    expect(renameColumn(t, 1, 'who')).toBeUndefined();
   });
 
   it('지우면 목록에서 빠지고, 빈 인덱스와 그 컬럼의 파티션은 지움', () => {
@@ -264,6 +264,34 @@ describe('컬럼 이름 바꾸기·삭제가 기본 키·인덱스·파티션을
     expect(r.indexes).toEqual([{ name: 'ix_who_at', columns: ['who'], unique: false }]);
     expect(r.partition).toBeUndefined();
     expect(removeColumn(t, 2).partition).toEqual(t.partition);
+  });
+
+  it('이름이 겹친 컬럼(깨진 파일): 하나만 바꾸거나 지우고, 키는 남은 같은 이름 컬럼을 계속 가리킴', () => {
+    const d = { ...t, columns: [...t.columns, { ...t.columns[1] }] };
+    const r = renameColumn(d, 3, 'at2')!;
+    expect(r.columns.map((c) => c.name)).toEqual(['id', 'at', 'who', 'at2']);
+    expect(r.primary_key).toEqual(['id', 'at']);
+    const x = removeColumn(d, 3);
+    expect(x.columns.map((c) => c.name)).toEqual(['id', 'at', 'who']);
+    expect(x.primary_key).toEqual(t.primary_key);
+    expect(x.indexes).toEqual(t.indexes);
+    expect(x.partition).toEqual(t.partition);
+  });
+
+  it('이름이 겹친 테이블(깨진 파일): 첫 번째만 바꾸거나 지우고, 행동은 남은 테이블을 계속 가리킴', () => {
+    const ax = examples.find((e) => e.name === 'actions.json')!;
+    const p0 = parseProject(ax.data, catalog.items, ax.name);
+    const db = p0.nodes.find((n) => n.id === 'db')!;
+    const name = db.tables[0].name;
+    const dup = { ...p0, nodes: p0.nodes.map((n) => (n.id === 'db' ? { ...n, tables: [...n.tables, { ...n.tables[0] }] } : n)) };
+    const tables = (q: typeof p0) => q.nodes.find((n) => n.id === 'db')!.tables.map((x) => x.name);
+    const renamed = updateTable(dup, 'db', name, { name: 'x_new' });
+    expect(tables(renamed).filter((x) => x === name)).toHaveLength(1);
+    expect(tables(renamed)).toContain('x_new');
+    expect(renamed.actions).toEqual(dup.actions);
+    const removed = removeTable(dup, 'db', name);
+    expect(tables(removed).sort()).toEqual(tables(p0).sort());
+    expect(removed.actions).toEqual(dup.actions);
   });
 });
 

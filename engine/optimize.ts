@@ -43,7 +43,8 @@ function metricsOf(a: Analysis): PlanMetrics {
   return {
     // 계량값이나 가격이 빠진 조합은 합계가 실제보다 작게 나오므로 비용을 '모름'으로 둔다
     cost: a.cost && !a.cost.missing.length ? a.cost.total?.value : undefined,
-    limitUsers: a.bottleneck?.limitUsers.value,
+    // 트래픽이 있는데 병목이 없으면 한계 없음(100만 배까지 버팀), 트래픽이 없으면 모름
+    limitUsers: a.bottleneck?.limitUsers.value ?? (a.traffic ? Infinity : undefined),
     p99: p99s.length ? Math.max(...p99s) : undefined,
     availability: avs.length ? Math.min(...avs) : undefined,
   };
@@ -56,7 +57,7 @@ function violationsOf(p: Project, m: PlanMetrics, a: Analysis): string[] {
   const fails = a.judgements.flatMap((j) => j.items.filter((i) => i.verdict === 'fail').map(() => j.nodeId));
   if (fails.length) out.push(`안 됨 판정: ${[...new Set(fails)].join(', ')}`);
   if (c.budget_monthly !== undefined && !(m.cost !== undefined && m.cost <= c.budget_monthly)) out.push('예산');
-  if (c.min_limit_users !== undefined && m.limitUsers !== undefined && m.limitUsers < c.min_limit_users) out.push('한계 사용자');
+  if (c.min_limit_users !== undefined && !(m.limitUsers !== undefined && m.limitUsers >= c.min_limit_users)) out.push('한계 사용자');
   if (c.max_p99_ms !== undefined && !(m.p99 !== undefined && m.p99 <= c.max_p99_ms)) out.push('p99');
   if (c.min_availability !== undefined && !(m.availability !== undefined && m.availability >= c.min_availability)) out.push('가용성');
   return out;

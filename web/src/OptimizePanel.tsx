@@ -107,7 +107,7 @@ function Plans({ result: r, project: p, onApply }: { result: OptimizeResult; pro
 
 /** 가로 = 월 비용, 세로 = 한계 사용자. 조건을 지킨 조합은 진하게, 어긴 조합은 흐리게 */
 function Scatter({ result: r }: { result: OptimizeResult }) {
-  const pts = r.evaluated.filter((x) => x.metrics.cost !== undefined && x.metrics.limitUsers !== undefined);
+  const pts = r.evaluated.filter((x) => x.metrics.cost !== undefined && Number.isFinite(x.metrics.limitUsers));
   if (!pts.length) return <p className="muted">비용과 한계를 둘 다 아는 조합이 없어 그래프를 그리지 않습니다.</p>;
   const W = 320, H = 180, P = 36;
   const xs = pts.map((x) => x.metrics.cost!), ys = pts.map((x) => x.metrics.limitUsers!);

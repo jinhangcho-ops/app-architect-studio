@@ -83,6 +83,17 @@ describe('배치', () => {
     expect(f.lag!.normal.value).toBeCloseTo(3600 + f.run!.normal.value);
   });
 
+  it('1회 양은 하루 평균이 아니라 주기 길이 창의 가장 큰 합: 60분 주기 ≈ 피크 1시간 양, 하루 주기는 하루 합 (감사 4 K3)', () => {
+    const f = flow(run(loaded), 'N-10');
+    // 피크 도착 40.006건/초 × 3600 ≈ 144,022건 (1분 기대 곡선이라 무작위 하루의 피크 시간과 조금 다름)
+    expect(f.run!.normal.inputs.건수 / (f.arrival.normal * 3600)).toBeCloseTo(1, 1);
+    const day = flow(run(node(loaded, 'N-10', { batch: { every_min: 1440 } })), 'N-10'), half = flow(run(node(loaded, 'N-10', { batch: { every_min: 30 } })), 'N-10');
+    // 하루 주기 양 = 하루 합, 30분 주기 양은 60분의 절반 이상 (피크 근처라 평균보다 큼)
+    expect(day.run!.normal.inputs.건수).toBeGreaterThan(f.run!.normal.inputs.건수 * 12);
+    expect(half.run!.normal.inputs.건수).toBeGreaterThan(f.run!.normal.inputs.건수 / 2);
+    expect(half.run!.normal.inputs.건수).toBeLessThan(f.run!.normal.inputs.건수);
+  });
+
   it('실행 창을 1분으로 줄이면 평소에도 안 끝나 안 됨', () => {
     const j = primaryOf(run(node(base, 'N-10', { batch: { every_min: 60, window_min: 1 } })), 'N-10');
     expect(j.verdict).toBe('fail');

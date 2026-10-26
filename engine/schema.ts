@@ -601,7 +601,11 @@ export function checkCatalog(items: CatalogItem[]): string[] {
 export function checkProject(p: Project, items: CatalogItem[]): string[] {
   const byId = new Map(items.map((i) => [i.id, i]));
   const nodeIds = new Set(p.nodes.map((n) => n.id));
-  const errors: string[] = [];
+  // 노드 id가 겹치면 연결선이 어느 노드인지 몰라 순환처럼 보이므로 맨 먼저 알린다
+  const errors: string[] = dupes(p.nodes.map((n) => n.id)).map((d) => `노드 id 중복 ${d}`);
+  // load.ts와 같은 몫(entry_share, 없으면 1 / 화면 수). 합이 1을 넘으면 사용자 수보다 많은 요청이 들어온다
+  const entries = entryNodes(p), shareSum = entries.reduce((s, n) => s + (n.entry_share ?? 1 / entries.length), 0);
+  if (shareSum > 1 + 1e-9) errors.push(`화면 노드 진입 몫(entry_share) 합이 1을 넘음 (${+shareSum.toFixed(4)})`);
   for (const n of p.nodes) {
     for (const id of itemIds(n)) {
       const it = byId.get(id);
@@ -701,7 +705,7 @@ export function fitsType(type: Column['type'], v: string): boolean {
     case 'float': case 'numeric': return /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(v);
     case 'bool': return /^(true|false|1|0)$/i.test(v);
     // 시간대는 시각 뒤에만 (SQLite julianday·MySQL은 날짜 바로 뒤 시간대를 못 읽음)
-    case 'timestamp': return /^current_timestamp$/i.test(v) || (/^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}(:?\d{2})?)?)?$/.test(v) && realDay(v));
+    case 'timestamp': return /^current_timestamp$/i.test(v) || (/^\d{4}-\d{2}-\d{2}([ T]([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d+)?)?(Z|[+-]\d{2}(:?\d{2})?)?)?$/.test(v) && realDay(v));
     case 'date': return /^current_date$/i.test(v) || (/^\d{4}-\d{2}-\d{2}$/.test(v) && realDay(v));
     case 'uuid': return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
     case 'json': try { JSON.parse(v); return true; } catch { return false; }

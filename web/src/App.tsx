@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { parseProject } from '../../engine/data';
 import { interfaceFiles } from '../../engine/interfaces';
 import { schemaFiles } from '../../engine/ddl';
@@ -45,6 +45,21 @@ const PanelIcon = ({ side }: { side: 'right' | 'bottom' }) => (
   </svg>
 );
 
+/** 한 패널이 그리다 터져도(손으로 고친 파일 등) 앱 전체가 흰 화면이 되지 않게 그 자리만 바꿔 보인다. 저장·자동 저장은 App에 있어 계속된다 */
+class Guard extends Component<{ children: ReactNode }, { error?: Error }> {
+  state: { error?: Error } = {};
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="muted" role="alert" style={{ padding: 16 }}>
+        <p>이 화면을 그리지 못했습니다: {this.state.error.message}</p>
+        <button className="btn" onClick={() => this.setState({ error: undefined })}>다시 시도</button>
+      </div>
+    );
+  }
+}
+
 export function App() {
   const { project, baseline, positions, selected, load, edit, relayout, select, focus, setFocus, undo, redo, past, future, clipboard, set, move } = useStore();
   // 위치를 끌어도 다시 계산하지 않도록 프로젝트가 바뀔 때만 분석한다
@@ -84,6 +99,16 @@ export function App() {
     setHistory(false);
   };
   const say = (msg: string, ms = 2500) => { setNotice(msg); setTimeout(() => setNotice(undefined), ms); };
+  // 다른 파일을 열기 전으로 되돌리면 Ctrl+S·폴더 자동 저장이 엉뚱한 파일에 쓰지 않게 열린 파일을 잊는다
+  const leaveFile = (crossed: boolean) => {
+    if (!crossed || !filePath) return;
+    setFilePath(undefined);
+    say('다른 파일을 열기 전으로 돌아갔어요. 다음 저장은 파일 이름을 다시 묻습니다', 5000);
+  };
+  const back = () => leaveFile(undo());
+  const forward = () => leaveFile(redo());
+  /** 파일·예시를 불러온다. 이름이 같은 다른 프로젝트가 자동 저장 최신 시점을 덮지 않게 새 시점으로 */
+  const loadNew: typeof load = (p, pos) => { load(p, pos); startNewSnapshot(); };
   /** 데스크톱 앱 저장: path가 없으면 "다른 이름으로 저장" 창. 저장한 파일로 이어서 작업한다 */
   const saveDesktop = (path: string | undefined, extra = '') => saveToFolder(path, project, positions)
     .then((saved) => { if (saved) { setFilePath(saved); say(`저장했습니다: ${baseName(saved)}${extra}`); } })
@@ -186,8 +211,8 @@ export function App() {
         return;
       }
       if (k === 'v' && clipboard) { e.preventDefault(); paste(); return; }
-      if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
-      else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+      if (k === 'z' && !e.shiftKey) { e.preventDefault(); back(); }
+      else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); forward(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -198,16 +223,18 @@ export function App() {
     if (!desktop) return fileRef.current?.click();
     desktop.openFile().then((r) => {
       if (!r) return;
-      const { project, positions } = importProject(JSON.parse(r.text), baseName(r.path));
-      load(project, positions);
+      const { project, positions, dropped } = importProject(JSON.parse(r.text), baseName(r.path));
+      loadNew(project, positions);
       setFilePath(r.path);
+      if (dropped) say(dropped, 8000);
     }).catch((err: Error) => say(err.message, 8000));
   };
 
   const open = async (file: File) => {
     try {
-      const { project, positions } = importProject(JSON.parse(await file.text()), file.name);
-      load(project, positions);
+      const { project, positions, dropped } = importProject(JSON.parse(await file.text()), file.name);
+      loadNew(project, positions);
+      if (dropped) say(dropped, 8000);
     } catch (e) {
       say((e as Error).message, 8000);
     }
@@ -243,7 +270,7 @@ export function App() {
         <Menu label="파일" right>{(close) => <>
           <div className="menu-head">예시 불러오기</div>
           {examples.map((e) => (
-            <button key={e.name} role="menuitem" onClick={() => { close(); load(parseProject(e.data, catalog.items, e.name)); setFilePath(undefined); }}>{e.name}</button>
+            <button key={e.name} role="menuitem" onClick={() => { close(); loadNew(parseProject(e.data, catalog.items, e.name)); setFilePath(undefined); }}>{e.name}</button>
           ))}
           <hr />
           <button role="menuitem" onClick={() => { close(); openProject(); }}>열기<small>Ctrl+O</small></button>
@@ -260,7 +287,9 @@ export function App() {
           if (!f) return;
           try {
             const data = JSON.parse(await f.text());
-            edit((p) => mergeCodeAnalysis(p, data));
+            let skipped = 0;
+            edit((p) => { const r = mergeCodeAnalysis(p, data); skipped = r.skipped; return r.project; });
+            if (skipped) say(`순환 import라 부하를 계산할 수 없는 연결선 ${skipped}개는 넣지 않았습니다`, 8000);
           } catch (err) {
             say((err as Error).message, 8000);
           }
@@ -272,17 +301,17 @@ export function App() {
       </header>
       {kpi}
       <div className="views">
-      {screen === 'settings' && <Settings onBack={() => setScreen('design')} />}
+      {screen === 'settings' && <Guard><Settings onBack={() => setScreen('design')} /></Guard>}
       <div className={`design ${focus ? 'with-left' : ''} ${hide.right ? 'hide-right' : ''}`} hidden={screen !== 'design'}>
-      {focus && <aside className="left">{left}</aside>}
+      {focus && <aside className="left"><Guard key={focus}>{left}</Guard></aside>}
       <main className="center">
         <div className="ctb">
           <Menu label="노드 추가" icon={<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden><path d="M8 3v10M3 8h10" /></svg>}>{(close) => <>
             {LAYERS.map((l) => <button key={l} role="menuitem" onClick={() => { close(); add(l); }}><i className={`dot l-${l}`} />{LAYER_NAMES[l]}</button>)}
           </>}</Menu>
           <i className="sep" />
-          <button className="btn icon" onClick={undo} disabled={!past.length} title="되돌리기 (Ctrl+Z)" aria-label="되돌리기"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden><path d="M6 3.5L3 6.5l3 3M3.5 6.5H10a3.5 3.5 0 010 7H7" /></svg></button>
-          <button className="btn icon" onClick={redo} disabled={!future.length} title="다시 하기 (Ctrl+Y, Ctrl+Shift+Z)" aria-label="다시 하기"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden><path d="M10 3.5l3 3-3 3M12.5 6.5H6a3.5 3.5 0 000 7h3" /></svg></button>
+          <button className="btn icon" onClick={back} disabled={!past.length} title="되돌리기 (Ctrl+Z)" aria-label="되돌리기"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden><path d="M6 3.5L3 6.5l3 3M3.5 6.5H10a3.5 3.5 0 010 7H7" /></svg></button>
+          <button className="btn icon" onClick={forward} disabled={!future.length} title="다시 하기 (Ctrl+Y, Ctrl+Shift+Z)" aria-label="다시 하기"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden><path d="M10 3.5l3 3-3 3M12.5 6.5H6a3.5 3.5 0 000 7h3" /></svg></button>
           <i className="sep" />
           <button className="btn" onClick={relayout} disabled={view === '3d' || !!focus} title="카드를 보기 좋게 다시 늘어놓아요">자동 배치</button>
           <button className="btn" aria-pressed={view === '3d'} onClick={() => setView(view === '2d' ? '3d' : '2d')} disabled={!!focus} title="입체로 보기">3D 보기</button>
@@ -295,11 +324,11 @@ export function App() {
           <button className={`btn ${onlyDiagram ? 'on' : ''}`} onClick={() => toggle(onlyDiagram ? { right: false, bottom: false } : { right: true, bottom: true })}>{onlyDiagram ? '패널 다시 보기' : '다이어그램만'}</button>
         </div>
         <div className="stage">
-          {focus
+          <Guard key={`${focus}:${view}`}>{focus
             ? <NodeInside key={focus} nodeId={focus} analysis={result.analysis} onSelect={() => setTab('selected')} />
             : view === '2d'
             ? <Canvas analysis={result.analysis} onSelect={() => setTab('selected')} layout={`${hide.right}${hide.bottom}${screen}`} />
-            : <View3D analysis={result.analysis} onSelect={() => setTab('selected')} />}
+            : <View3D analysis={result.analysis} onSelect={() => setTab('selected')} />}</Guard>
           {!focus && view === '2d' && tip && (
             <div className="tip" role="note">
               <button className="x" aria-label="안내 닫기" onClick={closeTip}>×</button>
@@ -312,7 +341,7 @@ export function App() {
             </div>
           )}
         </div>
-        {!focus && !hide.bottom && chart}
+        {!focus && !hide.bottom && <Guard>{chart}</Guard>}
       </main>
       {!hide.right && (
       <aside className="right">
@@ -321,7 +350,7 @@ export function App() {
           <button className={tab === 'results' ? 'on' : ''} onClick={() => setTab('results')}>전체 결과</button>
           <button className={tab === 'optimize' ? 'on' : ''} onClick={() => setTab('optimize')}>최선 조합</button>
         </nav>
-        {right}
+        <Guard key={`${tab}:${JSON.stringify(selected)}`}>{right}</Guard>
       </aside>
       )}
       </div>

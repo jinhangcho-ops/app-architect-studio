@@ -33,12 +33,13 @@ export function partsOf(p: Project, a: Analysis | undefined, byId: Map<string, C
   const s = a?.scenarios[nodeId];
   const j = a?.judgements.find((x) => x.nodeId === nodeId);
   return itemIds(n).map((id) => {
-    const item = byId.get(id)!;
+    // 카탈로그에 없는 항목(손으로 고친 파일)도 블록은 보여 빼거나 바꿀 수 있게 한다
+    const item = byId.get(id);
     const role = id === n.primary ? '주' : '보조';
     const mine = j?.items.find((x) => x.itemId === id);
     return {
       itemId: id, role, verdict: mine?.verdict, reasons: mine?.reasons ?? [],
-      alternatives: s ? item.alternatives.flatMap((alt) => {
+      alternatives: s && item ? item.alternatives.flatMap((alt) => {
         const it = byId.get(alt.id);
         if (!it || used.has(alt.id) || it.role !== role || !it.attaches_to.includes(n.layer)) return [];
         const verdict = judgeItem(it, n, s).verdict;
@@ -54,17 +55,17 @@ type PeerData = { name: string; layer: string; onEnter?: () => void };
 
 function PartBlock({ data }: NodeProps<Node<PartData>>) {
   const { part, onRemove } = data;
-  const item = catalog.byId.get(part.itemId)!;
+  const item = catalog.byId.get(part.itemId);
   return (
     <div className={`pblock v-${part.verdict ?? 'none'} ${part.role === '주' ? 'main' : ''}`}>
       <Handle type="target" position={Position.Left} />
       <div className="pblock-head">
-        <span className="tag">{part.role} 항목 · {item.kind}</span>
+        <span className="tag">{part.role} 항목 · {item?.kind ?? '카탈로그에 없음'}</span>
         <span>{part.verdict ? VERDICT_NAMES[part.verdict] : ''}</span>
         {onRemove && <button className="nodrag" aria-label="보조 항목 빼기" onClick={onRemove}>×</button>}
       </div>
-      <b>{item.name}</b>
-      {item.summary && <div className="muted pblock-sum">{item.summary}</div>}
+      <b>{item?.name ?? part.itemId}</b>
+      {item?.summary && <div className="muted pblock-sum">{item.summary}</div>}
       {part.reasons.slice(0, 2).map((r) => <div key={r} className="pblock-why">{r}</div>)}
       <Handle type="source" position={Position.Right} />
     </div>
@@ -126,15 +127,20 @@ export function PartsInside({ nodeId, analysis }: { nodeId: string; analysis?: A
   // 이웃 블록: 들어오는 것은 왼쪽, 나가는 것은 맨 오른쪽
   const main = n.primary ? `p:${n.primary}` : undefined;
   const peer = (other: string, x: number, i: number) => {
-    const o = p.nodes.find((q) => q.id === other)!;
+    const o = p.nodes.find((q) => q.id === other);
+    if (!o) return undefined; // 없는 노드로 가는 연결선은 건너뛴다
     return { id: `n:${other}:${x}`, type: 'peer', position: { x, y: i * 80 }, data: { name: o.name, layer: LAYER_NAMES[o.layer], onEnter: () => setFocus(other) } satisfies PeerData };
   };
   p.edges.filter((e) => e.to === nodeId).forEach((e, i) => {
-    const pn = peer(e.from, 0, i); nodes.push(pn);
+    const pn = peer(e.from, 0, i);
+    if (!pn) return;
+    nodes.push(pn);
     if (main) edges.push({ id: `${pn.id}->main`, source: pn.id, target: main, markerEnd: { type: MarkerType.ArrowClosed }, style: e.sync ? undefined : { strokeDasharray: '6 4' } });
   });
   p.edges.filter((e) => e.from === nodeId).forEach((e, i) => {
-    const pn = peer(e.to, 1000, i); nodes.push(pn);
+    const pn = peer(e.to, 1000, i);
+    if (!pn) return;
+    nodes.push(pn);
     if (main) edges.push({ id: `main->${pn.id}`, source: main, target: pn.id, markerEnd: { type: MarkerType.ArrowClosed }, style: e.sync ? undefined : { strokeDasharray: '6 4' } });
   });
 
