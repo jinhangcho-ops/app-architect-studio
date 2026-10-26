@@ -4,6 +4,29 @@
 
 ![App Architect Studio 첫 화면](docs/screenshot.png)
 
+## 한눈에 보기
+
+```mermaid
+flowchart LR
+  subgraph IN["넣는 것"]
+    A1["블록과 연결<br/>(화면·서버·큐·DB …)"]
+    A2["기술 고르기<br/>(카탈로그)"]
+    A3["사용자 규모·패턴<br/>하루 피크"]
+  end
+  subgraph CALC["계산"]
+    B1["트래픽 → 부하"]
+    B2["대수·지연·한계"]
+    B3["파이프라인·장애"]
+    B4["비용·성장"]
+  end
+  subgraph OUT["나오는 것"]
+    C1["판정과 대안<br/>됨·조건부·안 됨"]
+    C2["첫 병목·준비 시점"]
+    C3["설계서 PDF"]
+  end
+  IN --> CALC --> OUT
+```
+
 ## 문서
 
 | 문서 | 내용 |
