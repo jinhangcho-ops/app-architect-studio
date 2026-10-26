@@ -15,6 +15,21 @@ const orders = table({
   indexes: [{ name: 'idx_user_time', columns: ['user_id', 'created_at'] }],
 });
 
+describe('SQLite 실험: 큰 행 (감사 11)', () => {
+  it('최대 길이 1MB 본문 컬럼도 몇 초 안에 끝나고, 행 수를 줄여 행당 크기를 잼', () => {
+    const big = table({ name: 'posts', columns: [{ name: 'id', type: 'bigint' }, { name: 'body', type: 'text', max_length: 1_000_000 }], primary_key: ['id'] });
+    const t0 = performance.now();
+    const r = runSqliteLab(SQL, big);
+    expect(performance.now() - t0).toBeLessThan(5000);
+    expect(r.rows).toBeLessThan(10_000);
+    expect(r.rowBytes).toBeGreaterThan(400_000);
+  });
+  it('컬럼이 SQLite 한도(2000)를 넘으면 한국어로 알림', () => {
+    const wide = table({ name: 'w', columns: Array.from({ length: 2001 }, (_, k) => ({ name: `c${k}`, type: 'bigint' })) });
+    expect(() => runSqliteLab(SQL, wide)).toThrow('SQLite는 컬럼을 2000개까지만');
+  });
+});
+
 describe('SQLite 실험 (sql.js)', () => {
   it('DDL: 정수 한 컬럼 기본 키는 테이블 안(rowid), uuid 기본 키는 고유 인덱스로 따로', () => {
     expect(ddlFor(intPk).table).toBe('CREATE TABLE "users" ("id" INTEGER NOT NULL, "name" TEXT NOT NULL, PRIMARY KEY ("id"))');

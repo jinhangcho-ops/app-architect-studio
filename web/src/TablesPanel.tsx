@@ -88,10 +88,13 @@ export function TableEditor({ node, t, at, open, onRename }: { node: ProjectNode
   const setCol = (i: number, patch: Partial<Column>) => upd({ columns: patchAt(t.columns, i, patch) });
   const setIx = (i: number, patch: Partial<Table['indexes'][number]>) => upd({ indexes: patchAt(t.indexes, i, patch) });
   const padded = !!nodeStorageProfile(node, catalog.byId)?.fixed_width_padded;
+  // 닫힌 편집기는 머리만 그린다 (테이블이 수십 개면 칸 수만 개를 한 글자마다 다시 그려 입력이 끊긴다)
+  const [shown, setShown] = useState(!!open);
 
   return (
-    <details className="table-editor" open={open}>
+    <details className="table-editor" open={open} onToggle={(e) => setShown(e.currentTarget.open)}>
       <summary><b>{t.name}</b>{t.label && ` ${t.label}`} <span className="muted">{t.record === 'fixed' ? '고정장 · ' : ''}컬럼 {t.columns.length} · 인덱스 {t.indexes.length}{t.partition ? ' · 파티션' : ''}</span></summary>
+      {shown && <>
       {warns.length > 0 && <div className="warn">{warns.map((w, i) => <div key={i}>⚠️ {w.text}</div>)}</div>}
       <Row label="이름"><input defaultValue={t.name} onBlur={(e) => {
         // 앞뒤 공백은 화면에서 안 보이는데 MySQL이 이름으로 받지 않는다
@@ -180,6 +183,7 @@ export function TableEditor({ node, t, at, open, onRename }: { node: ProjectNode
       </table></div>
       <button onClick={() => upd({ indexes: [...t.indexes, { name: newIndexName(node, t), columns: [t.columns[0].name], unique: false }] })}>인덱스 추가</button>
       <button className="danger" onClick={() => edit((p) => removeTable(p, node.id, t.name, at))}>테이블 삭제</button>
+      </>}
     </details>
   );
 }

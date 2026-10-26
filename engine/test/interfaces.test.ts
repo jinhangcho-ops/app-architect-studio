@@ -332,6 +332,20 @@ describe('감사 6: 명세 파일 정확성', () => {
     expect(text).not.toMatch(/\(ApiError: /);
     expect(specGaps(x).filter((g) => g.includes('객체·배열'))).toHaveLength(1);
   });
+  it('한글만 다른 경로·메서드 수백 개도 내보내기가 바로 끝남 (감사 11)', () => {
+    const many = [...Array.from({ length: 300 }, (_, k) => iface({ name: `r${k}`, kind: 'rest', method: 'GET', path: `/주문/${String.fromCharCode(0xac00 + k)}` })),
+      ...Array.from({ length: 600 }, (_, k) => iface({ name: `g${k}`, kind: 'grpc', path: `주문${String.fromCharCode(0xac00 + k)}` }))];
+    const p = withEdge(ledger, 'U-01', 'B-01', many);
+    const t0 = performance.now();
+    const ids = Object.values((openApiDocs(p).find((x) => x.nodeId === 'B-01')!.doc as { paths: Record<string, Record<string, { operationId: string }>> }).paths).flatMap((x) => Object.values(x).map((o) => o.operationId));
+    fastApiFiles(p);
+    const rpcs = protoFiles(p).find((x) => x.nodeId === 'B-01')!.text.match(/rpc \w+/g)!;
+    expect(performance.now() - t0).toBeLessThan(1000);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.length).toBeGreaterThanOrEqual(300);
+    expect(new Set(rpcs).size).toBe(rpcs.length);
+    expect(rpcs.length).toBeGreaterThanOrEqual(600);
+  });
   it('경로 변수 {order-id}·{주문}도 OpenAPI parameter가 됨', () => {
     const doc = openApiDocs(two([iface({ name: 'a', kind: 'rest', method: 'GET', path: '/o/{order-id}/{주문}' })]))[0].doc as { paths: Record<string, { get: { parameters: { name: string; in: string }[] } }> };
     expect(doc.paths['/o/{order-id}/{주문}'].get.parameters.filter((x) => x.in === 'path').map((x) => x.name)).toEqual(['order-id', '주문']);

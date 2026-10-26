@@ -26,6 +26,22 @@ function mountTable() {
   return { el, root, render, node, col: () => node().tables[0].columns[0] };
 }
 
+describe('닫힌 테이블 편집기 (감사 11)', () => {
+  it('닫혀 있으면 머리만 그리고, 열면 칸을 그림', () => {
+    const p = load();
+    const node = p.nodes.find((n) => n.tables.length)!;
+    useStore.setState({ project: p, past: [], future: [] });
+    const el = document.createElement('div');
+    flushSync(() => createRoot(el).render(<TableEditor node={node} t={node.tables[0]} />));
+    expect(el.querySelectorAll('input').length).toBe(0);
+    expect(el.querySelector('summary')!.textContent).toContain(node.tables[0].name);
+    const d = el.querySelector('details')!;
+    d.open = true;
+    flushSync(() => d.dispatchEvent(new Event('toggle')));
+    expect(el.querySelectorAll('input').length).toBeGreaterThan(0);
+  });
+});
+
 describe('데이터 사전 칸', () => {
   it('되돌리기 뒤에 칸이 지금 값을 보이고, 칸을 지나가도 옛 값을 다시 저장하지 않음', () => {
     const { el, root, render, col } = mountTable();

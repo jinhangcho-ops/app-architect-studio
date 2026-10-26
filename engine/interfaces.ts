@@ -75,6 +75,8 @@ export type RestOp = { i: Interface; method: string; opId: string; callers: stri
 export function restOps(p: Project): Map<string, RestOp[]> {
   const nameOf = (id: string) => p.nodes.find((n) => n.id === id)?.name ?? id;
   const out = new Map<string, RestOp[]>();
+  // 노드마다 쓴 opId·pascal(opId)와 base별 다음 번호 (한글만 다른 경로 수백 개가 같은 base가 되어도 한 번씩만 찾게)
+  const usedIds = new Map<string, Set<string>>(), nextK = new Map<string, number>();
   for (const e of p.edges) for (const x of e.interfaces.filter((y) => y.kind === 'rest')) {
     // 경로가 /로 시작하지 않으면(명세 점검이 알림) 내보낼 때만 / 를 붙여 OpenAPI·FastAPI가 깨지지 않게
     const i = x.path.startsWith('/') ? x : { ...x, path: `/${x.path}` };
@@ -90,7 +92,10 @@ export function restOps(p: Project): Map<string, RestOp[]> {
     const base = `${method}_${safe(i.path)}`.replace(/_+/g, '_').replace(/_$/, '');
     let opId = base;
     // FastAPI 모델 이름은 pascal(opId)라 그 이름으로도 겹치지 않게 (get_orders_id_2와 get_orders_id2)
-    for (let k = 2; list.some((o) => o.opId === opId || pascal(o.opId) === pascal(opId)); k++) opId = `${base}_${k}`;
+    const used = usedIds.get(e.to) ?? new Set<string>(), key = `${e.to}\u0000${base}`;
+    usedIds.set(e.to, used);
+    for (let k = nextK.get(key) ?? 2; used.has(opId) || used.has(`P:${pascal(opId)}`); k++) { opId = `${base}_${k}`; nextK.set(key, k + 1); }
+    used.add(opId).add(`P:${pascal(opId)}`);
     list.push({
       i, method, callers: [nameOf(e.from)], inPath, opId,
       query: method === 'get' ? rest : [], body: method === 'get' ? [] : rest,
@@ -215,19 +220,23 @@ const protoMessage = (name: string, fs: SpecField[]) => [
 /** 받는 노드마다 gRPC 인터페이스를 모은 .proto */
 export function protoFiles(p: Project): { nodeId: string; text: string }[] {
   const nameOf = (id: string) => p.nodes.find((n) => n.id === id)?.name ?? id;
-  const byTarget = new Map<string, Interface[]>(), origOf = new Map<string, string[]>();
+  const byTarget = new Map<string, Interface[]>(), origOf = new Map<string, Set<string>>(), namesOf = new Map<string, Set<string>>(), nextK = new Map<string, number>();
   for (const e of p.edges) for (const x of e.interfaces.filter((y) => y.kind === 'grpc')) {
     // 메서드 이름이 영문 식별자가 아니면(명세 점검이 알림) 내보낼 때만 식별자로 바꿔 proto 문법이 깨지지 않게
     // 바꾼 이름이 다른 인터페이스와 겹치면 _2, _3 (원래 이름이 같을 때만 하나로)
-    const list = byTarget.get(e.to) ?? [], orig = origOf.get(e.to) ?? [];
-    if (orig.includes(x.path)) continue;
+    const list = byTarget.get(e.to) ?? [], orig = origOf.get(e.to) ?? new Set<string>(), names = namesOf.get(e.to) ?? new Set<string>();
+    if (orig.has(x.path)) continue;
     const base = IDENT.test(x.path) ? x.path : pascal(safe(x.path)) || 'Method1';
     let name = base;
-    // rpc 이름은 다른 메서드의 Request·Response 메시지 이름과도 겹치면 안 된다 (Get과 GetRequest)
-    const taken = (m: string) => list.some((y) => [y.path, `${y.path}Request`, `${y.path}Response`].includes(m) || [`${m}Request`, `${m}Response`].includes(y.path));
-    for (let k = 2; taken(name); k++) name = `${base}_${k}`;
-    byTarget.set(e.to, [...list, { ...x, path: name }]);
-    origOf.set(e.to, [...orig, x.path]);
+    // rpc 이름은 다른 메서드의 Request·Response 메시지 이름과도 겹치면 안 된다 (Get과 GetRequest). names: 메서드 이름과 그 메시지 이름, M:메서드 이름
+    const taken = (m: string) => names.has(m) || names.has(`M:${m}Request`) || names.has(`M:${m}Response`);
+    const key = `${e.to}\u0000${base}`;
+    for (let k = nextK.get(key) ?? 2; taken(name); k++) { name = `${base}_${k}`; nextK.set(key, k + 1); }
+    names.add(name).add(`${name}Request`).add(`${name}Response`).add(`M:${name}`);
+    list.push({ ...x, path: name });
+    byTarget.set(e.to, list);
+    origOf.set(e.to, orig.add(x.path));
+    namesOf.set(e.to, names);
   }
   return [...byTarget].map(([nodeId, list]) => {
     const used = list.flatMap((i) => [...i.request, ...i.response]).map((f) => f.type);

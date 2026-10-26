@@ -34,12 +34,29 @@ export function ddlFor(t: Table, withoutRowid = false): { table: string; indexes
   return { table, indexes };
 }
 
+// 무작위 글자·바이트 조각을 한 번 만들어 두고 잘라 쓴다 (값마다 한 글자씩 만들면 큰 컬럼에서 수십 초 걸림). SQLite는 압축하지 않아 크기는 같다
+const POOL = 8192;
+const poolR = rng(7);
+const TEXT_POOL = Array.from({ length: POOL }, () => String.fromCharCode(97 + Math.floor(poolR() * 26))).join('');
+const BYTE_POOL = Uint8Array.from({ length: POOL }, () => Math.floor(poolR() * 256));
+
 /** 컬럼 하나의 가짜 값. 길이는 크기 계산(valueBytes)과 같은 값을 써서 실험과 계산이 같은 가정을 쓰게 한다 */
 function fakeValue(c: Column, r: () => number, i: number, sequential: boolean): SqlValue {
   const storage = storageOf(c);
   const len = Math.max(1, Math.round(valueBytes(c)));
-  const text = (n: number) => Array.from({ length: n }, () => String.fromCharCode(97 + Math.floor(r() * 26))).join('');
-  const bytes = (n: number) => Uint8Array.from({ length: n }, () => Math.floor(r() * 256));
+  // 앞 HEAD 글자는 값마다 무작위(고유 인덱스가 겹치지 않게), 나머지는 조각에서 잘라 쓴다
+  const HEAD = 32;
+  const randText = (n: number) => Array.from({ length: n }, () => String.fromCharCode(97 + Math.floor(r() * 26))).join('');
+  const text = (n: number) => {
+    if (n <= HEAD) return randText(n);
+    const s = Math.floor(r() * POOL);
+    return randText(HEAD) + (TEXT_POOL.slice(s) + TEXT_POOL.repeat(Math.ceil(n / POOL))).slice(0, n - HEAD);
+  };
+  const bytes = (n: number) => {
+    const out = new Uint8Array(n), s = Math.floor(r() * POOL);
+    for (let k = 0; k < n; k++) out[k] = k < HEAD ? Math.floor(r() * 256) : BYTE_POOL[(s + k) % POOL];
+    return out;
+  };
   const time = 1.7e12 + Math.floor(r() * 3e10);
   if (sequential) return i + 1;
   if (storage === 'integer') {
@@ -61,8 +78,15 @@ function fakeValue(c: Column, r: () => number, i: number, sequential: boolean): 
 
 const sizeOf = (db: Database) => Number(db.exec('PRAGMA page_count')[0].values[0][0]) * Number(db.exec('PRAGMA page_size')[0].values[0][0]);
 
+/** SQLite 기본 컬럼 한도 (SQLITE_MAX_COLUMN) */
+const MAX_COLUMNS = 2000;
+/** 넣는 데이터 총량 상한: 행이 크면 행 수를 줄인다 (행당 크기는 그대로 재고, 화면이 오래 멈추거나 메모리가 넘치지 않게) */
+const DATA_BUDGET = 20e6;
+
 export function runSqliteLab(SQL: SqlJsStatic, t: Table, opts: { rows?: number; seed?: number; withoutRowid?: boolean } = {}): LabResult {
-  const rows = opts.rows ?? 10_000;
+  if (t.columns.length > MAX_COLUMNS) throw new Error(`SQLite는 컬럼을 ${MAX_COLUMNS}개까지만 받아 실험할 수 없어요 (지금 ${t.columns.length}개)`);
+  const rowEstimate = t.columns.reduce((s, c) => s + Math.max(1, valueBytes(c)), 0);
+  const rows = opts.rows ?? Math.max(20, Math.min(10_000, Math.floor(DATA_BUDGET / rowEstimate)));
   const { table, indexes } = ddlFor(t, opts.withoutRowid);
   const a = new SQL.Database();
   const b = new SQL.Database();
