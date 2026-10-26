@@ -270,7 +270,7 @@ export function specGaps(i: Interface): string[] {
   if (i.kind === 'grpc' && !i.request.length) gaps.push('요청 필드가 없음');
   // proto3는 필드마다 JSON 이름(밑줄을 빼고 camelCase)을 만들고, 겹치면 protoc가 거부한다 (user_id와 userId)
   if (i.kind === 'grpc') for (const fs of [i.request, i.response]) {
-    const json = fs.map((f) => f.name.replace(/_+([^_])/g, (_, c: string) => c.toUpperCase()));
+    const json = fs.map((f) => f.name.replace(/_+([^_])/g, (_, c: string) => c.toUpperCase()).replace(/_+$/, ''));
     for (const [k, f] of fs.entries()) if (json.indexOf(json[k]) < k) gaps.push(`필드 ${f.name}의 JSON 이름(${json[k]})이 ${fs[json.indexOf(json[k])].name}과 겹침 (protoc가 거부함)`);
   }
   if (call && !i.response.length && !(i.kind === 'rest' && i.method === 'DELETE')) gaps.push('응답 형식이 없음');
@@ -357,20 +357,19 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
       const used = new Set<string>();
       const arg = (n: string) => { let x = n; for (let k = 2; used.has(x); k++) x = `${n}_${k}`; used.add(x); return x; };
       // Starlette는 영문 식별자 경로 변수만 받으므로 그 밖의 이름({order-id}, {주문})은 이 파일의 경로에서도 파이썬 이름으로 바꾼다 (명세 점검이 알림)
-      let route = i.path;
-      // Annotated: 기본값 없는 인자라 뒤에 오는 본문(body) 인자와 순서가 어긋나지 않는다
-      const pathArgs = o.inPath.map((f) => {
-        const t = PY_TYPE[f.type];
-        if (!IDENT.test(f.name)) { const n = arg(`f_${safe(f.name)}`); route = route.split(`{${f.name}}`).join(`{${n}}`); return `${n}: ${t}`; }
-        const n = arg(PY_KEYWORDS.has(f.name) ? `${f.name}_` : f.name);
-        return n === f.name ? `${n}: ${t}` : `${n}: Annotated[${t}, Path(alias=${py(f.name)})]`;
-      });
-      // 같은 경로 변수가 두 번 나오면(명세 점검이 알림) Starlette가 거부하므로 두 번째부터 새 이름
-      const seen = new Set<string>();
-      route = route.replace(PATH_VAR, (m, v: string) => {
-        if (!seen.has(v)) { seen.add(v); return m; }
-        const n = arg(v);
-        pathArgs.push(`${n}: str`);
+      // 그대로 쓸 수 있는 경로 변수 이름을 먼저 잡아 두어, 바꾼 이름이 다른 경로 변수와 겹치지 않게 한다
+      for (const f of o.inPath) if (IDENT.test(f.name) && !PY_KEYWORDS.has(f.name)) arg(f.name);
+      // 경로를 한 번 훑으며 인자를 만든다. Annotated: 기본값 없는 인자라 뒤에 오는 본문(body) 인자와 순서가 어긋나지 않는다
+      const pathArgs: string[] = [], seen = new Set<string>();
+      const route = i.path.replace(PATH_VAR, (m, v: string) => {
+        const t = PY_TYPE[o.inPath.find((f) => f.name === v)!.type], again = seen.has(v);
+        seen.add(v);
+        if (!again && IDENT.test(v) && !PY_KEYWORDS.has(v)) { pathArgs.push(`${v}: ${t}`); return m; }
+        // 예약어는 경로 이름을 두고 alias로 받는다 (OpenAPI와 같은 이름)
+        if (!again && PY_KEYWORDS.has(v)) { pathArgs.push(`${arg(`${v}_`)}: Annotated[${t}, Path(alias=${py(v)})]`); return m; }
+        // 영문 식별자가 아니거나 두 번째로 나온 변수(Starlette가 받지 못함, 명세 점검이 알림)는 경로에서도 새 이름
+        const n = arg(PY_KEYWORDS.has(v) ? `${v}_` : IDENT.test(v) ? v : `f_${safe(v)}`);
+        pathArgs.push(`${n}: ${t}`);
         return `{${n}}`;
       });
       const params = [

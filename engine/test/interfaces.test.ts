@@ -302,6 +302,7 @@ describe('감사 6: 명세 파일 정확성', () => {
     expect(rpcs).toEqual(['rpc Get', 'rpc GetRequest_2']);
     const g = iface({ name: 'g', kind: 'grpc', path: 'Get', request: [{ name: 'user_id', type: 'string', required: true }, { name: 'userId', type: 'string', required: true }] });
     expect(specGaps(g).join()).toContain('필드 userId의 JSON 이름(userId)이 user_id과 겹침');
+    expect(specGaps({ ...g, request: [{ name: 'a', type: 'string', required: true }, { name: 'a_', type: 'string', required: true }] }).join()).toContain('필드 a_의 JSON 이름(a)이 a과 겹침');
   });
   it('경로 변수 {order-id}·{주문}도 OpenAPI parameter가 됨', () => {
     const doc = openApiDocs(two([iface({ name: 'a', kind: 'rest', method: 'GET', path: '/o/{order-id}/{주문}' })]))[0].doc as { paths: Record<string, { get: { parameters: { name: string; in: string }[] } }> };
@@ -326,7 +327,7 @@ describe('감사 6: 명세 파일 정확성', () => {
 
 // 진짜 파서가 거부하는 모양을 JS로 검사: OpenAPI 작업 안 (in, name) 중복, FastAPI 함수 인자 중복·경로 변수 중복, proto rpc와 메시지 이름 충돌
 describe('내보낸 명세의 구조 규칙 (예시 전체 + 까다로운 이름)', () => {
-  const tricky = withEdge(ledger, 'U-01', 'B-01', ['/a/{id}/b/{id}', '/o/{주문}/{번호}/{body}', '/k/{1}/{class}/{order-id}', '/x/{_token}/{body_2}'].map((path, k) =>
+  const tricky = withEdge(ledger, 'U-01', 'B-01', ['/a/{id}/b/{id}', '/o/{주문}/{번호}/{body}', '/k/{1}/{class}/{order-id}', '/x/{_token}/{body_2}', '/r/{class}/s/{class}', '/p/{x-y}/{f_x_y}'].map((path, k) =>
     iface({ name: `r${k}`, kind: 'rest', method: k % 2 ? 'POST' : 'GET', path, auth: 'bearer', request: [{ name: 'class', type: 'string', required: true }, { name: 'class_', type: 'string', required: false }] })));
   const grpc = withEdge(gc, 'N-03', 'N-09', ['Get', 'GetRequest', 'get', '주문', '결제', 'GetResponse'].map((path, k) => iface({ name: `g${k}`, kind: 'grpc', path })));
   const projects = [...['actions', 'global-commerce', 'ledger-fastapi', 'phase1', 'phase2', 'phase3'].map((x) => loadProject(root(`examples/${x}.json`), catalog.items)), tricky, grpc];
@@ -335,8 +336,18 @@ describe('내보낸 명세의 구조 규칙 (예시 전체 + 까다로운 이름
       for (const op of Object.values(ops)) { const keys = (op.parameters ?? []).map((x) => `${x.in}:${x.name}`); expect(new Set(keys).size).toBe(keys.length); }
     }
     for (const f of fastApiFiles(p)) {
-      for (const m of f.text.matchAll(/^def \w+\((.*)\) ->/gm)) { const names = m[1] ? m[1].split(/, (?=\w+:)/).map((x) => x.split(':')[0]) : []; expect(new Set(names).size, m[0]).toBe(names.length); }
-      for (const m of f.text.matchAll(/^@app\.\w+\("([^"]*)"/gm)) { const vars = [...m[1].matchAll(/\{([^}]*)\}/g)].map((x) => x[1]); expect(new Set(vars).size).toBe(vars.length); for (const v of vars) expect(v).toMatch(/^[A-Za-z_]\w*$/); }
+      // 경로 변수마다 그 이름(또는 alias)으로 받는 인자가 하나, 인자 이름은 겹치지 않고 예약어가 아님
+      for (const m of f.text.matchAll(/^@app\.\w+\("([^"]*)".*\n^def \w+\((.*)\) ->/gm)) {
+        const args = m[2] ? m[2].split(/, (?=\w+:)/) : [], names = args.map((x) => x.split(':')[0]);
+        expect(new Set(names).size, m[0]).toBe(names.length);
+        for (const n of names) expect(['class', 'from', 'in', 'def', 'for'].includes(n), m[0]).toBe(false);
+        const vars = [...m[1].matchAll(/\{([^}]*)\}/g)].map((x) => x[1]);
+        expect(new Set(vars).size).toBe(vars.length);
+        for (const v of vars) {
+          expect(v).toMatch(/^[A-Za-z_]\w*$/);
+          expect(args.filter((a) => a.startsWith(`${v}: `) || a.includes(`Path(alias="${v}")`)).length, `${m[0]} {${v}}`).toBe(1);
+        }
+      }
       for (const m of f.text.matchAll(/^class \w+\(BaseModel\):\n((?: {4}.*\n)*)/gm)) { const names = [...m[1].matchAll(/^ {4}(\w+): /gm)].map((x) => x[1]); expect(new Set(names).size).toBe(names.length); }
     }
     for (const { text } of protoFiles(p)) {
