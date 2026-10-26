@@ -171,7 +171,7 @@ export function TableEditor({ node, t, at, open, onRename }: { node: ProjectNode
         <thead><tr><th>인덱스</th><th>컬럼(쉼표)</th><th>고유</th><th /></tr></thead>
         <tbody>{t.indexes.map((x, i) => (
           <tr key={i}>
-            <td><BlurInput value={x.name} onSave={(v) => v && setIx(i, { name: v })} /></td>
+            <td><BlurInput value={x.name} onSave={(v) => v.trim() && setIx(i, { name: v.trim() })} /></td>
             <td><BlurInput value={csv(x.columns)} onSave={(v) => setIx(i, { columns: list(v) })} /></td>
             <td><input type="checkbox" checked={x.unique} onChange={(e) => setIx(i, { unique: e.target.checked })} /></td>
             <td><button aria-label="인덱스 삭제" onClick={() => upd({ indexes: t.indexes.filter((_, k) => k !== i) })}>×</button></td>

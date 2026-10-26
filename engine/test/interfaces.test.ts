@@ -323,6 +323,15 @@ describe('감사 6: 명세 파일 정확성', () => {
     const proto = protoFiles(two([iface({ name: 'line1\nline2 garbage', kind: 'grpc', path: 'Get' })]))[0].text;
     expect(proto.split('\n').some((l) => l.startsWith('line2'))).toBe(false);
   });
+  it('인자 이름 ApiError는 본문의 raise ApiError를 가리지 않게 alias, 같은 변수 경고는 한 번 (리뷰 9)', () => {
+    const x = iface({ name: 'k', kind: 'rest', method: 'GET', path: '/t/{ApiError}/{obj}/{obj}', request: [{ name: 'obj', type: 'object', required: true }] });
+    const y = iface({ name: 'q', kind: 'rest', method: 'GET', path: '/q', request: [{ name: 'ApiError', type: 'string', required: true }] });
+    const text = fastApiFiles(withEdge(ledger, 'U-01', 'B-01', [x, y]))[0].text;
+    expect(text).toContain('ApiError_: Annotated[str, Path(alias="ApiError")]');
+    expect(text).toContain('ApiError_: str = Query(..., alias="ApiError")');
+    expect(text).not.toMatch(/\(ApiError: /);
+    expect(specGaps(x).filter((g) => g.includes('객체·배열'))).toHaveLength(1);
+  });
   it('경로 변수 {order-id}·{주문}도 OpenAPI parameter가 됨', () => {
     const doc = openApiDocs(two([iface({ name: 'a', kind: 'rest', method: 'GET', path: '/o/{order-id}/{주문}' })]))[0].doc as { paths: Record<string, { get: { parameters: { name: string; in: string }[] } }> };
     expect(doc.paths['/o/{order-id}/{주문}'].get.parameters.filter((x) => x.in === 'path').map((x) => x.name)).toEqual(['order-id', '주문']);

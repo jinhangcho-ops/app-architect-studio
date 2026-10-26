@@ -263,8 +263,8 @@ export function specGaps(i: Interface): string[] {
     const inPath = [...i.path.matchAll(PATH_VAR)].map((x) => x[1]);
     for (const v of inPath.filter((v) => !i.request.some((f) => f.name === v))) gaps.push(`경로 변수 {${v}}의 형식이 없음 (문자열로 가정)`);
     for (const v of new Set(inPath.filter((v, k) => inPath.indexOf(v) !== k))) gaps.push(`경로 변수 {${v}}가 두 번 나옴 (FastAPI 뼈대에서는 두 번째 이름을 바꿈)`);
-    for (const v of inPath.filter((v) => ['object', 'array'].includes(i.request.find((f) => f.name === v)?.type ?? ''))) gaps.push(`경로 변수 {${v}}의 형식이 객체·배열 (경로로는 문자열만 받을 수 있음)`);
-    for (const v of inPath.filter((v) => !IDENT.test(v))) gaps.push(`경로 변수 {${v}}가 영문 식별자가 아님 (FastAPI·Spring 등이 그대로 받지 못해 FastAPI 뼈대에서는 이름을 바꿈)`);
+    for (const v of [...new Set(inPath)].filter((v) => ['object', 'array'].includes(i.request.find((f) => f.name === v)?.type ?? ''))) gaps.push(`경로 변수 {${v}}의 형식이 객체·배열 (경로로는 문자열만 받을 수 있음)`);
+    for (const v of [...new Set(inPath)].filter((v) => !IDENT.test(v))) gaps.push(`경로 변수 {${v}}가 영문 식별자가 아님 (FastAPI·Spring 등이 그대로 받지 못해 FastAPI 뼈대에서는 이름을 바꿈)`);
     if (['POST', 'PUT', 'PATCH'].includes(i.method ?? 'GET') && !i.request.some((f) => !inPath.includes(f.name))) gaps.push('요청 본문 필드가 없음');
   }
   // 방식을 바꾸거나 경로를 고치는 중에 생기는 모양이라 막지 않고 알린다 (이대로 내보내면 OpenAPI·proto 파일이 틀림)
@@ -326,8 +326,10 @@ const PY_KEYWORDS = new Set(['False', 'None', 'True', 'and', 'as', 'assert', 'as
 /** 파이썬 문자열 (JSON 문자열 표기는 파이썬에서도 같은 뜻) */
 const py = (s: string) => JSON.stringify(s);
 /** 파이썬 이름으로 그대로 못 쓰는 이름: 예약어, 영문 식별자가 아님, pydantic이 막는 _·model_로 시작. 다른 이름을 쓰고 alias로 원래 이름을 붙인다 */
-// 모델 필드가 이 이름이면 클래스 안에서 뒤 필드의 형식 이름(str, datetime …)을 가린다
-const PY_SHADOW = new Set(['str', 'int', 'float', 'bool', 'dict', 'list', 'datetime', 'UUID', 'Any', 'Optional', 'Annotated', 'Field', 'BaseModel', 'ConfigDict']);
+// 모델 필드가 이 이름이면 클래스 안에서 뒤 필드의 형식 이름(str, datetime …)을 가리고, 함수 인자가 ApiError면 본문의 raise ApiError를 가린다
+const PY_SHADOW = new Set(['str', 'int', 'float', 'bool', 'dict', 'list', 'datetime', 'UUID', 'Any', 'Optional', 'Annotated', 'Field', 'BaseModel', 'ConfigDict', 'ApiError']);
+/** 경로 변수를 그 이름 그대로 인자로 쓰면 안 되는 이름 (경로 이름은 두고 alias로 받는다) */
+const pyReserved = (n: string) => PY_KEYWORDS.has(n) || PY_SHADOW.has(n);
 const needsAlias = (n: string) => PY_KEYWORDS.has(n) || PY_SHADOW.has(n) || !/^[A-Za-z][A-Za-z0-9_]*$/.test(n) || n.startsWith('model_');
 const pyName = (n: string) => (!needsAlias(n) ? n : PY_KEYWORDS.has(n) || PY_SHADOW.has(n) ? `${n}_` : `f_${safe(n)}`);
 const pascal = (s: string) => s.split('_').filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join('');
@@ -363,18 +365,18 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
       const arg = (n: string) => { let x = n; for (let k = 2; used.has(x); k++) x = `${n}_${k}`; used.add(x); return x; };
       // Starlette는 영문 식별자 경로 변수만 받으므로 그 밖의 이름({order-id}, {주문})은 이 파일의 경로에서도 파이썬 이름으로 바꾼다 (명세 점검이 알림)
       // 그대로 쓸 수 있는 경로 변수 이름을 먼저 잡아 두어, 바꾼 이름이 다른 경로 변수와 겹치지 않게 한다
-      for (const f of o.inPath) if (IDENT.test(f.name) && !PY_KEYWORDS.has(f.name)) arg(f.name);
+      for (const f of o.inPath) if (IDENT.test(f.name) && !pyReserved(f.name)) arg(f.name);
       // 경로를 한 번 훑으며 인자를 만든다. Annotated: 기본값 없는 인자라 뒤에 오는 본문(body) 인자와 순서가 어긋나지 않는다
       const pathArgs: string[] = [], seen = new Set<string>();
       const route = i.path.replace(PATH_VAR, (m, v: string) => {
         // 객체·배열은 경로로 받을 수 없어(FastAPI가 거부) 질의처럼 문자열로 받는다
         const ft = o.inPath.find((f) => f.name === v)!.type, t = ft === 'object' || ft === 'array' ? 'str' : PY_TYPE[ft], again = seen.has(v);
         seen.add(v);
-        if (!again && IDENT.test(v) && !PY_KEYWORDS.has(v)) { pathArgs.push(`${v}: ${t}`); return m; }
-        // 예약어는 경로 이름을 두고 alias로 받는다 (OpenAPI와 같은 이름)
-        if (!again && PY_KEYWORDS.has(v)) { pathArgs.push(`${arg(`${v}_`)}: Annotated[${t}, Path(alias=${py(v)})]`); return m; }
+        if (!again && IDENT.test(v) && !pyReserved(v)) { pathArgs.push(`${v}: ${t}`); return m; }
+        // 예약어·가려지는 이름은 경로 이름을 두고 alias로 받는다 (OpenAPI와 같은 이름)
+        if (!again && pyReserved(v)) { pathArgs.push(`${arg(`${v}_`)}: Annotated[${t}, Path(alias=${py(v)})]`); return m; }
         // 영문 식별자가 아니거나 두 번째로 나온 변수(Starlette가 받지 못함, 명세 점검이 알림)는 경로에서도 새 이름
-        const n = arg(PY_KEYWORDS.has(v) ? `${v}_` : IDENT.test(v) ? v : `f_${safe(v)}`);
+        const n = arg(pyReserved(v) ? `${v}_` : IDENT.test(v) ? v : `f_${safe(v)}`);
         pathArgs.push(`${n}: ${t}`);
         return `{${n}}`;
       });
