@@ -19,6 +19,8 @@ export const SETTINGS: { id: string; title: string; fields: (p: Project) => Reco
   { id: 's-growth', title: '성장', fields: (p) => ({ ...flat(p.growth), ...flat(p.growth?.inflow, 'in.'), has: !!p.growth }) },
   { id: 's-cost', title: '비용 기준', fields: (p) => flat(p.cost) },
   { id: 's-rec', title: '장애 목표', fields: (p) => ({ ...flat(p.recovery), has: !!p.recovery }) },
+  // 이 PC의 앱 설정이라 프로젝트의 바뀐 항목으로 세지 않는다
+  { id: 's-app', title: '앱', fields: () => ({}) },
 ];
 
 /** 칸마다 불러온 값과 다른 항목 수 */

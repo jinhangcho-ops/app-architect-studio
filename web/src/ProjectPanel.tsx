@@ -10,6 +10,7 @@ import { STANDARD_OFFSET } from '../../engine/timezones';
 import { NumField, Row, Section, TextField } from './fields';
 import { addAction, patchAt, removeAction, removePersona, setActionRate, updateAction, updatePersona } from './edit';
 import { usePick } from './store';
+import { desktop, setUpdateCheck, updateCheckOn } from './desktop';
 
 export function ProjectPanel() {
   const { project: p, edit } = usePick('project', 'edit');
@@ -199,7 +200,22 @@ export function ProjectPanel() {
           <NumField label="목표 RPO(분)" value={p.recovery.rpo_min} step={5} hint="장애 때 잃어도 되는 데이터의 시간. 백업 주기·시점 복구·리전 복제 지연과 비교해요" onChange={(v) => set({ recovery: { ...p.recovery!, rpo_min: v === undefined || v < 0 ? undefined : v } })} />
         </>}
       </Section>
+
+      <AppSection />
     </div>
+  );
+}
+
+/** 이 PC의 앱 설정 (프로젝트 파일에 들어가지 않음) */
+function AppSection() {
+  const [on, setOn] = useState(updateCheckOn);
+  return (
+    <Section id="s-app" title="앱" desc="이 PC의 앱 설정이에요. 프로젝트 파일에는 들어가지 않아요.">
+      <Row label="앱을 열 때 새 버전 확인" hint="앱을 열 때 GitHub에 최신 릴리스 주소와 (새 버전이면) 릴리스 노트만 물어요. 프로젝트·데이터 값은 보내지 않아요">
+        <input type="checkbox" checked={on} disabled={!desktop} onChange={(e) => { setUpdateCheck(e.target.checked); setOn(e.target.checked); }} />
+      </Row>
+      {!desktop && <p className="muted">설치형 데스크톱 앱에서만 확인해요.</p>}
+    </Section>
   );
 }
 

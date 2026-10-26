@@ -1,5 +1,6 @@
 # 버전 태그(v1.0.0 등)를 올리면 Windows 설치 파일을 만들어 GitHub Releases에 올린다.
 # 받는 사람은 Releases에서 App-Architect-Studio-Setup-<버전>.exe만 받아 설치하면 된다. 같은 이름의 .sha256으로 받은 파일을 확인할 수 있다.
+# 릴리스 설명과 RELEASE_NOTES.md는 CHANGELOG.md의 그 버전 절(추가·개선·삭제)에서 뽑는다. 앱의 [업데이트] 창이 이 노트를 보여 준다.
 name: Release installer
 
 on:
@@ -8,62 +9,86 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  windows:
-    runs-on: windows-latest
+  build:
+    # 러너 이미지를 고정한다 (windows-latest가 바뀌어 같은 태그의 빌드가 달라지지 않게)
+    runs-on: windows-2025
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
       - run: npm ci
       - run: npx tsc --noEmit
+      # 시험은 PC 시간대에 기대지 않는다 (CI는 UTC)
       - run: npx vitest run
       - run: npx vite build
-      # 태그 버전과 package.json 버전이 다르면 멈춘다 (Releases 이름과 설치 파일 이름이 어긋나지 않게)
+      # 태그 버전과 package.json 버전이 다르면 멈춘다 (Releases 이름과 설치 파일 이름, 앱이 아는 자기 버전이 어긋나지 않게)
       - name: Check version
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: test "v$(node -p "require('./package.json').version")" = "${GITHUB_REF_NAME}"
-      # Release를 먼저 초안으로 하나 만든다. 없으면 electron-builder가 파일마다 동시에 Release를 만들어
-      # 같은 태그의 Release가 둘 생긴다(v1.0.0 첫 배포에서 실제로 설치 파일과 지문이 다른 Release에 갈라졌다)
-      - name: Create draft release
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||             gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "${GITHUB_REF_NAME#v}"               --notes "설치 파일: App-Architect-Studio-Setup-${GITHUB_REF_NAME#v}.exe · 받은 파일 확인: 같은 이름의 .sha256 (README의 확인 방법)"
-      # 태그로 돌 때만 올린다. 손으로 돌리면(Run workflow) 빌드 확인만 한다: 그때도 올리면 초안을 먼저 만들지 않아
-      # electron-builder가 같은 버전의 초안을 둘 만들 수 있고, 나중에 그 버전을 태그로 배포할 때 파일이 다시 갈라진다
-      - run: npx electron-builder --win --x64 --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # 설치 파일의 SHA-256 지문을 같은 Release에 올린다. 받은 사람이 README의 한 줄로 받은 파일이 그대로인지 확인한다
-      # (코드 서명이 없는 동안 받은 파일을 확인하는 방법. 형식은 sha256sum과 같다: "<지문>  <파일 이름>")
+      # 빌드만 한다. 올리기는 쓰기 권한이 있는 release 작업이 한다
+      - run: npx electron-builder --win --x64 --publish never
+      # 설치 파일의 SHA-256 지문 (형식은 sha256sum과 같다: "<지문>  <파일 이름>")
       - name: SHA-256 checksum
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $exe = Get-Item "release/App-Architect-Studio-Setup-*.exe"
-          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
-          "$hash  $($exe.Name)" | Out-File "$($exe.FullName).sha256" -Encoding ascii -NoNewline
-          "SHA-256 ``$hash`` $($exe.Name)" >> $env:GITHUB_STEP_SUMMARY
-          gh release upload $env:GITHUB_REF_NAME "$($exe.FullName).sha256" --clobber
-      # 파일이 다 올라간 뒤에 한 번에 공개한다 (받는 사람이 반쯤 올라간 Release를 보지 않게)
-      - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: release
         run: |
-          n=$(gh release view "$GITHUB_REF_NAME" --json assets --jq '[.assets[].name] | map(select(endswith(".exe") or endswith(".sha256") or . == "latest.yml")) | length')
-          test "$n" = 3 || { echo "설치 파일·지문·latest.yml 중 빠진 것이 있음 ($n/3)"; exit 1; }
+          exe=$(ls App-Architect-Studio-Setup-*.exe)
+          sha256sum "$exe" > "$exe.sha256"
+          echo "SHA-256 \`$(cut -d' ' -f1 "$exe.sha256")\` $exe" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installer
+          path: |
+            release/App-Architect-Studio-Setup-*.exe
+            release/App-Architect-Studio-Setup-*.exe.sha256
+          if-no-files-found: error
+
+  release:
+    # 태그로 돌 때만 올린다. 손으로 돌리면(Run workflow) 빌드 확인만 한다
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    # 쓰기 권한은 이 작업에만
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: installer
+          path: dist-release
+      - name: Release notes from CHANGELOG.md
+        run: |
+          awk -v head="## $TAG" '$0 == head {on = 1; next} /^## v/ {on = 0} on' CHANGELOG.md | sed '/./,$!d' > RELEASE_NOTES.md
+          if ! grep -q '[^[:space:]]' RELEASE_NOTES.md; then echo "CHANGELOG.md에 '## $TAG' 절이 없습니다"; exit 1; fi
+          exe="App-Architect-Studio-Setup-${TAG#v}.exe"
+          test -f "dist-release/$exe" && test -f "dist-release/$exe.sha256"
+          { echo "$exe SHA-256: \`$(cut -d' ' -f1 "dist-release/$exe.sha256")\`"; echo; cat RELEASE_NOTES.md; } > body.md
+          cp RELEASE_NOTES.md dist-release/
+      # 같은 태그로 다시 돌려도 되게: 릴리스가 있으면 파일을 덮어쓰고 설명을 고쳐 공개, 없으면 새로 만든다
+      - name: Publish
+        run: |
+          exe="App-Architect-Studio-Setup-${TAG#v}.exe"
+          files=("dist-release/$exe" "dist-release/$exe.sha256" "dist-release/RELEASE_NOTES.md")
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${files[@]}" --clobber -R "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --draft=false --notes-file body.md -R "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "${files[@]}" --verify-tag --title "${TAG#v}" --notes-file body.md -R "$GITHUB_REPOSITORY"
+          fi
           # make_latest=legacy: "최신" 표시는 날짜·버전 번호로 정한다 (옛 줄의 수정판 v1.0.3이 v1.1.0보다 최신이 되지 않게)
-          id=$(gh release view "$GITHUB_REF_NAME" --json databaseId --jq .databaseId)
-          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" -F draft=false -f make_latest=legacy >/dev/null
+          id=$(gh release view "$TAG" --json databaseId --jq .databaseId -R "$GITHUB_REPOSITORY")
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" -f make_latest=legacy >/dev/null

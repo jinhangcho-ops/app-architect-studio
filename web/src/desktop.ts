@@ -10,13 +10,12 @@ export type DesktopApi = {
   savePngs: (files: { name: string; base64: string }[]) => Promise<string[] | null>;
   /** 글자 파일 여러 개(명세 등)를 고른 폴더에. 저장한 경로들(취소면 null) */
   saveTexts: (files: { name: string; text: string }[]) => Promise<string[] | null>;
-  /** GitHub Releases에 지금보다 새 버전이 있으면 그 정보, 없거나 확인할 수 없으면 null */
-  checkUpdate: () => Promise<{ current: string; version: string; url: string; installer?: unknown } | null>;
-  /** 확인한 새 버전의 설치 파일을 받아 지문을 대조하고, 맞으면 설치 프로그램을 띄우고 앱을 닫는다 */
+  /** GitHub Releases에 지금보다 새 버전이 있으면 그 정보(notes = 릴리스 노트 글자, 못 받았으면 없음), 없거나 확인할 수 없으면 null. 실행마다 한 번만 묻는다 */
+  checkUpdate: () => Promise<UpdateInfo | null>;
+  /** 확인한 새 버전의 설치 파일을 받아 지문이 맞으면 조용히 설치하고 앱을 닫는다(설치 뒤 다시 열림). 못 하면 이유 */
   installUpdate: () => Promise<{ ok: boolean; reason?: string }>;
-  /** 이 저장소의 Releases 페이지를 브라우저로 연다 */
-  openRelease: (url: string) => Promise<void>;
 };
+export type UpdateInfo = { current: string; version: string; tag: string; notes?: string };
 
 export const desktop = (globalThis as { desktop?: DesktopApi }).desktop;
 
@@ -24,6 +23,9 @@ export const desktop = (globalThis as { desktop?: DesktopApi }).desktop;
 const UPDATE_KEY = 'app-architect-studio.update-check.v1';
 export const updateCheckOn = () => { try { return globalThis.localStorage?.getItem(UPDATE_KEY) !== 'off'; } catch { return true; } };
 export const setUpdateCheck = (on: boolean) => { try { globalThis.localStorage?.setItem(UPDATE_KEY, on ? 'on' : 'off'); } catch { /* 이번 실행에서만 */ } };
+/** 켜 두었을 때만 묻는다 (꺼 두면 아무 요청도 하지 않음). 실패는 조용히 null */
+export const checkForUpdate = (api: Pick<DesktopApi, 'checkUpdate'> | undefined = desktop): Promise<UpdateInfo | null> =>
+  (updateCheckOn() && api?.checkUpdate ? api.checkUpdate().catch(() => null) : Promise.resolve(null));
 
 /** 시점 파일 이름: 현지 시각 2026-10-24_03-15-00 (이름 순서 = 시간 순서) */
 export const stamp = (d = new Date()) => {

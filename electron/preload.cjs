@@ -11,5 +11,4 @@ contextBridge.exposeInMainWorld('desktop', {
   saveTexts: (files) => ipcRenderer.invoke('text:save', files),
   checkUpdate: () => ipcRenderer.invoke('update:check'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
-  openRelease: (url) => ipcRenderer.invoke('update:open', url),
 });
