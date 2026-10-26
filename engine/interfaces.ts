@@ -3,7 +3,7 @@
 // 내보내기: REST → OpenAPI 3.0 (받는 노드마다), gRPC → .proto (받는 노드마다), 메시지 → AsyncAPI 3.0 (토픽마다 보내는·받는 노드),
 // 파일·전문 → 레이아웃 CSV, 받는 노드가 FastAPI면 엔드포인트 뼈대(.py).
 // shortcut: 크기는 필드 형식별 예시 크기로 어림한다(JSON은 키 이름 포함, protobuf는 태그 1바이트). 실측 크기가 있으면 request_bytes·response_bytes에 넣는다
-import { FIELD_TYPES, type Interface, type Project, type ProjectEdge, type SpecField } from './schema';
+import { FIELD_TYPES, IDENT, type Interface, type Project, type ProjectEdge, type SpecField } from './schema';
 
 type FieldType = (typeof FIELD_TYPES)[number];
 /** 값 하나의 예시 크기(바이트): JSON 글자 수(따옴표 포함)와 protobuf 이진 크기 */
@@ -81,9 +81,12 @@ export function restOps(p: Project): Map<string, RestOp[]> {
     // 경로 변수인데 요청 필드에 없으면 문자열로 본다
     const inPath = [...i.path.matchAll(/\{(\w+)\}/g)].map((x) => i.request.find((f) => f.name === x[1]) ?? { name: x[1], type: 'string' as const, required: true });
     const rest = i.request.filter((f) => !inPath.some((x) => x.name === f.name));
+    // /orders/{id}와 /orders/id처럼 안전 이름이 같아지면 _2, _3 (OpenAPI operationId와 FastAPI 함수·모델 이름이 같이 씀)
+    const base = `${method}_${safe(i.path)}`.replace(/_+/g, '_').replace(/_$/, '');
+    let opId = base;
+    for (let k = 2; list.some((o) => o.opId === opId); k++) opId = `${base}_${k}`;
     list.push({
-      i, method, callers: [nameOf(e.from)], inPath,
-      opId: `${method}_${safe(i.path)}`.replace(/_+/g, '_').replace(/_$/, ''),
+      i, method, callers: [nameOf(e.from)], inPath, opId,
       query: method === 'get' ? rest : [], body: method === 'get' ? [] : rest,
     });
     out.set(e.to, list);
@@ -156,14 +159,18 @@ export function openApiDocs(p: Project): { nodeId: string; doc: Json }[] {
 const groupErrors = (i: Interface) => [...new Set(i.errors.map((x) => x.status))].sort().map((st) => [String(st), i.errors.filter((x) => x.status === st)] as const);
 
 // ---------- AsyncAPI ----------
-/** 큐 메시지를 토픽마다 모은 AsyncAPI 3.0 문서. 보내는 노드 = 메시지 인터페이스가 있는 연결선의 출발, 받는 노드 = 그 큐에서 나가는 연결선의 도착 */
+/** 큐 메시지를 토픽마다 모은 AsyncAPI 3.0 문서. 보내는 노드 = 메시지 인터페이스가 있는 연결선의 출발,
+ *  받는 노드 = 도착이 큐면 그 큐에서 나가는 연결선의 도착, 아니면 연결선의 도착 */
 export function asyncApiDoc(p: Project): Json | undefined {
   const nameOf = (id: string) => p.nodes.find((n) => n.id === id)?.name ?? id;
   const msgs = p.edges.flatMap((e) => e.interfaces.filter((i) => i.kind === 'message').map((i) => ({ e, i })));
   if (!msgs.length) return undefined;
   const channels: Json = {}, operations: Json = {};
   for (const { e, i } of msgs) {
-    const ch = safe(i.path), msg = `${ch}_message`;
+    // order.created와 order-created처럼 안전 이름만 같고 주소가 다르면 _2, _3 (같은 주소는 한 채널)
+    let ch = safe(i.path);
+    for (let k = 2; channels[ch] && (channels[ch] as Json).address !== i.path; k++) ch = `${safe(i.path)}_${k}`;
+    const msg = `${ch}_message`;
     channels[ch] ??= {
       address: i.path,
       ...(i.description && { description: i.description }),
@@ -171,8 +178,9 @@ export function asyncApiDoc(p: Project): Json | undefined {
     };
     const ref = { $ref: `#/channels/${ch}` };
     operations[`${safe(e.from)}_send_${ch}`] = { action: 'send', channel: ref, summary: `${nameOf(e.from)} → ${i.name}`, 'x-node': nameOf(e.from) };
-    for (const c of p.edges.filter((x) => x.from === e.to)) {
-      operations[`${safe(c.to)}_receive_${ch}`] = { action: 'receive', channel: ref, summary: `${nameOf(c.to)} ← ${i.name}`, 'x-node': nameOf(c.to) };
+    const toQueue = p.nodes.find((n) => n.id === e.to)?.layer === 'queue';
+    for (const to of toQueue ? p.edges.filter((x) => x.from === e.to).map((x) => x.to) : [e.to]) {
+      operations[`${safe(to)}_receive_${ch}`] = { action: 'receive', channel: ref, summary: `${nameOf(to)} ← ${i.name}`, 'x-node': nameOf(to) };
     }
   }
   return { asyncapi: '3.0.0', info: { title: `${p.name} 메시지`, version: '1.0.0', description: 'App Architect Studio에서 만든 내부 메시지 명세' }, channels, operations };
@@ -234,6 +242,9 @@ export function specGaps(i: Interface): string[] {
     for (const v of inPath.filter((v) => !i.request.some((f) => f.name === v))) gaps.push(`경로 변수 {${v}}의 형식이 없음 (문자열로 가정)`);
     if (['POST', 'PUT', 'PATCH'].includes(i.method ?? 'GET') && !i.request.some((f) => !inPath.includes(f.name))) gaps.push('요청 본문 필드가 없음');
   }
+  // 방식을 바꾸거나 경로를 고치는 중에 생기는 모양이라 막지 않고 알린다 (이대로 내보내면 OpenAPI·proto 파일이 틀림)
+  if (i.kind === 'rest' && !i.path.startsWith('/')) gaps.push('REST 경로가 /로 시작하지 않음');
+  if (i.kind === 'grpc' && !IDENT.test(i.path)) gaps.push('gRPC 메서드 이름이 영문 식별자가 아님 (예: CreateOrder)');
   if (i.kind === 'grpc' && !i.request.length) gaps.push('요청 필드가 없음');
   if (call && !i.response.length && !(i.kind === 'rest' && i.method === 'DELETE')) gaps.push('응답 형식이 없음');
   if (call && !i.errors.length) gaps.push('에러 응답이 없음 (실패할 때 무엇을 돌려줄지)');

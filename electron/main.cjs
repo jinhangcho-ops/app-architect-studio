@@ -34,14 +34,17 @@ function createWindow() {
   win.loadURL('app://studio/index.html');
 }
 
-// 같은 앱을 두 번 실행하면 새 창을 띄우지 않고 열려 있는 창을 앞으로 가져온다 (임시 저장이 서로 덮어쓰지 않게)
-if (!app.requestSingleInstanceLock()) app.quit();
+// 같은 앱을 두 번 실행하면 새 창을 띄우지 않고 열려 있는 창을 앞으로 가져온다 (임시 저장이 서로 덮어쓰지 않게).
+// 잠금을 못 얻은 쪽은 quit 뒤에도 ready가 올 수 있어, 아래 등록(지난 업데이트 파일 지우기 포함)을 하지 않는다
+const primary = app.requestSingleInstanceLock();
+if (!primary) app.quit();
 app.on('second-instance', () => {
   const [win] = BrowserWindow.getAllWindows();
   if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
 });
 
 app.whenReady().then(() => {
+  if (!primary) return;
   protocol.handle('app', (req) => {
     const file = path.normalize(path.join(ROOT, decodeURIComponent(new URL(req.url).pathname)));
     // dist 폴더 밖 파일은 내주지 않는다

@@ -7,6 +7,7 @@ import { routedCalls } from '../../engine/api';
 import { LAYER_NAMES } from '../../engine/model';
 import { HTTP_METHODS, WIRE_COLORS, WIRE_DEVICES, type Screen, type WireItem } from '../../engine/schema';
 import { addScreen, addWire, bindApi, dropRemove, mapScreens, patchAt, screensOf, updateWire } from './edit';
+import { NumInput } from './fields';
 import { fmt } from './format';
 import { htmlToScreen } from './htmlImport';
 import { paginate, renderHtml } from './htmlRender';
@@ -280,7 +281,7 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
               <option value="">받는 블록 고르기</option>
               {targets.map((t) => <option key={t.id} value={t.id}>{t.name} ({LAYER_NAMES[t.layer]})</option>)}
             </Select>
-            <label title="접속 1회에 이 호출을 부르는 평균 횟수. 화면의 요청을 호출끼리 이 비율로 나눕니다">접속당 <input type="number" min={0} step={0.1} value={picked.api.per_session} onChange={(e) => edit((x) => bindApi(x, nodeId, ps, picked.id, { ...picked.api!, per_session: Math.max(0, Number(e.target.value) || 0) }))} />회</label>
+            <label title="접속 1회에 이 호출을 부르는 평균 횟수. 화면의 요청을 호출끼리 이 비율로 나눕니다">접속당 <NumInput min={0} step={0.1} value={picked.api.per_session} onChange={(e) => edit((x) => bindApi(x, nodeId, ps, picked.id, { ...picked.api!, per_session: Math.max(0, Number(e.target.value) || 0) }))} />회</label>
             <button onClick={() => edit((x) => bindApi(x, nodeId, ps, picked.id, undefined))}>API 빼기</button>
           </> : <button onClick={() => edit((x) => bindApi(x, nodeId, ps, picked.id, { method: picked.kind === 'form' || picked.kind === 'button' ? 'POST' : 'GET', path: '', per_session: 1 }))}>+ API 호출 붙이기</button>}
         </> : <>

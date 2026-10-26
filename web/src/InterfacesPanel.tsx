@@ -4,7 +4,7 @@ import { GAP_EFFECT, interfaceRates, isWrite, layoutRows, oneWay, recordBytes, r
 import { readMiss } from '../../engine/load';
 import { FIELD_TYPES, HTTP_METHODS, IDENT, type Interface, type Project, type ProjectEdge, type SpecField } from '../../engine/schema';
 import { updateEdge } from './edit';
-import { NumField, Row, Section, TextField } from './fields';
+import { NumField, NumInput, Row, Section, TextField } from './fields';
 import { fmt } from './format';
 import { Select } from './Select';
 import { usePick } from './store';
@@ -49,7 +49,12 @@ export function InterfacesSection({ e, analysis }: { e: ProjectEdge; analysis?: 
               const kind = ev.target.value as Interface['kind'];
               // 파일·전문은 바이트 길이만 쓰고 인증·에러 응답이 없다. 다른 방식이면 길이를 지운다
               const file = kind === 'file';
+              // 경로가 새 방식 모양과 다르면 기본값으로 (gRPC "/path"·REST "topic.name"은 명세로 내보낼 수 없다)
+              const path = kind === 'rest' ? (x.path.startsWith('/') ? x.path : `/${x.path || 'path'}`)
+                : kind === 'grpc' ? (IDENT.test(x.path) ? x.path : 'Method1')
+                : kind === 'message' && x.path.startsWith('/') ? 'topic.name' : x.path;
               upd(k, {
+                path,
                 kind, method: kind === 'rest' ? x.method ?? 'GET' : undefined, ...(oneWay({ kind }) && { response: [] }), record: file ? x.record ?? { ...DEFAULT_RECORD } : undefined,
                 ...(file ? { auth: undefined, errors: [], path: x.path.startsWith('/') ? 'FILE_ID' : x.path } : { request: x.request.map(({ length: _, ...f }) => f) }),
               });
@@ -147,9 +152,9 @@ function Fields({ title, fields, onChange, fixed }: { title: string; fields: Spe
                 {FIELD_TYPES.map((t) => <option key={t} value={t}>{FIELD_NAMES[t]}</option>)}
               </Select></td>
               <td><input type="checkbox" checked={f.required} onChange={(ev) => upd(k, { required: ev.target.checked })} /></td>
-              {fixed && <td><input type="number" min={1} step={1} value={f.length ?? ''} aria-invalid={!f.length} onChange={(ev) => upd(k, { length: Number(ev.target.value) >= 1 ? Math.round(Number(ev.target.value)) : undefined })} /></td>}
+              {fixed && <td><NumInput min={1} step={1} value={f.length ?? ''} aria-invalid={!f.length} onChange={(ev) => upd(k, { length: Number(ev.target.value) >= 1 ? Math.round(Number(ev.target.value)) : undefined })} /></td>}
               {/* 고정장은 길이로 크기를 정해 평균 B를 쓰지 않는다 */}
-              {!fixed && <td><input type="number" value={f.avg_bytes ?? ''} placeholder="예시" onChange={(ev) => upd(k, { avg_bytes: ev.target.value === '' || Number(ev.target.value) <= 0 ? undefined : Number(ev.target.value) })} /></td>}
+              {!fixed && <td><NumInput value={f.avg_bytes ?? ''} placeholder="예시" onChange={(ev) => upd(k, { avg_bytes: ev.target.value === '' || Number(ev.target.value) <= 0 ? undefined : Number(ev.target.value) })} /></td>}
               <td><input value={f.description ?? ''} onChange={(ev) => upd(k, { description: ev.target.value || undefined })} /></td>
               <td><button aria-label="필드 빼기" onClick={() => onChange(fields.filter((_, j) => j !== k))}>✕</button></td>
             </tr>
@@ -209,7 +214,7 @@ function Errors({ errors, onChange }: { errors: Interface['errors']; onChange: (
         <tbody>
           {errors.map((x, k) => (
             <tr key={k}>
-              <td><input type="number" value={x.status} min={400} max={599} onChange={(ev) => upd(k, { status: Number(ev.target.value) || 400 })} /></td>
+              <td><NumInput value={x.status} min={400} max={599} onChange={(ev) => upd(k, { status: Number(ev.target.value) || 400 })} /></td>
               <td><input value={x.code ?? ''} placeholder="예: SALES_DUPLICATE" onChange={(ev) => upd(k, { code: ev.target.value || undefined })} /></td>
               <td><input value={x.description} onChange={(ev) => upd(k, { description: ev.target.value })} /></td>
               <td><button aria-label="에러 빼기" onClick={() => onChange(errors.filter((_, j) => j !== k))}>✕</button></td>

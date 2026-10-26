@@ -1,5 +1,5 @@
 // 패널에서 반복되는 입력 칸. 빈 칸은 undefined(= 값 없음)로 돌려준다.
-import type { ReactNode } from 'react';
+import { useState, type InputHTMLAttributes, type ReactNode } from 'react';
 
 export function Row({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
   return (
@@ -16,14 +16,27 @@ export function NumField({ label, value, onChange, step, hint, disabled }: {
 }) {
   return (
     <Row label={label} hint={hint}>
-      <input
-        type="number"
+      <NumInput
         step={step ?? 'any'}
         value={value ?? ''}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
       />
     </Row>
+  );
+}
+
+/** 숫자 칸. 고치는 동안은 친 글자를 그대로 보여서 중간 값(0, 4 …)이 거절·보정되어도 칸이 되돌아가지 않고, 칸을 떠나면 저장된 값으로 맞춘다 */
+export function NumInput({ value, onChange, onBlur, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
+  const [draft, setDraft] = useState<string>();
+  return (
+    <input
+      type="number"
+      {...rest}
+      value={draft ?? value ?? ''}
+      onChange={(e) => { setDraft(e.target.value); onChange?.(e); }}
+      onBlur={(e) => { setDraft(undefined); onBlur?.(e); }}
+    />
   );
 }
 

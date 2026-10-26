@@ -7,7 +7,7 @@ import { prices } from './data';
 import { PATTERNS } from '../../engine/traffic';
 import { enabled, MODE_NAMES, SCOPE_NAMES } from '../../engine/deploy';
 import { STANDARD_OFFSET } from '../../engine/timezones';
-import { NumField, Row, Section, TextField } from './fields';
+import { NumField, NumInput, Row, Section, TextField } from './fields';
 import { addAction, patchAt, removeAction, removePersona, setActionRate, updateAction, updatePersona } from './edit';
 import { usePick } from './store';
 import { desktop, setUpdateCheck, updateCheckOn } from './desktop';
@@ -85,7 +85,7 @@ export function ProjectPanel() {
             <Select value={ps.pattern} onChange={(e) => setPersona(i, { pattern: e.target.value as typeof ps.pattern })} aria-label="패턴">
               {PATTERN_IDS.map((id) => <option key={id} value={id}>{PATTERNS[id].label}</option>)}
             </Select>
-            <input type="number" step={0.05} value={ps.share} onChange={(e) => setPersona(i, { share: Number(e.target.value) })} aria-label="비율" />
+            <NumInput step={0.05} value={ps.share} onChange={(e) => setPersona(i, { share: Number(e.target.value) })} aria-label="비율" />
             <Select value={ps.country} onChange={(e) => setPersona(i, { country: e.target.value })} aria-label="나라">
               {Object.keys(STANDARD_OFFSET).map((c) => <option key={c} value={c}>{c}</option>)}
             </Select>
@@ -247,7 +247,7 @@ export function ActionsSection() {
           <div key={a.name} className="action">
             <div className="inline">
               <input aria-label="행동 이름" defaultValue={a.name} onBlur={(e) => e.target.value && e.target.value !== a.name && upd({ name: e.target.value })} />
-              <label className="muted">접속당 <input type="number" step={0.01} value={a.per_session} onChange={(e) => upd({ per_session: Number(e.target.value) || 0 })} />회</label>
+              <label className="muted">접속당 <NumInput step={0.01} value={a.per_session} onChange={(e) => upd({ per_session: Number(e.target.value) || 0 })} />회</label>
               <button aria-label="행동 삭제" onClick={() => edit((x) => removeAction(x, a.name))}>×</button>
             </div>
             {a.writes.map((w, i) => (
@@ -259,7 +259,7 @@ export function ActionsSection() {
                 }}>
                   {targets.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
                 </Select>
-                <input aria-label="행 수" type="number" value={w.rows} onChange={(e) => setWrite(i, { rows: Number(e.target.value) || 1 })} />행
+                <NumInput aria-label="행 수" value={w.rows} onChange={(e) => setWrite(i, { rows: Number(e.target.value) || 1 })} />행
                 {a.writes.length > 1 && <button aria-label="쓰기 삭제" onClick={() => upd({ writes: a.writes.filter((_, k) => k !== i) })}>×</button>}
               </div>
             ))}
@@ -277,7 +277,7 @@ export function ActionsSection() {
             <tr key={i}>
               <td>{ps.name}</td>
               {p.actions.map((a) => (
-                <td key={a.name}><input type="number" step={0.01} placeholder={String(a.per_session)} value={ps.action_rates[a.name] ?? ''}
+                <td key={a.name}><NumInput step={0.01} placeholder={String(a.per_session)} value={ps.action_rates[a.name] ?? ''}
                   onChange={(e) => edit((x) => setActionRate(x, i, a.name, e.target.value === '' ? undefined : Number(e.target.value)))} /></td>
               ))}
             </tr>

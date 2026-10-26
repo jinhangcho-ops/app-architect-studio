@@ -6,7 +6,7 @@ import { parseSpec } from '../../engine/spec';
 import { schemaWarnings } from '../../engine/ddl';
 import { catalog } from './data';
 import { addTable, freeK, importTables, patchAt, removeColumn, removeTable, renameColumn, setFeature, updateNode, updateTable } from './edit';
-import { NumField, Row, Section, TextField } from './fields';
+import { NumField, NumInput, Row, Section, TextField } from './fields';
 import { usePick } from './store';
 
 type Table = ProjectNode['tables'][number];
@@ -136,10 +136,11 @@ export function TableEditor({ node, t, at, open, onRename }: { node: ProjectNode
               <option value="">(기본)</option>
               {STORAGE_FORMATS.map((x) => <option key={x} value={x}>{STORAGE_NAMES[x]}</option>)}
             </Select></td>
-            <td><input type="number" value={c.max_length ?? ''} aria-invalid={t.record === 'fixed' && (c.type === 'text' || c.type === 'bytes') && !c.max_length} onChange={(e) => setCol(i, { max_length: e.target.value ? Number(e.target.value) : undefined })} /></td>
-            <td><input type="number" value={c.avg_bytes ?? ''} onChange={(e) => setCol(i, { avg_bytes: e.target.value ? Number(e.target.value) : undefined })} /></td>
+            <td><NumInput value={c.max_length ?? ''} aria-invalid={t.record === 'fixed' && (c.type === 'text' || c.type === 'bytes') && !c.max_length} onChange={(e) => setCol(i, { max_length: e.target.value ? Number(e.target.value) : undefined })} /></td>
+            <td><NumInput value={c.avg_bytes ?? ''} onChange={(e) => setCol(i, { avg_bytes: e.target.value ? Number(e.target.value) : undefined })} /></td>
             <td><input type="checkbox" checked={c.nullable} onChange={(e) => setCol(i, { nullable: e.target.checked })} /></td>
-            <td><button aria-label="컬럼 삭제" onClick={() => upd(removeColumn(t, i))}>×</button></td>
+            {/* 테이블에는 컬럼이 하나 이상 있어야 한다 (마지막 컬럼은 지울 수 없음) */}
+            <td>{t.columns.length > 1 && <button aria-label="컬럼 삭제" onClick={() => upd(removeColumn(t, i))}>×</button>}</td>
           </tr>
         ))}</tbody>
       </table></div>

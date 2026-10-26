@@ -71,6 +71,7 @@ export function ResultsPanel({ analysis: a }: { analysis?: Analysis }) {
           <Line label="저장(여유분 포함)" m={t.storageGbWithOverhead} />
           <Line label="하루 송신" m={t.egressGbPerDay} />
         </tbody></table>}
+        {t && t.assumptions.length > 0 && <ul className="warn">{t.assumptions.map((s) => <li key={s}>⚠️ {s}</li>)}</ul>}
       </Section>
 
       {t && t.personas.length > 0 && <Section title="페르소나별 하루 트래픽">

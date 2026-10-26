@@ -141,8 +141,8 @@ describe('앱 열기: 선택 숫자 칸의 범위 오류는 그 칸을 빼고 �
     expect(notes).toHaveLength(2);
   });
 
-  it('필수 칸이나 다른 종류 오류가 섞이면 지금처럼 던짐', () => {
-    expect(() => readProject(raw({ users: -5 }), [], '파일', [])).toThrow(/검증 실패/);
+  it('다른 종류 오류가 섞이면 지금처럼 던짐 (필수 숫자 칸은 리뷰 5 N3부터 경계값으로 맞춰 엶)', () => {
+    expect(readProject(raw({ users: -5 }), [], '파일', []).scale!.users).toBe(1);
     expect(() => readProject({ ...raw({ window_share: 80 }), name: 1 }, [], '파일', [])).toThrow(/검증 실패/);
     expect(() => readProject(raw({ window_share: 80 }), [])).not.toThrow();
   });

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { autosaveMinutes, MAX_AUTO, MAX_MANUAL, readAutosaves, readFolderSnapshots, readManualSaves, setAutosaveMinutes, snapshotLabel, type Snapshot } from './autosave';
 import { baseName } from './desktop';
+import { NumInput } from './fields';
 
 export function SaveHistory({ filePath, onRestore, onClose }: { filePath?: string; onRestore: (s: Snapshot, sameFile?: boolean) => void; onClose: () => void }) {
   // 창을 열 때 한 번 읽는다 (저장은 다른 곳에서 일어나므로 열 때마다 새로 읽힌다)
@@ -38,7 +39,7 @@ export function SaveHistory({ filePath, onRestore, onClose }: { filePath?: strin
       </div>
       <label className="row">
         <span>자동 저장 간격(분)</span>
-        <input type="number" min={1} step={1} value={minutes}
+        <NumInput min={1} step={1} value={minutes}
           onChange={(e) => { const m = Number(e.target.value); if (m >= 1) { setMinutes(m); setAutosaveMinutes(m); } }} />
       </label>
       <p className="muted">자동 저장은 고칠 때마다 최신 시점을 덮어쓰고, 간격이 지나면 새 시점을 만듭니다. 복구해도 지금 상태는 Ctrl+Z로 되돌릴 수 있습니다.</p>

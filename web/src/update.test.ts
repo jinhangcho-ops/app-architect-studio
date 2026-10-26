@@ -21,7 +21,7 @@ const u = require('../../electron/update.cjs') as {
     install: () => Promise<{ ok: boolean; reason?: string }>;
   };
   RELEASES: string;
-  removeOldDownloads: (dir: string) => string[];
+  removeOldDownloads: (dir: string, now?: number) => string[];
 };
 
 const res = (body: string | Buffer, status = 200, url = ''): Res => {
@@ -183,7 +183,9 @@ describe('지난 업데이트 설치 파일 정리', () => {
     const dir = mkdtempSync(join(tmp, 'clean-'));
     const ours = mkdtempSync(join(dir, 'aas-update-'));
     for (const n of ['aas-update-keep-me', 'other']) mkdirSync(join(dir, n));
-    expect(u.removeOldDownloads(dir)).toEqual([ours.slice(dir.length + 1)]);
+    // 10분 안에 바뀐 폴더는 받는 중일 수 있어 남기고, 그보다 오래된 것만 지움
+    expect(u.removeOldDownloads(dir)).toEqual([]);
+    expect(u.removeOldDownloads(dir, Date.now() + 11 * 60 * 1000)).toEqual([ours.slice(dir.length + 1)]);
     expect(readdirSync(dir).sort()).toEqual(['aas-update-keep-me', 'other']);
   });
 });

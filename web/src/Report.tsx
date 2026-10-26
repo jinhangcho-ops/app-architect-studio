@@ -101,6 +101,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
                 ['이벤트 피크 RPS', fmtMetric(t.peakRpsEvent)], ['이벤트 쓰기', fmtMetric(t.peakWriteRpsEvent)], ['하루 송신', fmtMetric(t.egressGbPerDay)],
                 ['저장량', a.storage?.tablesGb ? `테이블 합계 ${fmtMetric(a.storage.tablesGb)} (페르소나 추정 ${fmtMetric(a.storage.personaGb)})` : fmtMetric(t.storageGbWithOverhead)],
               ]} />
+              {t.assumptions.length > 0 && <ul>{t.assumptions.map((s) => <li key={s}>⚠️ {s}</li>)}</ul>}
             </>}
             {p.actions.length > 0 && <p>행동: {p.actions.map((x) => `${x.name}(접속당 ${x.per_session}회 → ${x.writes.map((w) => `${w.node}.${w.table}${w.rows !== 1 ? ` ${w.rows}행` : ''}`).join(', ')})`).join(' · ')}</p>}
           </section>

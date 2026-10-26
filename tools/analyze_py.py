@@ -47,11 +47,13 @@ def analyze_file(root: str, path: str) -> dict:
             if node.level - 1 > len(package):
                 continue
             base = package[:len(package) - (node.level - 1)]
-            names = [".".join(base + [node.module])] if node.module else [".".join(base + [a.name]) for a in node.names]
+            # 가져온 이름이 하위 모듈일 수 있어 모듈.이름으로 남긴다 (모듈이 아니면 analyze_folder가 모듈 쪽으로 맞춘다)
+            mod = base + node.module.split(".") if node.module else base
+            names = [".".join(mod + ([] if a.name == "*" else [a.name])) for a in node.names]
             relative.update(names)  # 프로젝트 안 모듈이므로 바깥 라이브러리 매칭에 쓰지 않는다
             (eager if node in tree.body else lazy).extend(names)
         elif isinstance(node, (ast.Import, ast.ImportFrom)):
-            names = [a.name for a in node.names] if isinstance(node, ast.Import) else [node.module or ""]
+            names = [a.name for a in node.names] if isinstance(node, ast.Import) else                 [node.module + ("" if a.name == "*" else "." + a.name) for a in node.names] if node.module else []
             # 파일 맨 위(모듈 본문 바로 아래)에 있으면 상시, 함수·클래스 안이면 지연 로드
             (eager if node in tree.body else lazy).extend(n for n in names if n)
         elif isinstance(node, ast.Name) and PRIVACY_HINT.search(node.id):
@@ -134,6 +136,18 @@ def self_test() -> None:
         assert {"from": "app.service", "to": "app.redis"} in r["edges"], r["edges"]
         assert {"from": "app.service", "to": "app.models"} in r["edges"], r["edges"]
         assert not [x for x in r["matches"] if x["library"] == "redis"], r["matches"]
+    # from 패키지 import 하위모듈 → 하위 모듈로 잇는다 (패키지로 몰리면 순환을 놓친다)
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, "app", "sub"))
+        files = {"app/__init__.py": "", "app/sub/__init__.py": "", "app/db.py": "from .sub import helper\n",
+                 "app/sub/helper.py": "from .. import db\n", "main.py": "from app.sub import helper\n"}
+        for rel, text in files.items():
+            with open(os.path.join(d, rel), "w", encoding="utf-8") as f:
+                f.write(text)
+        r = analyze_folder(d)
+        for e in [("app.db", "app.sub.helper"), ("app.sub.helper", "app.db"), ("main", "app.sub.helper")]:
+            assert {"from": e[0], "to": e[1]} in r["edges"], r["edges"]
+        assert {"from": "app.db", "to": "app.sub"} not in r["edges"], r["edges"]
     print("SELF_TEST_OK")
 
 

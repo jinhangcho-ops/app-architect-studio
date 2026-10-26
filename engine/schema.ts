@@ -414,8 +414,8 @@ export const Project = z.object({
   name: z.string(),
   deploy: Deploy.default({ mode: 'web', offline_required: false, scope: 'public', targets: [] }),
   scale: Scale.optional(),
-  personas: z.array(Persona).default([])
-    .refine((ps) => !ps.length || Math.abs(ps.reduce((s, p) => s + p.share, 0) - 1) < 1e-6, '페르소나 비율의 합은 1이어야 함'),
+  // 비율 합이 1인지는 checkProject가 본다 (화면에서 비율을 하나씩 고치는 중에도 저장 파일이 열리게)
+  personas: z.array(Persona).default([]),
   /** 페르소나 비율을 정한 분포 (설정의 "페르소나"에서 봉우리를 끌어 정함). 비율 자체는 personas[].share가 기준이고, 이것은 다시 편집할 때 쓰는 모양이다 */
   persona_mix: z.array(z.object({ mu: z.number().min(0).max(1), sg: z.number().min(0.02).max(1), w: z.number().positive() })).min(1).max(4).optional(),
   nodes: z.array(z.object({
@@ -535,7 +535,7 @@ export const Project = z.object({
   /** 14절 월 성장률, 보는 기간, 교체 준비 기간 */
   exchange: Exchange.optional(),
   growth: z.object({
-    monthly_rate: z.number().gt(-1), months: z.number().int().positive().default(24), lead_months: z.number().int().nonnegative().default(3),
+    monthly_rate: z.number().gt(-1), months: z.number().int().positive().max(240).default(24), lead_months: z.number().int().nonnegative().default(3),
     /** 14절 유입 모형. 있으면 월 성장률 대신 이것으로 달마다 사용자 수를 계산한다.
      *  유입: Bass 확산 — 바깥 유입(광고·검색) = external × 남은 시장, 입소문 = word_of_mouth × (써 본 사람 / 시장) × 남은 시장.
      *  새 사용자는 entry 페르소나로 들어오고, 달마다 up만큼 한 단계 더 활발한 페르소나로, down만큼 한 단계 덜 활발한 페르소나로 옮기며,
@@ -606,6 +606,8 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
   // 정한 몫만의 합이 1을 넘으면 사용자 수보다 많은 요청이 들어온다 (비운 칸은 load.ts가 남은 몫을 나눠 주므로 오류를 만들지 않음)
   const shareSum = entryNodes(p).reduce((s, n) => s + (n.entry_share ?? 0), 0);
   if (shareSum > 1 + 1e-9) errors.push(`화면 노드 진입 몫(entry_share) 합이 1을 넘음 (${+shareSum.toFixed(4)})`);
+  const personaSum = p.personas.reduce((s, ps) => s + ps.share, 0);
+  if (p.personas.length && Math.abs(personaSum - 1) >= 1e-6) errors.push(`페르소나 비율의 합은 1이어야 함 (지금 ${+personaSum.toFixed(4)})`);
   for (const n of p.nodes) {
     for (const id of itemIds(n)) {
       const it = byId.get(id);
@@ -620,8 +622,6 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
     for (const d of dupes(e.interfaces.map((i) => i.name))) errors.push(`${at}: 인터페이스 이름 중복 ${d}`);
     for (const i of e.interfaces) {
       if (i.kind === 'rest' && !i.method) errors.push(`${at} ${i.name}: REST는 메서드(GET·POST…)가 필요함`);
-      if (i.kind === 'rest' && !i.path.startsWith('/')) errors.push(`${at} ${i.name}: REST 경로는 /로 시작함`);
-      if (i.kind === 'grpc' && !IDENT.test(i.path)) errors.push(`${at} ${i.name}: gRPC 메서드 이름은 영문 식별자 (예: CreateOrder)`);
       if ((i.kind === 'message' || i.kind === 'file') && i.response.length) errors.push(`${at} ${i.name}: ${i.kind === 'file' ? '파일·전문' : '메시지'}은 응답이 없음 (보내고 끝)`);
       for (const d of dupes(i.errors.map((x) => `${x.status}${x.code ? ` ${x.code}` : ''}`))) errors.push(`${at} ${i.name}: 에러 응답 중복 ${d}`);
       for (const t of i.tables ?? []) {

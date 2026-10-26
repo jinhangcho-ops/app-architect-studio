@@ -58,10 +58,10 @@ describe('인터페이스 명세로 부하 계산', () => {
 
 describe('명세 검증', () => {
   const bad = (i: Partial<Interface>) => () => parseProject(withEdge(gc, 'N-08', 'N-03', [iface({ name: 'x', kind: 'rest', method: 'GET', path: '/x', ...i })]), catalog.items);
-  it('REST는 메서드·/로 시작하는 경로, gRPC는 영문 메서드 이름, 메시지는 응답 없음', () => {
+  it('REST는 메서드, 메시지는 응답 없음 (경로 모양은 감사 6 P2부터 명세 점검 경고)', () => {
     expect(bad({ method: undefined })).toThrow('메서드');
-    expect(bad({ path: 'x' })).toThrow('/로 시작');
-    expect(bad({ kind: 'grpc', path: '세금' })).toThrow('영문 식별자');
+    expect(bad({ path: 'x' })).not.toThrow();
+    expect(bad({ kind: 'grpc', path: '세금', request: [{ name: 'a', type: 'string', required: true }] })).not.toThrow();
     expect(bad({ kind: 'message', path: 't', response: [{ name: 'a', type: 'string', required: true }] })).toThrow('응답이 없음');
     expect(bad({ request: [{ name: '금액', type: 'number', required: true }] })).toThrow('영문');
   });

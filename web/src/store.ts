@@ -1,7 +1,7 @@
 // 프로젝트 하나와 화면 상태. 노드 위치는 계산과 무관하므로 프로젝트와 따로 둔다(끌 때마다 다시 계산하지 않도록).
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
-import { FORMAT_VERSION, parseProject, readProject } from '../../engine/data';
+import { FORMAT_VERSION, numberRangeWhy, parseProject, readProject } from '../../engine/data';
 import { Project as ProjectSchema, type Project } from '../../engine/schema';
 import { catalog, examples } from './data';
 import { autoLayout, type XY } from './layout';
@@ -37,7 +37,7 @@ type State = {
   clipboard?: Project['nodes'][number];
   /** 찾기에서 고른 노드로 캔버스를 옮기라는 요청 (캔버스가 처리하고 지운다) */
   flyTo?: string;
-  /** 범위 밖 숫자라 적용하지 않은 편집의 알림 (App이 보이고 지운다) */
+  /** 저장하면 열 수 없는 값이라 적용하지 않은 편집의 알림 (App이 보이고, 다음 편집이 성공하거나 6초 뒤 지운다) */
   rejected?: string;
   set: (patch: Partial<Pick<State, 'clipboard' | 'flyTo' | 'focusTab' | 'rejected'>>) => void;
 };
@@ -56,17 +56,17 @@ const remember = (s: State, merge: boolean): Pick<State, 'past' | 'future'> => {
   return { past: join ? s.past : [...s.past, s.project].slice(-HISTORY), future: [] };
 };
 
-/** p의 숫자 범위·정수 오류 (경로 → 한국어 설명). 글자 칸 비우기 같은 다른 중간 상태는 세지 않는다 */
-function numberIssues(p: Project): Map<string, string> {
+/** p의 모양(zod) 오류 (경로 → 한국어 이유). 글자 칸 비우기는 다시 치는 중이라 세지 않는다 (열 때 readProject가 채운다) */
+function shapeIssues(p: Project): Map<string, string> {
   const r = ProjectSchema.safeParse(p);
   const out = new Map<string, string>();
   for (const i of r.success ? [] : r.error.issues) {
-    const why = (i.code === 'too_small' || i.code === 'too_big') && i.origin === 'number'
-      ? (i.code === 'too_small' ? `${String(i.minimum)}${i.inclusive ? ' 이상' : '보다 커야'}` : `${String(i.maximum)}${i.inclusive ? ' 이하' : '보다 작아야'}`)
-      : i.code === 'not_multiple_of' ? `${String(i.divisor)}의 배수`
-      : i.code === 'invalid_type' && (i.expected === 'number' || i.expected === 'int') ? (i.expected === 'int' ? '정수' : '숫자')
-      : undefined;
-    if (why) out.set(i.path.join('.'), why);
+    if (i.code === 'too_small' && i.origin === 'string') continue;
+    const why = numberRangeWhy(i)
+      ?? (i.code === 'invalid_type' && i.expected === 'number' ? '숫자여야 함'
+        : i.code === 'too_small' && i.origin === 'array' ? '하나 이상 있어야 함'
+        : i.message);
+    out.set(i.path.join('.'), why);
   }
   return out;
 }
@@ -86,19 +86,19 @@ export const useStore = create<State>((set, get) => ({
   edit: (fn) => set((s) => {
     const project = fn(s.project);
     if (project === s.project) return {};
-    // 범위 밖 숫자(비율 80, 배수 0.5 …)를 저장하면 그 파일·자동 저장 시점을 못 연다 → 새로 생기는 숫자 오류면 적용하지 않고 알림
-    const bad = numberIssues(project);
+    // 모양이 틀린 값(비율 80, 필드 이름 한글, 마지막 컬럼 삭제 …)을 저장하면 그 파일·자동 저장 시점을 못 연다 → 새로 생기는 오류면 적용하지 않고 알림
+    const bad = shapeIssues(project);
     if (bad.size) {
-      const had = numberIssues(s.project);
+      const had = shapeIssues(s.project);
       const fresh = [...bad].filter(([k]) => !had.has(k));
-      if (fresh.length) return { rejected: `허용 범위 밖 숫자라 바꾸지 않았어요: ${fresh.map(([k, why]) => `${k} (${why})`).join(', ')}` };
+      if (fresh.length) return { rejected: `저장하면 열 수 없는 값이라 바꾸지 않았어요: ${fresh.map(([k, why]) => `${k} (${why})`).join(', ')}` };
     }
     const history = remember(s, true);
-    // 새로 생긴 노드에만 자리를 준다
+    // 새로 생긴 노드에만 자리를 준다. 편집이 성공하면 지난 거절 알림은 지운다
     const missing = project.nodes.filter((n) => !s.positions[n.id]);
-    if (!missing.length) return { project, ...history };
+    if (!missing.length) return { project, ...history, rejected: undefined };
     const fresh = autoLayout(project);
-    return { project, ...history, positions: { ...s.positions, ...Object.fromEntries(missing.map((n) => [n.id, { x: fresh[n.id].x, y: fresh[n.id].y + 40 }])) } };
+    return { project, ...history, rejected: undefined, positions: { ...s.positions, ...Object.fromEntries(missing.map((n) => [n.id, { x: fresh[n.id].x, y: fresh[n.id].y + 40 }])) } };
   }),
   move: (id, xy) => set((s) => ({ positions: { ...s.positions, [id]: xy } })),
   relayout: () => set((s) => ({ positions: autoLayout(s.project) })),

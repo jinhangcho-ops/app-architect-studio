@@ -221,6 +221,7 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
 
       {n.layer === 'ui' && (
         <Section title="HTML 화면">
+          <NumField label="진입 몫" value={n.entry_share} step={0.05} hint="화면 노드가 여럿일 때 이 화면으로 들어오는 트래픽 몫 (0~1). 비우면 다른 화면이 정한 몫을 뺀 나머지를 비운 화면끼리 똑같이 나눠요" onChange={(v) => upd({ entry_share: v })} />
           <input type="file" accept=".html,.htm" onChange={async (e) => {
             const f = e.target.files?.[0];
             if (!f) return;

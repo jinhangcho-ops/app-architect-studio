@@ -57,7 +57,11 @@ export type Traffic = {
   personas: PersonaTraffic[];
   /** 행동이 쓰는 테이블('노드.테이블')별 하루 행 수와 피크 1시간의 초당 행 */
   tables: Record<string, { rowsPerDay: Metric; peakRowsPerSec: Metric }>;
+  /** 결과를 읽을 때 알아야 할 가정 (표본이 작음 등). 사람이 읽는 한 줄씩 */
+  assumptions: string[];
 };
+/** 피크 1시간에 뽑힌 접속이 이보다 적으면 무작위 흔들림이 ±10%(1/√100)를 넘는다 */
+const SMALL_SAMPLE = 100;
 
 export type PersonaTraffic = {
   name: string;
@@ -246,6 +250,8 @@ export function traffic(p: Project): Traffic | undefined {
   const hourReq = Array<number>(24).fill(0);
   const hourWrite = Array<number>(24).fill(0);
   const hourUserSec = Array<number>(24).fill(0);
+  // 실제로 뽑은 접속 수 (키우기 전). 피크 칸의 표본 크기를 알리는 데만 쓴다
+  const hourSim = Array<number>(24).fill(0);
   let dau = 0, sessions = 0, inWindow = 0, writeKb = 0, respKb = 0;
   const personas: PersonaTraffic[] = [];
   const tableHour = new Map<string, number[]>();
@@ -276,6 +282,7 @@ export function traffic(p: Project): Traffic | undefined {
         me.hourlyRps[h] += (reqPer * scale) / 3600;
         hourWrite[h] += writePer * scale;
         hourUserSec[h] += pt.session_minutes * 60 * scale;
+        hourSim[h]++;
         sessions += scale;
         writeKb += dataWrites * pt.write_kb * scale;
         respKb += reqPer * pt.response_kb * scale;
@@ -294,6 +301,9 @@ export function traffic(p: Project): Traffic | undefined {
   const req = sum(hourReq), writes = sum(hourWrite);
   const peakReqHour = Math.max(...hourReq);
   const peakRps = peakReqHour / 3600;
+  const peakSample = hourSim[hourReq.indexOf(peakReqHour)];
+  const assumptions = peakSample < SMALL_SAMPLE
+    ? [`표본이 작아 피크가 날마다 크게 다를 수 있음 (피크 1시간 접속 ${peakSample}회 표본, 시드를 바꾸면 피크·한계가 달라짐)`] : [];
   const peakWriteRps = Math.max(...hourWrite) / 3600;
   const concurrent = Math.max(...hourUserSec) / 3600;
   const storage = (writeKb * days) / 1e6;
@@ -331,5 +341,6 @@ export function traffic(p: Project): Traffic | undefined {
         peakRowsPerSec: m(peak, '행/초', '피크 1시간 행 / 3,600', { 피크1시간행: peak * 3600 }),
       }];
     })),
+    assumptions,
   };
 }

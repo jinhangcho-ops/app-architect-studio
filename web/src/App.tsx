@@ -102,8 +102,12 @@ export function App() {
     setHistory(false);
   };
   const say = (msg: string, ms = 2500) => { setNotice(msg); setTimeout(() => setNotice(undefined), ms); };
-  // 범위 밖 숫자라 적용하지 않은 편집 알림
-  useEffect(() => { if (rejected) { say(rejected, 6000); set({ rejected: undefined }); } }, [rejected]);
+  // 적용하지 않은 편집 알림: 6초 보이되, 그 전에 편집이 성공하면 store가 지워 바로 사라진다
+  useEffect(() => {
+    if (!rejected) return;
+    const t = setTimeout(() => set({ rejected: undefined }), 6000);
+    return () => clearTimeout(t);
+  }, [rejected]);
   // 다른 파일을 열기 전으로 되돌리면 Ctrl+S·폴더 자동 저장이 엉뚱한 파일에 쓰지 않게 열린 파일을 잊는다
   const leaveFile = (crossed: boolean) => {
     if (!crossed || !filePath) return;
@@ -376,7 +380,7 @@ export function App() {
         </div>
       )}
       {history && <SaveHistory filePath={desktop ? filePath : undefined} onRestore={restore} onClose={() => setHistory(false)} />}
-      {notice && <div className="notice" role="status">{notice}</div>}
+      {(rejected ?? notice) && <div className="notice" role="status">{rejected ?? notice}</div>}
       {/* 업데이트 전에 지금 작업을 자동 저장에 남긴다. 못 남기면 업데이트하지 않는다 */}
       {update && <UpdatePrompt info={update} prepare={() => (writeAutosave(project, positions) ? undefined : '지금 작업을 자동 저장에 남기지 못해 업데이트하지 않았어요. 먼저 파일로 저장해 주세요')} />}
       {find && (
