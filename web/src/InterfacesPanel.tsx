@@ -70,7 +70,7 @@ export function InterfacesSection({ e, analysis }: { e: ProjectEdge; analysis?: 
             </Select>
           </Row>
           <NumField label="요청 1건당 횟수" value={x.per_request} step={0.1} hint="그 요청 1건마다 이 인터페이스를 몇 번 부르는지. 받는 노드의 부하 = 요청 × 이 값" onChange={(v) => upd(k, { per_request: v === undefined || v < 0 ? 1 : v })} />
-          <Row label="받는 쪽에서" hint="받는 노드에 읽기로 보나 쓰기로 보나. 자동: REST는 GET만 읽기, 메시지는 쓰기, gRPC는 읽기">
+          <Row label="받는 쪽에서" hint="받는 노드에 읽기로 보나 쓰기로 보나. 자동: REST는 GET만 읽기, 메시지·파일·전문은 쓰기, gRPC는 읽기">
             <Select value={x.op ?? ''} onChange={(ev) => upd(k, { op: (ev.target.value || undefined) as Interface['op'] })}>
               <option value="">자동</option><option value="read">읽기</option><option value="write">쓰기</option>
             </Select>

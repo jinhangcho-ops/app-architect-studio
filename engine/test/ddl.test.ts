@@ -1,7 +1,8 @@
 import { fileURLToPath } from 'node:url';
 import initSqlJs from 'sql.js';
 import { describe, expect, it } from 'vitest';
-import { dataDictionaryCsv, ddlFiles, dialectOf, schemaFiles, tableDdl } from '../ddl';
+import { parseProject } from '../data';
+import { dataDictionaryCsv, ddlFiles, dialectOf, schemaFiles, schemaWarnings, tableDdl } from '../ddl';
 import { loadCatalog } from '../io';
 import { Project, Table } from '../schema';
 import { featureTables, unusedTables } from '../tables';
@@ -128,6 +129,37 @@ describe('DDL이 실제로 실행되게 (감사 2)', () => {
     expect(() => db.run('INSERT INTO c VALUES (3, 1.5, 1)')).toThrow(/CHECK/);
   });
 
+  it('SQLite 정수·실수 시각·날짜의 날짜 글자 기본값·코드 값은 숫자 식, 실수 저장은 REAL (sql.js에서 typeof)', async () => {
+    const t = Table.parse({ name: 'j', columns: [
+      { name: 'ti', type: 'timestamp', default_value: '2024-01-01T09:00:00+09' },
+      { name: 'di', type: 'date', default_value: '2024-01-01', codes: [{ code: '2024-01-01' }, { code: '2024-12-31' }] },
+      { name: 'tr', type: 'timestamp', storage: 'real', default_value: '2024-01-01 00:00:00Z' },
+      { name: 'dr', type: 'date', storage: 'real', default_value: '2024-01-01' },
+      { name: 'k', type: 'int' },
+    ] });
+    const s = tableDdl(t, 'sqlite');
+    expect(s).toContain('"tr" REAL NOT NULL');
+    expect(s).toContain('"dr" REAL NOT NULL');
+    const SQL = await initSqlJs();
+    const db = new SQL.Database();
+    db.run(s);
+    db.run('INSERT INTO j (k) VALUES (1)');
+    const [row] = db.exec('SELECT typeof(ti), ti, typeof(di), di, typeof(tr), tr, typeof(dr), dr FROM j')[0].values;
+    // 정수: epoch 밀리초·1970-01-01부터 날 수, 실수: 율리우스일 (+09는 +09:00으로 읽음)
+    expect(row).toEqual(['integer', Date.UTC(2024, 0, 1), 'integer', 19723, 'real', 2460310.5, 'real', 2460310.5]);
+    expect(() => db.run('INSERT INTO j (k, di) VALUES (2, 5)')).toThrow(/CHECK/);
+  });
+
+  it('MySQL: uuid BINARY(16) 기본값은 UUID_TO_BIN, 시각 글자의 Z는 +00:00 (PostgreSQL은 그대로)', () => {
+    const t = Table.parse({ name: 'u', columns: [
+      { name: 'id', type: 'uuid', storage: 'blob', default_value: '01900000-0000-7000-8000-000000000000' },
+      { name: 'at', type: 'timestamp', default_value: '2024-01-01T00:00:00Z' },
+    ] });
+    expect(tableDdl(t, 'mysql')).toContain("`id` BINARY(16) NOT NULL DEFAULT (UUID_TO_BIN('01900000-0000-7000-8000-000000000000'))");
+    expect(tableDdl(t, 'mysql')).toContain("`at` DATETIME(6) NOT NULL DEFAULT '2024-01-01T00:00:00+00:00'");
+    expect(tableDdl(t, 'postgres')).toContain(`"at" TIMESTAMPTZ NOT NULL DEFAULT '2024-01-01T00:00:00Z'`);
+  });
+
   it('MySQL 문자열의 백슬래시는 두 번 (다른 방언은 그대로)', () => {
     const t = Table.parse({ name: 'b', description: 'C:\\temp\\', columns: [{ name: 'x', type: 'int' }] });
     expect(tableDdl(t, 'mysql')).toContain("COMMENT='C:\\\\temp\\\\';");
@@ -151,6 +183,64 @@ describe('DDL이 실제로 실행되게 (감사 2)', () => {
     const files = schemaFiles(p, catalog.byId);
     expect(files.map((f) => f.name)).toEqual(['schema-db_1.sql', 'schema-db_1-2.sql', 'data-dictionary.csv']);
     expect(files[0].text.split('\n')[0]).toBe('-- 첫 번째 (db-1) · SQLite');
+  });
+});
+
+describe('1.2.0 파일 열기와 스키마 경고 (리뷰 1)', () => {
+  // 옛 화면이 만들 수 있던 값: 열기를 막지 않고 경고만
+  const old = {
+    name: 'p', format_version: 1,
+    nodes: [
+      { id: 'api', name: 'API', layer: 'backend' },
+      { id: 'db', name: '주문 DB', layer: 'db', primary: 'postgresql', tables: [
+        { name: 'a', columns: [
+          { name: 'k', type: 'int', default_value: 'A' }, { name: 'at', type: 'timestamp', default_value: 'now()' },
+          { name: 'yn', type: 'bool', default_value: 'Y' }, { name: 'memo', type: 'text', default_value: 'null' },
+        ], indexes: [{ name: 'idx_1', columns: ['k'] }] },
+        { name: 'b', columns: [{ name: 'k', type: 'int' }], indexes: [{ name: 'idx_1', columns: ['k'] }] },
+      ] },
+    ],
+    actions: [{ name: '주문', per_session: 1, writes: [{ node: 'db', table: 'a' }, { node: 'db', table: 'a' }] }],
+    edges: [
+      { from: 'api', to: 'db', interfaces: [{ name: '조회', kind: 'rest', method: 'GET', path: '/a', tables: [{ node: 'db', table: 'a', op: 'read' }, { node: 'db', table: 'a', op: 'read' }] }] },
+      { from: 'db', to: 'api', interfaces: [{ name: '정산 파일', kind: 'file', path: 'F1', auth: 'bearer', errors: [{ status: 500, description: 'x' }],
+        request: [{ name: 'a', type: 'string' }], record: { format: 'delimited', delimiter: 'x' } }] },
+    ],
+  };
+
+  it('1.2.0에서 만든 파일이 열리고, 품질 문제는 경고로 나옴', () => {
+    const p = parseProject(old, catalog.items);
+    expect(schemaWarnings(p, catalog.byId)).toEqual([
+      { node: 'db', table: 'a', text: 'k: 기본값이 타입(int)과 안 맞음: A' },
+      { node: 'db', table: 'a', text: 'at: 기본값이 타입(timestamp)과 안 맞음: now()' },
+      { node: 'db', table: 'a', text: 'yn: 기본값이 타입(bool)과 안 맞음: Y' },
+      { node: 'db', table: 'a', text: 'memo: 필수(NOT NULL)인데 기본값이 null' },
+      { node: 'db', text: '테이블·인덱스 이름 중복 idx_1 (이 DB는 한 이름 공간이라 DDL이 실패함)' },
+      { node: 'api', text: '정산 파일: 구분자 "x"에 영문·숫자·_가 있어 필드 이름·값과 섞일 수 있음' },
+    ]);
+    expect(ddlFiles(p, catalog.byId)[0].text).toContain('-- 주의: 테이블·인덱스 이름 중복 idx_1');
+    expect(ddlFiles(p, catalog.byId)[0].text).toContain('-- 주의: a.k: 기본값이 타입(int)과 안 맞음: A');
+    // 한 기능 안의 같은 (노드, 테이블, 읽기·쓰기)는 하나로
+    expect(featureTables(p).map((f) => f.tables)).toEqual([[{ node: 'db', table: 'a', op: 'write' }], [{ node: 'db', table: 'a', op: 'read' }]]);
+  });
+
+  it('코드 값이 타입과 안 맞으면 경고, MySQL 키의 VARCHAR(255) 합이 3072바이트를 넘으면 경고', () => {
+    const p = Project.parse({ name: 'p', nodes: [{ id: 'db', name: 'DB', layer: 'db', primary: 'mysql', tables: [{ name: 't', columns: [
+      { name: 'st', type: 'int', codes: [{ code: 'A' }, { code: '1' }] }, { name: 'a', type: 'text' }, { name: 'b', type: 'text' }, { name: 'c', type: 'text' }, { name: 'd', type: 'text', max_length: 20 },
+    ], primary_key: ['a', 'b', 'c', 'd'], indexes: [{ name: 'ix_ab', columns: ['a', 'b'] }] }] }] });
+    expect(schemaWarnings(p, catalog.byId)).toEqual([
+      { node: 'db', table: 't', text: 'st: 코드 값이 타입(int)과 안 맞음: A' },
+      // 255 × 4 × 3 + 20 × 4
+      { node: 'db', table: 't', text: '기본 키 (a, b, c, d): utf8mb4로 최대 3140바이트라 MySQL 키 한도 3072바이트를 넘음 (최대 길이를 정하세요)' },
+    ]);
+  });
+
+  it('인덱스 이름 겹침은 MySQL·열 저장이면 경고 아님', () => {
+    const p = parseProject(old, catalog.items);
+    const as = (primary: string) => schemaWarnings({ ...p, nodes: p.nodes.map((n) => (n.id === 'db' ? { ...n, primary } : n)) }, catalog.byId).filter((w) => w.text.includes('idx_1'));
+    expect(as('mysql')).toEqual([]);
+    expect(as('bigquery')).toEqual([]);
+    expect(as('sqlite')).toHaveLength(1);
   });
 });
 

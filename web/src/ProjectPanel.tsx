@@ -223,7 +223,7 @@ function AppSection() {
 const productsOf = (unit: PriceRow['unit']) => [...new Set(prices.filter((r) => r.unit === unit).map((r) => r.product ?? r.id))];
 
 /** 행동: 한 번 일어나면 어느 테이블에 몇 행을 쓰는지, 접속당 빈도. 아래 표는 페르소나별 빈도(비우면 기본값) */
-function ActionsSection() {
+export function ActionsSection() {
   const { project: p, edit } = usePick('project', 'edit');
   const targets = p.nodes.flatMap((n) => n.tables.map((t) => ({ key: `${n.id}.${t.name}`, node: n.id, table: t.name, label: `${n.name}.${t.name}` })));
   if (!targets.length && !p.actions.length) {
@@ -234,6 +234,8 @@ function ActionsSection() {
       {p.actions.map((a) => {
         const upd = (patch: Parameters<typeof updateAction>[2]) => edit((x) => updateAction(x, a.name, patch));
         const setWrite = (i: number, patch: Partial<(typeof a.writes)[number]>) => upd({ writes: patchAt(a.writes, i, patch) });
+        // 이 행동이 아직 안 쓰는 첫 테이블
+        const free = targets.find((t) => !a.writes.some((w) => w.node === t.node && w.table === t.table));
         return (
           <div key={a.name} className="action">
             <div className="inline">
@@ -254,7 +256,7 @@ function ActionsSection() {
                 {a.writes.length > 1 && <button aria-label="쓰기 삭제" onClick={() => upd({ writes: a.writes.filter((_, k) => k !== i) })}>×</button>}
               </div>
             ))}
-            <button onClick={() => upd({ writes: [...a.writes, { node: targets[0].node, table: targets[0].table, rows: 1 }] })}>테이블 추가</button>
+            {free && <button onClick={() => upd({ writes: [...a.writes, { node: free.node, table: free.table, rows: 1 }] })}>테이블 추가</button>}
           </div>
         );
       })}

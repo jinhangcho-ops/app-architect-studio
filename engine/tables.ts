@@ -161,9 +161,11 @@ export function tableSizes(p: Project, traffic: Traffic | undefined, byId: Map<s
 /** 기능별 테이블: 행동(쓰는 테이블)과 인터페이스(읽고 쓰는 테이블). via = 행동이면 '행동', 인터페이스면 보내는 → 받는 노드 id */
 export type FeatureTables = { name: string; via: string; tables: { node: string; table: string; op: 'read' | 'write' }[] };
 export function featureTables(p: Project): FeatureTables[] {
+  // 한 기능 안의 같은 (노드, 테이블, 읽기·쓰기)는 하나로 보여 준다 (행동이 같은 테이블을 두 번 쓰면 행 수만 더해짐)
+  const uniq = (ts: FeatureTables['tables']) => ts.filter((t, k) => ts.findIndex((x) => x.node === t.node && x.table === t.table && x.op === t.op) === k);
   return [
-    ...p.actions.map((a) => ({ name: a.name, via: '행동', tables: a.writes.map((w) => ({ node: w.node, table: w.table, op: 'write' as const })) })),
-    ...p.edges.flatMap((e) => e.interfaces.filter((i) => i.tables?.length).map((i) => ({ name: i.name, via: `${e.from} → ${e.to}`, tables: i.tables! }))),
+    ...p.actions.map((a) => ({ name: a.name, via: '행동', tables: uniq(a.writes.map((w) => ({ node: w.node, table: w.table, op: 'write' as const }))) })),
+    ...p.edges.flatMap((e) => e.interfaces.filter((i) => i.tables?.length).map((i) => ({ name: i.name, via: `${e.from} → ${e.to}`, tables: uniq(i.tables!) }))),
   ];
 }
 /** 어떤 기능에도 연결되지 않은 테이블 (node.table) */

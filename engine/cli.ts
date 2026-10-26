@@ -7,6 +7,7 @@ import { failureLines } from './failure';
 import { GAP_EFFECT, recordBytes, specAdvice, specGaps } from './interfaces';
 import type { Interface } from './schema';
 import { featureTables, unusedTables } from './tables';
+import { schemaWarnings } from './ddl';
 import { flowLine } from './pipeline';
 import { lawLine } from './regulation';
 import { STALE_DAYS } from './cost';
@@ -86,10 +87,12 @@ try {
     for (const x of specAdvice(project)) console.log(`  💡 ${nameOf(x.nodeId)} — ${x.title}: ${x.text}${x.file ? ` (${x.file})` : ''}`);
   }
 
-  const feats = featureTables(project), unused = unusedTables(project);
-  if (feats.length || unused.length) console.log('\n## 기능별 테이블');
+  const feats = featureTables(project), unused = new Set(unusedTables(project)), warns = schemaWarnings(project, catalog.byId);
+  const unusedNames = project.nodes.flatMap((n) => n.tables.filter((x) => unused.has(`${n.id}.${x.name}`)).map((x) => `${n.name}.${x.name}`));
+  if (feats.length || unused.size || warns.length) console.log('\n## 기능별 테이블');
   for (const f of feats) console.log(`  ${f.name} (${f.via}): ${f.tables.map((x) => `${nameOf(x.node)}.${x.table} ${x.op === 'read' ? '읽기' : '쓰기'}`).join(', ')}`);
-  if (unused.length) console.log(`  ⚠️ 어느 기능에도 연결되지 않은 테이블: ${unused.join(', ')}`);
+  if (unusedNames.length) console.log(`  ⚠️ 어느 기능에도 연결되지 않은 테이블: ${unusedNames.join(', ')}`);
+  for (const w of warns) console.log(`  ⚠️ ${nameOf(w.node)}${w.table ? `.${w.table}` : ''}: ${w.text}`);
 
   if (a.failure) console.log('\n## 장애 시나리오 (사용률: 평소 / 이벤트)');
   for (const l of a.failure ? failureLines(a.failure, nameOf) : []) console.log(`  ${l}`);

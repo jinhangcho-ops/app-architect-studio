@@ -6,6 +6,7 @@ import { parseProject } from '../../engine/data';
 import { catalog, examples } from './data';
 import { updateTable } from './edit';
 import { InterfacesSection } from './InterfacesPanel';
+import { ActionsSection } from './ProjectPanel';
 import { TableEditor } from './TablesPanel';
 import { useStore } from './store';
 
@@ -54,6 +55,93 @@ describe('데이터 사전 칸', () => {
     expect(useStore.getState().project).toBe(p0);
     expect(useStore.getState().past.length).toBe(0);
     expect(col().codes).toEqual([{ code: 'C', label: '카드,체크' }]);
+    root.unmount();
+  });
+});
+
+describe('테이블 편집기 칸', () => {
+  it('띄어쓰기만 다른 값을 저장한 뒤 칸이 지금 값으로 돌아가, 지나가기만 하면 다시 저장하지 않음', () => {
+    const { el, root, render, node, col } = mountTable();
+    const pk = () => el.querySelector('input[aria-label="기본 키"]') as HTMLInputElement;
+    const v0 = pk().value;
+    pk().value = `${v0} `; blur(pk()); render();
+    expect(pk().value).toBe(v0);
+    const lab = () => el.querySelector(`input[aria-label="${col().name} 논리명"]`) as HTMLInputElement;
+    lab().value = 'XYZ'; blur(lab()); render();
+    useStore.getState().undo(); render();
+    expect(useStore.getState().future.length).toBe(1);
+    blur(pk()); render();
+    expect(useStore.getState().future.length).toBe(1);
+    expect(node().tables[0].primary_key.join(', ')).toBe(v0);
+    root.unmount();
+  });
+
+  it('코드 값은 ;로 나누고 쉼표 든 라벨은 그대로', () => {
+    const { el, root, render, col } = mountTable();
+    const inp = el.querySelector(`input[aria-label="${col().name} 코드 값"]`) as HTMLInputElement;
+    inp.value = 'C=카드,체크; M=현금'; blur(inp); render();
+    expect(col().codes).toEqual([{ code: 'C', label: '카드,체크' }, { code: 'M', label: '현금' }]);
+    root.unmount();
+  });
+
+  it('인덱스·컬럼 이름을 저장해도 같은 줄의 다른 칸이 새로 그려지지 않음(포커스 유지)', () => {
+    const { el, root, render, node } = mountTable();
+    const ixRow = () => [...el.querySelectorAll('tr')].find((r) => r.querySelector('button[aria-label="인덱스 삭제"]'))!;
+    const ixCols = ixRow().querySelectorAll('input')[1];
+    const ixName = ixRow().querySelector('input')!;
+    ixName.value = 'idx_renamed'; blur(ixName); render();
+    expect(node().tables[0].indexes[0].name).toBe('idx_renamed');
+    expect(el.contains(ixCols)).toBe(true);
+    const colRow = () => [...el.querySelectorAll('tr')].find((r) => r.querySelector('button[aria-label="컬럼 삭제"]'))!;
+    const avg = colRow().querySelectorAll('input[type="number"]')[1];
+    const colName = colRow().querySelector('input')!;
+    colName.value = 'renamed_col'; blur(colName); render();
+    expect(node().tables[0].columns[0].name).toBe('renamed_col');
+    expect(el.contains(avg)).toBe(true);
+    root.unmount();
+  });
+
+  it('컬럼을 지우면 아래 줄 이름 칸이 옮겨 온 컬럼 이름을 보임', () => {
+    const { el, root, render, node } = mountTable();
+    const second = node().tables[0].columns[1].name;
+    flushSync(() => (el.querySelector('button[aria-label="컬럼 삭제"]') as HTMLButtonElement).click()); render();
+    const colRow = [...el.querySelectorAll('tr')].find((r) => r.querySelector('button[aria-label="컬럼 삭제"]'))!;
+    expect(colRow.querySelector('input')!.value).toBe(second);
+    root.unmount();
+  });
+
+  it('인덱스 추가의 기본 이름은 같은 노드의 다른 테이블과 겹치지 않음', () => {
+    const { el, root, render, node } = mountTable();
+    const n = node(); const [t0, t1] = n.tables;
+    // 다른 테이블에 옛 기본 이름과 새 기본 이름을 미리 둔다
+    useStore.getState().edit((p) => updateTable(p, n.id, t1.name, { indexes: [{ name: 'idx_1', columns: [t1.columns[0].name], unique: false }, { name: `idx_${t0.name}_1`, columns: [t1.columns[0].name], unique: false }] }));
+    useStore.getState().edit((p) => updateTable(p, n.id, t0.name, { indexes: [] }));
+    render();
+    const add = () => [...el.querySelectorAll('button')].find((b) => b.textContent === '인덱스 추가')!;
+    flushSync(() => add().click()); render();
+    flushSync(() => add().click()); render();
+    const names = node().tables.flatMap((t) => t.indexes.map((x) => x.name));
+    expect(new Set(names).size).toBe(names.length);
+    expect(node().tables[0].indexes.map((x) => x.name)).toEqual([`idx_${t0.name}_2`, `idx_${t0.name}_3`]);
+    root.unmount();
+  });
+});
+
+describe('행동 테이블 추가', () => {
+  it('아직 안 쓰는 첫 테이블을 넣고, 남은 게 없으면 버튼이 사라짐', () => {
+    useStore.setState({ project: load(), past: [], future: [] });
+    const el = document.createElement('div');
+    const root = createRoot(el);
+    const render = () => flushSync(() => root.render(<ActionsSection />));
+    render();
+    const btns = () => [...el.querySelectorAll('button')].filter((b) => b.textContent === '테이블 추가');
+    // 첫 행동은 이미 세 테이블을 다 써서 버튼이 없고, 둘째 행동에만 있다
+    expect(btns().length).toBe(1);
+    flushSync(() => btns()[0].click()); render();
+    flushSync(() => btns()[0].click()); render();
+    const w = useStore.getState().project.actions[1].writes.map((x) => `${x.node}.${x.table}`);
+    expect(w).toEqual(['N-10.events', 'N-06.orders', 'N-06.ledger_entries']);
+    expect(btns().length).toBe(0);
     root.unmount();
   });
 });

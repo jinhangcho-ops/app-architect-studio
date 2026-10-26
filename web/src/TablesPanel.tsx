@@ -3,6 +3,7 @@ import { Select } from './Select';
 import { useState } from 'react';
 import { COLUMN_TYPES, nodeStorageProfile, selectedFeatures, STORAGE_FORMATS, STORAGE_NAMES, type ProjectNode } from '../../engine/schema';
 import { parseSpec } from '../../engine/spec';
+import { schemaWarnings } from '../../engine/ddl';
 import { catalog } from './data';
 import { addTable, importTables, patchAt, removeTable, setFeature, updateNode, updateTable } from './edit';
 import { NumField, Row, Section, TextField } from './fields';
@@ -14,16 +15,25 @@ type Column = Table['columns'][number];
 const TEMPLATE = '테이블\t컬럼\t타입\t크기\t평균 길이\t저장 형식\tNULL\t키·인덱스\t설명';
 const csv = (xs: string[]) => xs.join(', ');
 const list = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean);
-/** 코드 값 "C=카드, M=현금" ↔ [{code, label}] */
-export const codesText = (cs?: Column['codes']) => (cs ?? []).map((x) => (x.label ? `${x.code}=${x.label}` : x.code)).join(', ');
+/** 코드 값 "C=카드; M=현금" ↔ [{code, label}]. 데이터 사전 CSV처럼 ;로 나눠 라벨의 쉼표는 그대로 둔다 */
+export const codesText = (cs?: Column['codes']) => (cs ?? []).map((x) => (x.label ? `${x.code}=${x.label}` : x.code)).join('; ');
 export const parseCodes = (s: string): Column['codes'] => {
-  const cs = list(s).map((x) => { const [code, ...rest] = x.split('='); return { code: code.trim(), label: rest.join('=').trim() }; }).filter((x) => x.code);
+  const cs = s.split(';').map((x) => x.trim()).filter(Boolean).map((x) => { const [code, ...rest] = x.split('='); return { code: code.trim(), label: rest.join('=').trim() }; }).filter((x) => x.code);
   return cs.length ? cs : undefined;
 };
 
-/** 칸을 나올 때 저장하는 글자 칸. 바깥 값이 바뀌면(되돌리기 등) 새로 그리고, 값이 그대로면 저장하지 않는다 */
+/** 칸을 나올 때 저장하는 글자 칸. 바깥 값이 바뀌면(되돌리기 등) 새로 그리고, 값이 그대로면 저장하지 않는다.
+ *  저장 뒤 정리한 값이 그대로면(띄어쓰기만 다름) 새로 그려지지 않으니 칸 글자를 지금 값으로 되돌린다 */
 function BlurInput({ value, onSave, ...rest }: { value: string; onSave: (v: string) => void; 'aria-label'?: string; placeholder?: string }) {
-  return <input key={value} defaultValue={value} {...rest} onBlur={(e) => e.target.value !== value && onSave(e.target.value)} />;
+  return <input key={value} defaultValue={value} {...rest} onBlur={(e) => { if (e.target.value !== value) onSave(e.target.value); e.target.value = value; }} />;
+}
+
+/** 새 인덱스 기본 이름 idx_테이블_n — 같은 노드(한 스키마)의 다른 테이블 인덱스와 겹치지 않게 n을 올린다 */
+function newIndexName(node: ProjectNode, t: Table) {
+  const used = new Set(node.tables.flatMap((x) => x.indexes.map((i) => i.name)));
+  let n = t.indexes.length + 1;
+  while (used.has(`idx_${t.name}_${n}`)) n++;
+  return `idx_${t.name}_${n}`;
 }
 
 export function TablesSection({ node }: { node: ProjectNode }) {
@@ -62,8 +72,9 @@ export function TablesSection({ node }: { node: ProjectNode }) {
 }
 
 export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t: Table; open?: boolean; onRename?: (name: string) => void }) {
-  const { edit } = usePick('edit');
+  const { project, edit } = usePick('project', 'edit');
   const upd = (patch: Partial<Table>) => edit((p) => updateTable(p, node.id, t.name, patch));
+  const warns = schemaWarnings(project, catalog.byId).filter((w) => w.node === node.id && w.table === t.name);
   const setCol = (i: number, patch: Partial<Column>) => upd({ columns: patchAt(t.columns, i, patch) });
   const setIx = (i: number, patch: Partial<Table['indexes'][number]>) => upd({ indexes: patchAt(t.indexes, i, patch) });
   const padded = !!nodeStorageProfile(node, catalog.byId)?.fixed_width_padded;
@@ -71,6 +82,7 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
   return (
     <details className="table-editor" open={open}>
       <summary><b>{t.name}</b>{t.label && ` ${t.label}`} <span className="muted">{t.record === 'fixed' ? '고정장 · ' : ''}컬럼 {t.columns.length} · 인덱스 {t.indexes.length}{t.partition ? ' · 파티션' : ''}</span></summary>
+      {warns.length > 0 && <div className="warn">{warns.map((w, i) => <div key={i}>⚠️ {w.text}</div>)}</div>}
       <Row label="이름"><input defaultValue={t.name} onBlur={(e) => { if (e.target.value && e.target.value !== t.name) { upd({ name: e.target.value }); onRename?.(e.target.value); } }} /></Row>
       <TextField label="논리명" value={t.label} onChange={(v) => upd({ label: v || undefined })} />
       <TextField label="설명" value={t.description} onChange={(v) => upd({ description: v || undefined })} />
@@ -82,7 +94,7 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
       <NumField label="보관 일수" value={t.retention_days} hint="비우면 프로젝트 보관 기간" onChange={(v) => upd({ retention_days: v })} />
       <NumField label="갱신 비율" value={t.update_ratio} step={0.05} hint="쓰기 중 새 행이 아니라 기존 행을 고치는 비율" onChange={(v) => upd({ update_ratio: v ?? 0 })} />
       <Row label="기본 키" hint="쉼표로 구분, 순서대로">
-        <BlurInput value={csv(t.primary_key)} onSave={(v) => upd({ primary_key: list(v) })} />
+        <BlurInput value={csv(t.primary_key)} aria-label="기본 키" onSave={(v) => upd({ primary_key: list(v) })} />
       </Row>
       <Row label="파티션">
         <span className="inline">
@@ -99,9 +111,9 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
       <div className="plans"><table className="grid">
         <thead><tr><th>컬럼</th><th>타입</th><th>저장 형식</th><th>최대</th><th>평균</th><th>NULL</th><th /></tr></thead>
         <tbody>{t.columns.map((c, i) => (
-          // 이름 칸이 입력 중 값을 들고 있어서(defaultValue) 지운 줄 뒤의 칸이 옛 값을 보이지 않게 이름까지 키에 넣는다
-          <tr key={`${i}-${c.name}`}>
-            <td><input defaultValue={c.name} onBlur={(e) => e.target.value && e.target.value !== c.name && setCol(i, { name: e.target.value })} /></td>
+          // 글자 칸은 BlurInput이 값마다 새로 그려서 줄 키는 순서만 — 이름을 저장해도 옆 칸 포커스가 남는다
+          <tr key={i}>
+            <td><BlurInput value={c.name} onSave={(v) => v && setCol(i, { name: v })} /></td>
             <td><Select value={c.type} onChange={(e) => setCol(i, { type: e.target.value as Column['type'] })}>
               {COLUMN_TYPES.map((x) => <option key={x}>{x}</option>)}
             </Select></td>
@@ -120,11 +132,11 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
 
       <details>
         <summary>데이터 사전 (논리명·도메인·코드 값·기본값·개인정보)</summary>
-        <p className="muted">코드 값은 "C=카드, M=현금"처럼 쉼표로. 넣으면 DDL에 CHECK 제약이 들어가요. 기본값의 숫자·true·CURRENT_TIMESTAMP는 그대로, 나머지는 문자열로 넣어요</p>
+        <p className="muted">코드 값은 "C=카드; M=현금"처럼 ;로. 넣으면 DDL에 CHECK 제약이 들어가요. 기본값·코드 값은 컬럼 타입에 맞게(정수는 숫자, 참·거짓은 true/false, 시각은 CURRENT_TIMESTAMP나 날짜 글자). 맞지 않으면 경고가 떠요</p>
         <div className="plans"><table className="grid">
           <thead><tr><th>컬럼</th><th>논리명</th><th>도메인</th><th>코드 값</th><th>기본값</th><th>개인정보</th><th>설명</th></tr></thead>
           <tbody>{t.columns.map((c, i) => (
-            <tr key={`${i}-${c.name}`}>
+            <tr key={i}>
               <td>{c.name}</td>
               <td><BlurInput value={c.label ?? ''} aria-label={`${c.name} 논리명`} onSave={(v) => setCol(i, { label: v || undefined })} /></td>
               <td><BlurInput value={c.domain ?? ''} aria-label={`${c.name} 도메인`} placeholder="금액·코드·일시…" onSave={(v) => setCol(i, { domain: v || undefined })} /></td>
@@ -140,7 +152,7 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
       <div className="plans"><table className="grid">
         <thead><tr><th>인덱스</th><th>컬럼(쉼표)</th><th>고유</th><th /></tr></thead>
         <tbody>{t.indexes.map((x, i) => (
-          <tr key={`${i}-${x.name}-${x.columns.join()}`}>
+          <tr key={i}>
             <td><BlurInput value={x.name} onSave={(v) => v && setIx(i, { name: v })} /></td>
             <td><BlurInput value={csv(x.columns)} onSave={(v) => setIx(i, { columns: list(v) })} /></td>
             <td><input type="checkbox" checked={x.unique} onChange={(e) => setIx(i, { unique: e.target.checked })} /></td>
@@ -148,7 +160,7 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
           </tr>
         ))}</tbody>
       </table></div>
-      <button onClick={() => upd({ indexes: [...t.indexes, { name: `idx_${t.indexes.length + 1}`, columns: [t.columns[0].name], unique: false }] })}>인덱스 추가</button>
+      <button onClick={() => upd({ indexes: [...t.indexes, { name: newIndexName(node, t), columns: [t.columns[0].name], unique: false }] })}>인덱스 추가</button>
       <button className="danger" onClick={() => edit((p) => removeTable(p, node.id, t.name))}>테이블 삭제</button>
     </details>
   );

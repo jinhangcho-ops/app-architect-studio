@@ -280,14 +280,14 @@ function DataDictionary({ project: p }: { project: Project }) {
   return <>
     <h3 className="r-sub">데이터 사전</h3>
     {p.nodes.filter((n) => n.tables.length).flatMap((n) => n.tables.map((t) => {
-      const d = dialectOf(n, catalog.byId);
+      const d = dialectOf(n, catalog.byId), keys = keyCols(t);
       return <div key={n.id + t.name}>
         <p><b>{n.name} · {t.name}</b>{t.label && ` (${t.label})`} · {t.record === 'fixed' ? '고정장' : '가변장'}{t.description && ` — ${t.description}`}</p>
         <table className="r-grid"><thead><tr><th>컬럼</th><th>논리명</th><th>타입{d ? ` (${d === 'generic' ? 'SQL' : d})` : ''}</th><th>필수</th><th>기본값</th><th>PK</th><th>도메인 · 코드 값</th><th>개인정보</th><th>설명</th></tr></thead><tbody>
           {t.columns.map((c) => <tr key={c.name}>
-            <td>{c.name}</td><td>{c.label ?? ''}</td><td>{d ? sqlType(c, d, t.record === 'fixed', keyCols(t).has(c.name)) : `${c.type}${c.max_length ? `(${c.max_length})` : ''}`}</td>
+            <td>{c.name}</td><td>{c.label ?? ''}</td><td>{d ? sqlType(c, d, t.record === 'fixed', keys.has(c.name)) : `${c.type}${c.max_length ? `(${c.max_length})` : ''}`}</td>
             <td>{c.nullable ? '' : 'Y'}</td><td>{c.default_value ?? ''}</td><td>{t.primary_key.includes(c.name) ? 'Y' : ''}</td>
-            <td>{[c.domain, c.codes?.map((x) => (x.label ? `${x.code}=${x.label}` : x.code)).join(', ')].filter(Boolean).join(' · ')}</td>
+            <td>{[c.domain, c.codes?.map((x) => (x.label ? `${x.code}=${x.label}` : x.code)).join('; ')].filter(Boolean).join(' · ')}</td>
             <td>{c.personal ? '⚠️ Y' : ''}</td><td>{c.description ?? ''}</td>
           </tr>)}
         </tbody></table>

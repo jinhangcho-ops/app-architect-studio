@@ -217,6 +217,9 @@ describe('파일·전문 (고정장·가변장)', () => {
     expect(lines).toContain('3,amount,,integer,Y,13,,,,');
     // 10 + (길이 없는 문자열 예시 32) + 13 + CRLF 2
     expect(requestBytes(gap)).toBe(57);
+    // 가변장에서 바꿔 남은(화면에 안 보이는) 평균 바이트는 고정장 어림에 쓰지 않음
+    expect(requestBytes({ ...gap, request: [fields[0], { name: 'memo', type: 'string' as const, required: true, avg_bytes: 500 }, fields[1]] })).toBe(57);
+    expect(requestBytes({ ...gap, record: undefined, request: [fields[0], { name: 'memo', type: 'string' as const, required: true, avg_bytes: 500 }, fields[1]] })).toBe(525);
   });
 
   it('내보낼 파일 이름이 겹치면 -2, -3 (한글 ID → ___, 대소문자만 다른 이름도)', () => {
@@ -229,5 +232,7 @@ describe('파일·전문 (고정장·가변장)', () => {
 
   it('CSV 칸이 = + - @로 시작하면 앞에 \' (엑셀 수식 막기), 진짜 숫자는 그대로', () => {
     expect(['=1+1', '+82 10', '-x', '@a', '-1', -0.5, '-0.5', 'a=b'].map(csvCell)).toEqual(["'=1+1", "'+82 10", "'-x", "'@a", '-1', '-0.5', '-0.5', 'a=b']);
+    // 탭·CR로 시작하는 칸도 (숫자처럼 보여도)
+    expect(['\t5', '\t=1', '\rx'].map(csvCell)).toEqual(["'\t5", "'\t=1", `"'\rx"`]);
   });
 });

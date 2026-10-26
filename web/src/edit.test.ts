@@ -229,10 +229,11 @@ describe('페르소나와 유입 모형', () => {
 });
 
 describe('코드 값 입력', () => {
-  it('"C=카드, M=현금" ↔ 코드 목록, 빈 칸은 없음', async () => {
+  it('"C=카드; M=현금" ↔ 코드 목록, 쉼표 든 라벨은 그대로, 빈 칸은 없음', async () => {
     const { codesText, parseCodes } = await import('./TablesPanel');
-    expect(parseCodes('C=카드, M=현금 , X')).toEqual([{ code: 'C', label: '카드' }, { code: 'M', label: '현금' }, { code: 'X', label: '' }]);
-    expect(codesText(parseCodes('C=카드, X'))).toBe('C=카드, X');
-    expect(parseCodes(' , ')).toBeUndefined();
+    expect(parseCodes('C=카드; M=현금 ; X')).toEqual([{ code: 'C', label: '카드' }, { code: 'M', label: '현금' }, { code: 'X', label: '' }]);
+    expect(parseCodes('C=카드,체크; M=현금')).toEqual([{ code: 'C', label: '카드,체크' }, { code: 'M', label: '현금' }]);
+    expect(codesText(parseCodes('C=카드; X'))).toBe('C=카드; X');
+    expect(parseCodes(' ; ')).toBeUndefined();
   });
 });

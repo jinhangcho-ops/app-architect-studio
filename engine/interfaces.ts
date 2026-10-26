@@ -30,9 +30,10 @@ export function recordBytes(i: Interface): number | undefined {
 /** 한쪽으로만 보내는 방식(응답·인증·에러 없음): 메시지, 파일·전문 */
 export const oneWay = (i: Pick<Interface, 'kind'>) => i.kind === 'message' || i.kind === 'file';
 
-/** 레코드 길이를 모를 때(고정장 길이 일부 없음, 장 형식 미정)의 어림: 필드마다 길이 → 평균 바이트 → 형식별 예시값 */
+/** 레코드 길이를 모를 때(고정장 길이 일부 없음, 장 형식 미정)의 어림: 필드마다 길이 → 평균 바이트 → 형식별 예시값.
+ *  고정장은 평균 바이트를 쓰지 않는다 (가변장에서 바꾸면 화면에 안 보이는 평균 바이트가 남아 있음) */
 const roughRecordBytes = (i: Interface) =>
-  i.request.length ? i.request.reduce((s, f) => s + (f.length ?? f.avg_bytes ?? PLAIN_BYTES[f.type]), 0) + NEWLINE[i.record?.newline ?? 'crlf'] : 0;
+  i.request.length ? i.request.reduce((s, f) => s + (f.length ?? (i.record?.format === 'fixed' ? undefined : f.avg_bytes) ?? PLAIN_BYTES[f.type]), 0) + NEWLINE[i.record?.newline ?? 'crlf'] : 0;
 export const requestBytes = (i: Interface) => i.request_bytes ?? (i.kind === 'file' ? recordBytes(i) ?? roughRecordBytes(i) : bodyBytes(i.request, i.kind));
 export const responseBytes = (i: Interface) => i.response_bytes ?? bodyBytes(i.response, i.kind);
 
@@ -443,8 +444,8 @@ export function layoutRows(i: Interface): LayoutRow[] {
 }
 export const csvCell = (v: unknown) => {
   let s = v === undefined ? '' : String(v);
-  // 엑셀이 = + - @로 시작하는 칸을 수식으로 읽지 않게 (진짜 숫자 -1 같은 것은 그대로)
-  if (/^[=+\-@]/.test(s) && !Number.isFinite(Number(s))) s = `'${s}`;
+  // 엑셀이 = + - @로 시작하는 칸을 수식으로 읽지 않게 (진짜 숫자 -1 같은 것은 그대로), 탭·CR로 시작하는 칸도
+  if ((/^[=+\-@]/.test(s) && !Number.isFinite(Number(s))) || /^[\t\r]/.test(s)) s = `'${s}`;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 /** 레이아웃 표(CSV, 엑셀에서 한글이 깨지지 않게 BOM). 첫 줄들은 장 형식·인코딩·레코드 길이 */
