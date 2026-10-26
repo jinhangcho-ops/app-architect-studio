@@ -85,7 +85,11 @@ def analyze_folder(root: str) -> dict:
     edges, matches = [], []
     for m in modules:
         relative = m.pop("relative")
-        for imp in m["eager"] + m["lazy"]:
+        # 출력하는 import 목록은 모듈 이름으로 (from x import Class의 Class는 빼고 x만)
+        short = lambda imp: max((i for i in ids if imp == i or imp.startswith(i + ".")), key=len, default=None) or imp.split(".")[0]
+        lists = {k: m[k] for k in ("eager", "lazy")}
+        m["eager"], m["lazy"] = (sorted({short(x) for x in lists[k]}) for k in ("eager", "lazy"))
+        for imp in lists["eager"] + lists["lazy"]:
             # 같은 폴더 안의 모듈을 부르면 연결선, 아니면 바깥 라이브러리로 본다
             # 패키지(services)와 그 안의 모듈(services.order_worker)이 둘 다 맞으면 더 구체적인 쪽(긴 이름)
             target = max((i for i in ids if imp == i or imp.startswith(i + ".")), key=len, default=None)
@@ -94,7 +98,7 @@ def analyze_folder(root: str) -> dict:
                 continue
             top = imp.split(".")[0]
             if top in LIBRARY_ITEM and imp not in relative:
-                matches.append({"module": m["id"], "library": top, "item": LIBRARY_ITEM[top], "eager": imp in m["eager"]})
+                matches.append({"module": m["id"], "library": top, "item": LIBRARY_ITEM[top], "eager": imp in lists["eager"]})
     uniq = lambda xs: [dict(t) for t in {tuple(sorted(x.items())) for x in xs}]
     return {"source": os.path.abspath(root), "modules": modules,
             "edges": sorted(uniq(edges), key=lambda e: (e["from"], e["to"])),
@@ -148,6 +152,7 @@ def self_test() -> None:
         for e in [("app.db", "app.sub.helper"), ("app.sub.helper", "app.db"), ("main", "app.sub.helper")]:
             assert {"from": e[0], "to": e[1]} in r["edges"], r["edges"]
         assert {"from": "app.db", "to": "app.sub"} not in r["edges"], r["edges"]
+        assert {m["id"]: m["eager"] for m in r["modules"]}["main"] == ["app.sub.helper"], r["modules"]
     print("SELF_TEST_OK")
 
 

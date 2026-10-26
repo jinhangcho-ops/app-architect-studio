@@ -90,8 +90,8 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
               <table className="r-grid">
                 <thead><tr><th>페르소나</th><th>패턴</th><th>비율</th><th>인원</th><th>1인당 요청/일</th><th>요청 합계</th><th>쓰기 행 합계</th></tr></thead>
                 <tbody>{t.personas.map((x, i) => (
-                  <tr key={x.name}>
-                    <td>{x.name}</td><td>{PATTERNS[p.personas[i].pattern].label}</td><td>{fmtShare(x.share)}</td><td>{fmt(x.people)}</td>
+                  <tr key={i}>
+                    <td>{x.name}</td><td>{PATTERNS[x.pattern].label}</td><td>{fmtShare(x.share)}</td><td>{fmt(x.people)}</td>
                     <td>{fmt(x.requests / x.people)}</td><td>{fmt(x.requests)}</td><td>{fmt(Object.values(x.rows).reduce((s, v) => s + v, 0))}</td>
                   </tr>
                 ))}</tbody>
@@ -145,6 +145,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
             <H n={8}>확장 한계 · 지연시간 · 월 비용</H>
             <ul>{p.nodes.filter((n) => a.nodes[n.id].limitUsers).map((n) => <li key={n.id}>{n.name}: 한계 사용자 약 {fmt(a.nodes[n.id].limitUsers!.value)}명</li>)}</ul>
             <ul>{a.paths.map((pa) => <li key={pa.nodes.join()}>{pa.nodes.map(name).join(' → ')}: p99 {fmtMetric(pa.p99)}</li>)}</ul>
+            {a.pathsCut && <p>동기 경로가 500개를 넘어 앞쪽 500개만 계산했어요 (가장 느린 경로·단일 장애점을 놓칠 수 있음)</p>}
             {a.cost && <>
               <table className="r-grid"><tbody>
                 {Object.entries(a.cost.parts).map(([k, m]) => <tr key={k}><td>{p.nodes.some((n) => n.id === k) ? name(k) : k}</td><td>{fmtMetric(m)}</td></tr>)}

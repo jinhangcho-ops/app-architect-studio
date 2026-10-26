@@ -341,7 +341,7 @@ export const Persona = z.object({
   sessions_per_day: z.number().nonnegative().max(100).optional(),
   reads_per_session: z.number().nonnegative().optional(),
   writes_per_session: z.number().nonnegative().optional(),
-  session_minutes: z.number().nonnegative().optional(),
+  session_minutes: z.number().nonnegative().max(1440).optional(),
   write_kb: z.number().nonnegative().optional(),
   response_kb: z.number().nonnegative().optional(),
   /** 하이브리드에서 접속 1회당 동기화 요청 수 (요청 1건 = 쓰기 1건) */

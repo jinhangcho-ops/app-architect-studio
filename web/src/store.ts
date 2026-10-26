@@ -62,6 +62,8 @@ function shapeIssues(p: Project): Map<string, string> {
   const out = new Map<string, string>();
   for (const i of r.success ? [] : r.error.issues) {
     if (i.code === 'too_small' && i.origin === 'string') continue;
+    // 형식 검사(필드 이름 등)만 있는 칸도 비운 것은 다시 치는 중으로 본다
+    if (i.code === 'invalid_format' && i.path.reduce<unknown>((o, k) => (o as Record<PropertyKey, unknown>)?.[k], p) === '') continue;
     const why = numberRangeWhy(i)
       ?? (i.code === 'invalid_type' && i.expected === 'number' ? '숫자여야 함'
         : i.code === 'too_small' && i.origin === 'array' ? '하나 이상 있어야 함'

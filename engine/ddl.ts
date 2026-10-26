@@ -136,6 +136,7 @@ export function schemaWarnings(p: Project, byId: Map<string, CatalogItem>): { no
         const v = c.default_value;
         if (v !== undefined && isNullText(v)) { if (!c.nullable) warn(`${c.name}: 필수(NOT NULL)인데 기본값이 null`); }
         else if (v !== undefined && !fitsType(c.type, v)) warn(`${c.name}: 기본값이 타입(${c.type})과 안 맞음: ${v}`);
+        if (v !== undefined && !isNullText(v) && c.codes?.length && !c.codes.some((x) => x.code === v)) warn(`${c.name}: 기본값 ${v}가 코드 값 목록에 없음 (CHECK 제약 때문에 기본값으로 행을 넣지 못함)`);
         for (const x of c.codes ?? []) if (!fitsType(c.type, x.code)) warn(`${c.name}: 코드 값이 타입(${c.type})과 안 맞음: ${x.code}`);
         // 화면의 코드 값 칸은 ;로 나누므로, ;가 든 코드·라벨은 칸을 고치면 쪼개진다
         if (c.codes?.some((x) => x.code.includes(';') || x.label.includes(';'))) warn(`${c.name}: 코드 값·라벨에 ;가 있어 화면에서 고치면 나뉨`);

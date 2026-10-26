@@ -135,6 +135,7 @@ ${howMetric(a.storage.personaGb)}`}>
       </Section>
 
       <Section title="경로 (화면에서 동기 호출)">
+        {a.pathsCut && <p className="warn">동기 경로가 500개를 넘어 앞쪽 500개만 계산했어요 (가장 느린 경로·단일 장애점을 놓칠 수 있음)</p>}
         {a.paths.map((pa) => (
           <div key={pa.nodes.join('>')} className="path">
             <div>{pa.nodes.map(name).join(' → ')}</div>
@@ -225,8 +226,8 @@ function PersonaTable({ t }: { t: Traffic }) {
         <th>1인당 응답</th>
       </tr></thead>
       <tbody>
-        {t.personas.map((x) => (
-          <tr key={x.name}>
+        {t.personas.map((x, i) => (
+          <tr key={i}>
             <td>{x.name}</td><td>{Math.round(x.share * 100)}%</td><td>{fmt(x.people)}</td>
             <td>{fmt(x.requests / x.people)}</td><td>{fmt(x.requests)}</td>
             {hasRows && <><td>{fmt(rows(x) / x.people)}</td><td>{fmt(rows(x))}</td></>}

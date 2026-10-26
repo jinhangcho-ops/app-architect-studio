@@ -58,11 +58,10 @@ describe('편집 → 저장 → 다시 열기 (P1)', () => {
     expect(() => reopen()).not.toThrow();
   });
 
-  it('형식이 틀린 글자(필드 이름 한글·빈 이름, 에러 코드 공백)는 막고 이유를 알림', () => {
+  it('형식이 틀린 글자(필드 이름 한글, 에러 코드 공백)는 막고 이유를 알림', () => {
     const base = withIf(load());
     for (const [patch, why] of [
       [{ request: [{ name: '주문', type: 'string', required: true }] }, /영문·숫자·_/],
-      [{ request: [{ name: '', type: 'string', required: true }] }, /영문·숫자·_/],
       [{ errors: [{ status: 400, code: 'A B', description: 'x' }] }, /에러 코드는 영문/],
     ] as const) {
       start(base);
@@ -74,7 +73,7 @@ describe('편집 → 저장 → 다시 열기 (P1)', () => {
 
   it('글자 칸 비우기(경로·에러 설명)는 다시 치는 중이라 적용하고, 저장한 파일도 열림', () => {
     const base = withIf(load());
-    for (const patch of [{ path: '' }, { errors: [{ status: 400, description: '' }] }]) {
+    for (const patch of [{ path: '' }, { errors: [{ status: 400, description: '' }] }, { request: [{ name: '', type: 'string', required: true }] }]) {
       start(base);
       s().edit(setIf(patch));
       expect(s().project).not.toBe(base);

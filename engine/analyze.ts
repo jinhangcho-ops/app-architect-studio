@@ -10,7 +10,7 @@ import { adoption, monthReaching, type AdoptionMonth } from './adoption';
 import { timeline, usersAt, type Milestone } from './growth';
 import type { Vars } from './expr';
 import { checkRules, judgeNode, mergeScenario, type NodeJudgement, type RuleHit, type Scenario } from './judge';
-import { nodeP99, pathP99, syncPaths } from './latency';
+import { MAX_PATHS, nodeP99, pathP99, syncPaths } from './latency';
 import { limitFactor } from './limits';
 import { apiLoads, type ApiLoad } from './api';
 import { computedScenarios, nodeLoads, type NodeLoad } from './load';
@@ -47,6 +47,8 @@ export type Analysis = {
   traffic?: Traffic;
   nodes: Record<string, NodeAnalysis>;
   paths: PathAnalysis[];
+  /** 동기 경로가 MAX_PATHS개를 넘어 앞쪽만 계산함 */
+  pathsCut?: boolean;
   spof: string[];
   cost?: CostResult;
   bottleneck?: { nodeId: string; limitUsers: Metric };
@@ -211,7 +213,8 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
 
   // 경로별 p99·가용성, 단일 장애점
   // 로컬 exe처럼 서버 가용성을 따지지 않는 방식이면 경로·단일 장애점도 만들지 않는다
-  const paths = enabled(p.deploy, 'availability') ? syncPaths(p) : [];
+  const allPaths = enabled(p.deploy, 'availability') ? syncPaths(p) : [];
+  const paths = allPaths.slice(0, MAX_PATHS);
   const p99Normal = new Map(Object.entries(nodes).flatMap(([id, x]) => (x.p99 ? [[id, x.p99.normal] as const] : [])));
   const pathResults: PathAnalysis[] = paths.map((path) => {
     // 화면 노드는 사용자 기기라 서버 가용성 계산에서 뺀다
@@ -357,6 +360,7 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     traffic: t,
     nodes,
     paths: pathResults,
+    ...(allPaths.length > MAX_PATHS && { pathsCut: true }),
     spof: singlePointsOfFailure(p, paths, (n) => perOf.get(n.id)!.max),
     cost,
     bottleneck,

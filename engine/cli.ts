@@ -99,6 +99,7 @@ try {
   for (const l of a.failure ? failureLines(a.failure, nameOf) : []) console.log(`  ${l}`);
 
   if (a.paths.length) console.log('\n## 동기 경로');
+  if (a.pathsCut) console.log('  ! 동기 경로가 500개를 넘어 앞쪽 500개만 계산했어요 (가장 느린 경로·단일 장애점을 놓칠 수 있음)');
   for (const path of a.paths) {
     const p99 = path.p99 ? `p99 ${fmt(path.p99.value)} ms · ` : '';
     console.log(`  ${path.nodes.map(nameOf).join(' → ')}: ${p99}가용성 ${show(path.availability)} · 월 중단 ${fmt(path.downtime.value)}시간`);

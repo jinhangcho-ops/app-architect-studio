@@ -69,22 +69,27 @@ const objectSchema = (fs: SpecField[]): Json => ({
 
 /** 받는 노드마다 REST 작업: 같은 경로·메서드를 여러 노드가 부르면 하나로 두고 부르는 노드만 모은다.
  *  경로의 {변수}는 path, GET의 나머지 요청 필드는 query, 그 밖의 메서드는 본문(JSON) */
+/** 경로 변수 {이름}. 이름은 order-id·주문처럼 영문 식별자가 아니어도 된다 (FastAPI는 alias로 받음) */
+const PATH_VAR = /\{([^{}]+)\}/g;
 export type RestOp = { i: Interface; method: string; opId: string; callers: string[]; inPath: SpecField[]; query: SpecField[]; body: SpecField[] };
 export function restOps(p: Project): Map<string, RestOp[]> {
   const nameOf = (id: string) => p.nodes.find((n) => n.id === id)?.name ?? id;
   const out = new Map<string, RestOp[]>();
-  for (const e of p.edges) for (const i of e.interfaces.filter((x) => x.kind === 'rest')) {
+  for (const e of p.edges) for (const x of e.interfaces.filter((y) => y.kind === 'rest')) {
+    // 경로가 /로 시작하지 않으면(명세 점검이 알림) 내보낼 때만 / 를 붙여 OpenAPI·FastAPI가 깨지지 않게
+    const i = x.path.startsWith('/') ? x : { ...x, path: `/${x.path}` };
     const list = out.get(e.to) ?? [];
     const method = (i.method ?? 'GET').toLowerCase();
     const same = list.find((o) => o.i.path === i.path && o.method === method);
     if (same) { same.callers.push(nameOf(e.from)); continue; }
     // 경로 변수인데 요청 필드에 없으면 문자열로 본다
-    const inPath = [...i.path.matchAll(/\{(\w+)\}/g)].map((x) => i.request.find((f) => f.name === x[1]) ?? { name: x[1], type: 'string' as const, required: true });
+    const inPath = [...i.path.matchAll(PATH_VAR)].map((x) => i.request.find((f) => f.name === x[1]) ?? { name: x[1], type: 'string' as const, required: true });
     const rest = i.request.filter((f) => !inPath.some((x) => x.name === f.name));
     // /orders/{id}와 /orders/id처럼 안전 이름이 같아지면 _2, _3 (OpenAPI operationId와 FastAPI 함수·모델 이름이 같이 씀)
     const base = `${method}_${safe(i.path)}`.replace(/_+/g, '_').replace(/_$/, '');
     let opId = base;
-    for (let k = 2; list.some((o) => o.opId === opId); k++) opId = `${base}_${k}`;
+    // FastAPI 모델 이름은 pascal(opId)라 그 이름으로도 겹치지 않게 (get_orders_id_2와 get_orders_id2)
+    for (let k = 2; list.some((o) => o.opId === opId || pascal(o.opId) === pascal(opId)); k++) opId = `${base}_${k}`;
     list.push({
       i, method, callers: [nameOf(e.from)], inPath, opId,
       query: method === 'get' ? rest : [], body: method === 'get' ? [] : rest,
@@ -170,18 +175,23 @@ export function asyncApiDoc(p: Project): Json | undefined {
     // order.created와 order-created처럼 안전 이름만 같고 주소가 다르면 _2, _3 (같은 주소는 한 채널)
     let ch = safe(i.path);
     for (let k = 2; channels[ch] && (channels[ch] as Json).address !== i.path; k++) ch = `${safe(i.path)}_${k}`;
-    const msg = `${ch}_message`;
-    channels[ch] ??= {
-      address: i.path,
-      ...(i.description && { description: i.description }),
-      messages: { [msg]: { name: i.name, contentType: 'application/json', payload: objectSchema(i.request) } },
+    const message = { name: i.name, contentType: 'application/json', payload: objectSchema(i.request) };
+    const c = (channels[ch] ??= { address: i.path, ...(i.description && { description: i.description }), messages: {} }) as { messages: Record<string, Json> };
+    // 한 토픽에 다른 메시지(이름·필드가 다름)를 보내면 _message_2, _message_3로 더한다. 같은 메시지는 하나로
+    const same = Object.keys(c.messages).find((k) => JSON.stringify(c.messages[k]) === JSON.stringify(message));
+    let msg = same ?? `${ch}_message`;
+    for (let k = 2; !same && c.messages[msg]; k++) msg = `${ch}_message_${k}`;
+    c.messages[msg] = message;
+    const ref = { $ref: `#/channels/${ch}` }, msgRef = { $ref: `#/channels/${ch}/messages/${msg}` };
+    // 작업마다 주고받는 메시지를 적는다. 같은 노드가 같은 토픽에 여러 메시지를 보내면 한 작업에 모은다
+    const op = (key: string, action: string, node: string, summary: string) => {
+      const prev = operations[key] as { messages: Json[] } | undefined;
+      if (prev) { if (!prev.messages.some((x) => x.$ref === msgRef.$ref)) prev.messages.push(msgRef); return; }
+      operations[key] = { action, channel: ref, messages: [msgRef], summary, 'x-node': nameOf(node) };
     };
-    const ref = { $ref: `#/channels/${ch}` };
-    operations[`${safe(e.from)}_send_${ch}`] = { action: 'send', channel: ref, summary: `${nameOf(e.from)} → ${i.name}`, 'x-node': nameOf(e.from) };
+    op(`${safe(e.from)}_send_${ch}`, 'send', e.from, `${nameOf(e.from)} → ${i.name}`);
     const toQueue = p.nodes.find((n) => n.id === e.to)?.layer === 'queue';
-    for (const to of toQueue ? p.edges.filter((x) => x.from === e.to).map((x) => x.to) : [e.to]) {
-      operations[`${safe(to)}_receive_${ch}`] = { action: 'receive', channel: ref, summary: `${nameOf(to)} ← ${i.name}`, 'x-node': nameOf(to) };
-    }
+    for (const to of toQueue ? p.edges.filter((x) => x.from === e.to).map((x) => x.to) : [e.to]) op(`${safe(to)}_receive_${ch}`, 'receive', to, `${nameOf(to)} ← ${i.name}`);
   }
   return { asyncapi: '3.0.0', info: { title: `${p.name} 메시지`, version: '1.0.0', description: 'App Architect Studio에서 만든 내부 메시지 명세' }, channels, operations };
 }
@@ -202,10 +212,17 @@ const protoMessage = (name: string, fs: SpecField[]) => [
 /** 받는 노드마다 gRPC 인터페이스를 모은 .proto */
 export function protoFiles(p: Project): { nodeId: string; text: string }[] {
   const nameOf = (id: string) => p.nodes.find((n) => n.id === id)?.name ?? id;
-  const byTarget = new Map<string, Interface[]>();
-  for (const e of p.edges) for (const i of e.interfaces.filter((x) => x.kind === 'grpc')) {
-    const list = byTarget.get(e.to) ?? [];
-    if (!list.some((x) => x.path === i.path)) byTarget.set(e.to, [...list, i]);
+  const byTarget = new Map<string, Interface[]>(), origOf = new Map<string, string[]>();
+  for (const e of p.edges) for (const x of e.interfaces.filter((y) => y.kind === 'grpc')) {
+    // 메서드 이름이 영문 식별자가 아니면(명세 점검이 알림) 내보낼 때만 식별자로 바꿔 proto 문법이 깨지지 않게
+    // 바꾼 이름이 다른 인터페이스와 겹치면 _2, _3 (원래 이름이 같을 때만 하나로)
+    const list = byTarget.get(e.to) ?? [], orig = origOf.get(e.to) ?? [];
+    if (orig.includes(x.path)) continue;
+    const base = IDENT.test(x.path) ? x.path : pascal(safe(x.path)) || 'Method1';
+    let name = base;
+    for (let k = 2; list.some((y) => y.path === name); k++) name = `${base}_${k}`;
+    byTarget.set(e.to, [...list, { ...x, path: name }]);
+    origOf.set(e.to, [...orig, x.path]);
   }
   return [...byTarget].map(([nodeId, list]) => {
     const used = list.flatMap((i) => [...i.request, ...i.response]).map((f) => f.type);
@@ -238,7 +255,7 @@ export function specGaps(i: Interface): string[] {
     if (i.record?.format === 'delimited' && /[A-Za-z0-9_]/.test(i.record.delimiter)) gaps.push(`구분자 "${i.record.delimiter}"에 영문·숫자·_가 있어 필드 이름·값과 섞일 수 있음`);
   }
   if (i.kind === 'rest') {
-    const inPath = [...i.path.matchAll(/\{(\w+)\}/g)].map((x) => x[1]);
+    const inPath = [...i.path.matchAll(PATH_VAR)].map((x) => x[1]);
     for (const v of inPath.filter((v) => !i.request.some((f) => f.name === v))) gaps.push(`경로 변수 {${v}}의 형식이 없음 (문자열로 가정)`);
     if (['POST', 'PUT', 'PATCH'].includes(i.method ?? 'GET') && !i.request.some((f) => !inPath.includes(f.name))) gaps.push('요청 본문 필드가 없음');
   }
@@ -295,16 +312,18 @@ const PY_TYPE: Record<FieldType, string> = { string: 'str', integer: 'int', numb
 const PY_KEYWORDS = new Set(['False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue', 'def', 'del', 'elif', 'else', 'except', 'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield']);
 /** 파이썬 문자열 (JSON 문자열 표기는 파이썬에서도 같은 뜻) */
 const py = (s: string) => JSON.stringify(s);
-const pyName = (n: string) => (PY_KEYWORDS.has(n) ? `${n}_` : n);
+/** 파이썬 이름으로 그대로 못 쓰는 이름: 예약어, 영문 식별자가 아님, pydantic이 막는 _·model_로 시작. 다른 이름을 쓰고 alias로 원래 이름을 붙인다 */
+const needsAlias = (n: string) => PY_KEYWORDS.has(n) || !/^[A-Za-z][A-Za-z0-9_]*$/.test(n) || n.startsWith('model_');
+const pyName = (n: string) => (!needsAlias(n) ? n : PY_KEYWORDS.has(n) ? `${n}_` : `f_${safe(n)}`);
 const pascal = (s: string) => s.split('_').filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join('');
 
 function pyModel(name: string, fs: SpecField[]): string[] {
   if (!fs.length) return [];
   return [
     `class ${name}(BaseModel):`,
-    ...(fs.some((f) => PY_KEYWORDS.has(f.name)) ? ['    model_config = ConfigDict(populate_by_name=True)'] : []),
+    ...(fs.some((f) => needsAlias(f.name)) ? ['    model_config = ConfigDict(populate_by_name=True)'] : []),
     ...fs.map((f) => {
-      const t = PY_TYPE[f.type], args = [f.required ? '...' : 'None', ...(PY_KEYWORDS.has(f.name) ? [`alias=${py(f.name)}`] : []), ...(f.description ? [`description=${py(f.description)}`] : [])];
+      const t = PY_TYPE[f.type], args = [f.required ? '...' : 'None', ...(needsAlias(f.name) ? [`alias=${py(f.name)}`] : []), ...(f.description ? [`description=${py(f.description)}`] : [])];
       return `    ${pyName(f.name)}: ${f.required ? t : `Optional[${t}]`} = Field(${args.join(', ')})`;
     }),
     '', '',
@@ -316,15 +335,17 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
   const nameOf = (id: string) => p.nodes.find((n) => n.id === id)?.name ?? id;
   return [...restOps(p)].filter(([id]) => p.nodes.find((n) => n.id === id)?.primary === 'fastapi').map(([nodeId, ops]) => {
     const auth = new Set(ops.map((o) => o.i.auth));
+    const pathAlias = ops.some((o) => o.inPath.some((f) => needsAlias(f.name)));
     const models = ops.flatMap((o) => [...pyModel(`${pascal(o.opId)}Request`, o.body), ...pyModel(`${pascal(o.opId)}Response`, o.i.response)]);
     const routes = ops.flatMap((o) => {
       const { i } = o, P = pascal(o.opId);
       const params = [
-        ...o.inPath.map((f) => `${pyName(f.name)}: ${PY_TYPE[f.type]}`),
+        // Annotated: 기본값 없는 인자라 뒤에 오는 본문(body) 인자와 순서가 어긋나지 않는다
+        ...o.inPath.map((f) => `${pyName(f.name)}: ${needsAlias(f.name) ? `Annotated[${PY_TYPE[f.type]}, Path(alias=${py(f.name)})]` : PY_TYPE[f.type]}`),
         ...o.query.map((f) => {
           // 객체·배열은 질의 문자열로 못 받아 JSON 문자열로 받는다
           const t = f.type === 'object' || f.type === 'array' ? 'str' : PY_TYPE[f.type];
-          const args = [f.required ? '...' : 'None', ...(PY_KEYWORDS.has(f.name) ? [`alias=${py(f.name)}`] : []), ...(f.description ? [`description=${py(f.description)}`] : [])];
+          const args = [f.required ? '...' : 'None', ...(needsAlias(f.name) ? [`alias=${py(f.name)}`] : []), ...(f.description ? [`description=${py(f.description)}`] : [])];
           return `${pyName(f.name)}: ${f.required ? t : `Optional[${t}]`} = Query(${args.join(', ')})`;
         }),
         ...(o.body.length ? [`body: ${P}Request`] : []),
@@ -340,7 +361,7 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
       return [
         `@app.${o.method}(${deco.join(', ')})`,
         `def ${o.opId}(${params.join(', ')}) -> ${ret}:`,
-        `    """부르는 노드: ${o.callers.join(', ').replace(/"/g, "'")}"""`,
+        `    ${py(`부르는 노드: ${o.callers.join(', ')}`)}`,
         ...i.errors.map((x) => `    # ${x.status}${x.code ? ` ${x.code}` : ''}: ${x.description.replace(/\n/g, ' ')} → raise ApiError(${x.status}, ${py(x.description)}${x.code ? `, ${py(x.code)}` : ''})`),
         ...(i.auth === undefined ? ['    # TODO: 인증 방식이 정해지지 않았습니다 (명세 점검)'] : []),
         '    raise ApiError(501, "구현 필요", "NOT_IMPLEMENTED")',
@@ -353,16 +374,16 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
       `# 실행: pip install "fastapi[standard]"  →  fastapi dev ${fastApiName(nodeId)}  →  http://127.0.0.1:8000/docs 를 프론트와 공유`,
       '# 에러는 모두 problem+json(Problem)입니다: 앱 에러는 ApiError로 내고, 요청 검증 실패(422)·인증 실패(401)·그 밖의 HTTP 에러도 같은 형식으로 바꿉니다.',
       'from datetime import datetime',
-      'from typing import Any, Optional',
+      `from typing import ${pathAlias ? 'Annotated, ' : ''}Any, Optional`,
       'from uuid import UUID',
       '',
-      `from fastapi import Depends, FastAPI, Query, Request${ops.some((o) => !o.i.response.length) ? ', Response' : ''}`,
+      `from fastapi import Depends, FastAPI, ${pathAlias ? 'Path, ' : ''}Query, Request${ops.some((o) => !o.i.response.length) ? ', Response' : ''}`,
       'from fastapi.exceptions import RequestValidationError',
       'from fastapi.openapi.utils import get_openapi',
       'from fastapi.responses import JSONResponse',
       ...(auth.has('bearer') || auth.has('api_key')
         ? [`from fastapi.security import ${[...(auth.has('api_key') ? ['APIKeyHeader'] : []), ...(auth.has('bearer') ? ['HTTPAuthorizationCredentials', 'HTTPBearer'] : [])].join(', ')}`] : []),
-      `from pydantic import BaseModel, ${ops.some((o) => [...o.body, ...o.i.response].some((f) => PY_KEYWORDS.has(f.name))) ? 'ConfigDict, ' : ''}Field`,
+      `from pydantic import BaseModel, ${ops.some((o) => [...o.body, ...o.i.response].some((f) => needsAlias(f.name))) ? 'ConfigDict, ' : ''}Field`,
       '',
       'from starlette.exceptions import HTTPException as StarletteHTTPException',
       '',

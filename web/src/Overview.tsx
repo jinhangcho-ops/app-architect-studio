@@ -190,7 +190,7 @@ export function LimitChart({ project: p, analysis: a }: { project: Project; anal
           </>}
         </svg>
         <div className="chart-legend">
-          {kind === 'traffic' && curve.personas.map((c, k) => <span key={c.name}><i style={{ background: PERSONA_COLORS[k % PERSONA_COLORS.length] }} />{c.name} · 피크 {fmt(Math.max(...c.rps))} RPS</span>)}
+          {kind === 'traffic' && curve.personas.map((c, k) => <span key={k}><i style={{ background: PERSONA_COLORS[k % PERSONA_COLORS.length] }} />{c.name} · 피크 {fmt(Math.max(...c.rps))} RPS</span>)}
           {kind === 'util' && util.map((l) => <span key={l.id}><i style={{ background: l.color }} />{l.name} · 최고 {Math.round(Math.max(...l.pts.map(([, v]) => v)) * 100)}%</span>)}
           {kind === 'inflow' && adoption && <>
             <span><i style={{ background: CHANNEL_COLORS.external }} />바깥 유입 · {months}개월 합 {fmt(adoption.reduce((s, m) => s + m.external, 0))}명</span>
@@ -198,7 +198,7 @@ export function LimitChart({ project: p, analysis: a }: { project: Project; anal
             <span>떠난 사람 {fmt(adoption.at(-1)!.left)}명</span>
           </>}
           {kind === 'stages' && adoption && <>
-            {p.personas.map((ps, k) => <span key={ps.name}><i style={{ background: PERSONA_COLORS[k % PERSONA_COLORS.length] }} />{ps.name} {fmt(adoption.at(-1)!.byPersona[k])}명</span>)}
+            {p.personas.map((ps, k) => <span key={k}><i style={{ background: PERSONA_COLORS[k % PERSONA_COLORS.length] }} />{ps.name} {fmt(adoption.at(-1)!.byPersona[k])}명</span>)}
             <span>활성 {fmt(adoption.at(-1)!.active)}명 · 환산 {fmt(adoption.at(-1)!.equivalent)}명 ({months}개월째)</span>
           </>}
         </div>

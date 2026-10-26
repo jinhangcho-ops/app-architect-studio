@@ -239,3 +239,54 @@ describe('파일·전문 (고정장·가변장)', () => {
     expect(['\t5', '\t=1', '\rx'].map(csvCell)).toEqual(["'\t5", "'\t=1", `"'\rx"`]);
   });
 });
+
+describe('내보내기: 경로 모양이 틀려도 파일은 깨지지 않음 (리뷰 6)', () => {
+  const two = (interfaces: Interface[]): Project => ({ ...gc, edges: [{ from: 'N-03', to: 'N-09', sync: true, callRatio: 1, carries: 'all', rtt_ms: 0, interfaces }] } as Project);
+  it('REST 경로에 / 를 붙이고, gRPC 이름은 식별자로', () => {
+    const rest = openApiDocs(two([iface({ name: 'a', kind: 'rest', method: 'GET', path: 'orders' })]));
+    expect(Object.keys((rest[0].doc as { paths: object }).paths)).toEqual(['/orders']);
+    const proto = protoFiles(two([iface({ name: 'b', kind: 'grpc', path: 'Create Order' }), iface({ name: 'c', kind: 'grpc', path: '' })]))[0].text;
+    expect(proto).toContain('rpc CreateOrder (CreateOrderRequest) returns (CreateOrderResponse);');
+    expect(proto).toContain('rpc Method1 (Method1Request) returns (Method1Response);');
+  });
+  it('FastAPI 모델 이름이 겹치지 않게 operationId를 고름', () => {
+    const doc = openApiDocs(two(['/orders/{id}', '/orders/id', '/orders/id2'].map((path, k) => iface({ name: `r${k}`, kind: 'rest', method: 'GET', path }))))[0].doc as { paths: Record<string, { get: { operationId: string } }> };
+    const ids = Object.values(doc.paths).map((x) => x.get.operationId);
+    const pas = ids.map((s) => s.split('_').filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(''));
+    expect(new Set(pas).size).toBe(3);
+  });
+});
+
+describe('감사 6: 명세 파일 정확성', () => {
+  const two = (interfaces: Interface[]): Project => ({ ...gc, edges: [{ from: 'N-03', to: 'N-09', sync: true, callRatio: 1, carries: 'all', rtt_ms: 0, interfaces }] } as Project);
+  it('FastAPI: 이름의 \\는 docstring을 깨지 않고, 파이썬 이름이 못 되는 경로 변수·필드는 alias', () => {
+    const p = withEdge(ledger, 'U-01', 'B-01', [iface({ name: 'k', kind: 'rest', method: 'POST', path: '/k/{1}/{class}/{order-id}',
+      request: [{ name: '_id', type: 'string', required: true }], response: [{ name: 'model_config', type: 'string', required: true }] })]);
+    const text = fastApiFiles({ ...p, nodes: p.nodes.map((n) => (n.id === 'U-01' ? { ...n, name: 'C:\\New\\x' } : n)) })[0].text;
+    expect(text).toContain('    "부르는 노드: C:\\\\New\\\\x"');
+    expect(text).toContain('f_N1: Annotated[str, Path(alias="1")], class_: Annotated[str, Path(alias="class")], f_order_id: Annotated[str, Path(alias="order-id")], body:');
+    expect(text).toContain('f__id: str = Field(..., alias="_id")');
+    expect(text).toContain('f_model_config: str = Field(..., alias="model_config")');
+    expect(text).toContain('from typing import Annotated, Any, Optional');
+    expect(text).toContain('from fastapi import Depends, FastAPI, Path, Query, Request');
+  });
+  it('경로 변수 {order-id}·{주문}도 OpenAPI parameter가 됨', () => {
+    const doc = openApiDocs(two([iface({ name: 'a', kind: 'rest', method: 'GET', path: '/o/{order-id}/{주문}' })]))[0].doc as { paths: Record<string, { get: { parameters: { name: string; in: string }[] } }> };
+    expect(doc.paths['/o/{order-id}/{주문}'].get.parameters.filter((x) => x.in === 'path').map((x) => x.name)).toEqual(['order-id', '주문']);
+  });
+  it('AsyncAPI: 같은 토픽에 다른 메시지를 보내면 둘 다 남고, 작업은 자기 메시지를 가리킴', () => {
+    const created = gc.edges.find((e) => e.from === 'N-03' && e.to === 'N-04')!.interfaces.find((i) => i.kind === 'message')!;
+    const cancel = iface({ name: '주문 취소됨', kind: 'message', path: created.path, request: [{ name: 'cancel_reason', type: 'string', required: true }] });
+    const p = { ...gc, edges: [...gc.edges, { from: 'N-09', to: 'N-04', sync: false, callRatio: 1, carries: 'all', rtt_ms: 0, interfaces: [cancel] }] } as Project;
+    const doc = asyncApiDoc(p) as { channels: Record<string, { messages: Record<string, { name: string }> }>; operations: Record<string, { messages: { $ref: string }[] }> };
+    const ch = Object.values(doc.channels).find((c) => Object.values(c.messages).some((m) => m.name === '주문 취소됨'))!;
+    expect(Object.values(ch.messages).map((m) => m.name)).toEqual([created.name, '주문 취소됨']);
+    const send = Object.entries(doc.operations).find(([k]) => k.startsWith('N_09_send_'))![1];
+    expect(send.messages.map((m) => m.$ref)).toEqual([expect.stringMatching(/_message_2$/)]);
+  });
+  it('proto: 바꾼 이름이 겹치면 _2 (원래 이름이 같을 때만 하나로)', () => {
+    const rpcs = (paths: string[]) => protoFiles(two(paths.map((path, k) => iface({ name: `g${k}`, kind: 'grpc', path }))))[0].text.match(/rpc \w+/g);
+    expect(rpcs(['주문 생성', '결제'])).toEqual(['rpc Method1', 'rpc Method1_2']);
+    expect(rpcs(['CreateOrder', 'create-order', 'CreateOrder'])).toEqual(['rpc CreateOrder', 'rpc CreateOrder_2']);
+  });
+});

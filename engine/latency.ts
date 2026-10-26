@@ -5,9 +5,21 @@ import { entryNodes, type Project } from './schema';
 /** 얼랑 C(대기할 확률). 얼랑 B 점화식으로 계산해 c가 커도 넘치지 않는다. a = λ/μ */
 export function erlangC(c: number, a: number): number {
   if (a >= c) return 1;
+  // 점화식은 c번 돌아 c가 수십만이면 편집마다 몇 초가 걸린다. c가 크면 Halfin–Whitt 근사(오차 수 %)로 바로 구한다
+  if (c > 1000) {
+    const beta = (c - a) / Math.sqrt(a);
+    return 1 / (1 + (beta * normalCdf(beta)) / Math.exp(-0.5 * beta * beta) * Math.sqrt(2 * Math.PI));
+  }
   let b = 1;
   for (let k = 1; k <= c; k++) b = (a * b) / (k + a * b);
   return (c * b) / (c - a * (1 - b));
+}
+
+/** 표준정규 누적분포 (Abramowitz–Stegun 7.1.26, 오차 1e-7) */
+function normalCdf(x: number): number {
+  const z = Math.abs(x) / Math.SQRT2, t = 1 / (1 + 0.3275911 * z);
+  const erf = 1 - t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429)))) * Math.exp(-z * z);
+  return x >= 0 ? (1 + erf) / 2 : (1 - erf) / 2;
 }
 
 /** 대기열이 끝없이 길어지면(ρ ≥ 1) value = Infinity. */
@@ -24,10 +36,14 @@ export function nodeP99(lambda: number, serviceMs: number, c: number, serviceP99
   return { value: wait + s99, unit: 'ms', formula: 'max(0, ln(C/0.01))/(cμ−λ) + S₉₉', inputs: { ...inputs, C, 대기_ms: wait, S99_ms: s99 } };
 }
 
-/** 화면 노드에서 출발해 동기 연결선만 따라간 경로들. 비동기 연결에서 경로가 끊긴다. */
+// shortcut: 경로가 이보다 많으면(깊은 사슬에서 갈래마다 두 배) 앞쪽 경로만 본다. 가장 나쁜 경로를 놓칠 수 있어 화면에 알린다. 그런 설계가 흔해지면 노드별 최악값을 동적 계획으로 구한다
+export const MAX_PATHS = 500;
+
+/** 화면 노드에서 출발해 동기 연결선만 따라간 경로들. 비동기 연결에서 경로가 끊긴다. MAX_PATHS + 1개에서 멈춘다(넘었는지 알 수 있게). */
 export function syncPaths(p: Project): string[][] {
   const out: string[][] = [];
   const walk = (path: string[]) => {
+    if (out.length > MAX_PATHS) return;
     const next = p.edges.filter((e) => e.from === path.at(-1) && e.sync && !path.includes(e.to));
     if (!next.length) out.push(path);
     for (const e of next) walk([...path, e.to]);

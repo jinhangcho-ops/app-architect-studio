@@ -76,7 +76,7 @@ npm run desktop        # 데스크톱 앱으로 실행
 npm run installer      # release/ 폴더에 설치 파일 만들기
 ```
 
-새 버전을 배포하려면 `package.json`의 `version`을 올리고 같은 이름의 태그(예: `v1.0.1`)를 올립니다. GitHub Actions가 테스트를 돌린 뒤 Release를 초안으로 만들어 설치 파일과 지문(`.sha256`)을 올리고, 파일이 모두 올라가면 공개합니다.
+새 버전을 배포하려면 [CHANGELOG.md](CHANGELOG.md)에 `## v버전` 절을 쓰고, `package.json`의 `version`을 올리고 같은 이름의 태그(예: `v1.0.1`)를 올립니다(자세히는 [docs/files.md](docs/files.md#릴리스-만들기)). GitHub Actions가 테스트를 돌린 뒤 Release를 초안으로 만들어 설치 파일과 지문(`.sha256`)을 올리고, 파일이 모두 올라가면 공개합니다.
 
 ## 라이선스
 

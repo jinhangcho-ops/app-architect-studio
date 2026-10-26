@@ -161,7 +161,7 @@ export function ProjectPanel() {
               <NumField label="입소문(월)" value={f.word_of_mouth} step={0.05} hint="써 본 사람이 데려오는 힘 (Bass q, 흔히 0.3~0.5). 써 본 사람이 많을수록 커져 S자 곡선이 됩니다" onChange={(v) => setF({ word_of_mouth: v ?? 0 })} />
               <Row label="들어오는 페르소나">
                 <Select value={f.entry} onChange={(e) => setF({ entry: e.target.value })}>
-                  {p.personas.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
+                  {p.personas.map((x, k) => <option key={k} value={x.name}>{x.name}</option>)}
                 </Select>
               </Row>
               <NumField label="더 활발해짐(월)" value={f.up} step={0.01} hint="매달 한 단계 더 활발한 페르소나로 옮기는 비율" onChange={(v) => setF({ up: v ?? 0 })} />

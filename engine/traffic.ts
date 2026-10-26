@@ -65,6 +65,8 @@ const SMALL_SAMPLE = 100;
 
 export type PersonaTraffic = {
   name: string;
+  /** 인원이 0명인 페르소나는 빠지므로 p.personas와 순번이 다를 수 있다. 패턴은 여기서 읽는다 */
+  pattern: Persona['pattern'];
   share: number;
   /** 활성 사용자 × 비율 */
   people: number;
@@ -226,7 +228,7 @@ export function dayCurve(p: Project, stepMin = 5): { personas: { name: string; r
     }
     // 기준 나라 시각으로 옮기고, 접속 시간(분) 동안 요청을 고르게 편다
     const shift = Math.round((reportOffset - utcOffset(ps.country, ps.utc_offset)) * 60);
-    const dur = Math.max(1, Math.round(pt.session_minutes));
+    const dur = Math.min(MIN, Math.max(1, Math.round(pt.session_minutes)));
     const perMin = Array<number>(MIN).fill(0);
     start.forEach((w, i) => {
       if (!w) return;
@@ -267,7 +269,7 @@ export function traffic(p: Project): Traffic | undefined {
     const { reqPer, writePer, dataWrites } = perSession(p, ps);
     const rowsPer = [...rowsPerSession(p, ps)];
     for (const [k] of rowsPer) if (!tableHour.has(k)) tableHour.set(k, Array<number>(24).fill(0));
-    const me: PersonaTraffic = { name: ps.name, share: ps.share, people: n, dau: 0, sessions: 0, requests: 0, writes: 0, responseKb: 0, rows: {}, hourlyRps: Array<number>(24).fill(0) };
+    const me: PersonaTraffic = { name: ps.name, pattern: ps.pattern, share: ps.share, people: n, dau: 0, sessions: 0, requests: 0, writes: 0, responseKb: 0, rows: {}, hourlyRps: Array<number>(24).fill(0) };
 
     for (let i = 0; i < sim; i++) {
       const kk = poisson(r, pt.sessions_per_day);

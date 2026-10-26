@@ -143,15 +143,13 @@ function latestRedirect(net) {
 }
 
 /** 지난 업데이트가 남긴 설치 파일 폴더(이 앱이 mkdtemp로 만든 aas-update-*만)를 지운다. 설치가 끝나면 앱이 꺼져서 그때는 못 지운다 */
-function removeOldDownloads(tempDir, now = Date.now()) {
+function removeOldDownloads(tempDir) {
   let names = [];
   try { names = fs.readdirSync(tempDir); } catch { return []; }
   return names.filter((n) => /^aas-update-[A-Za-z0-9]{6}$/.test(n)).filter((n) => {
     try {
-      const dir = path.join(tempDir, n);
-      // 10분 안에 바뀐 폴더는 다른 창이 받는 중일 수 있어 남긴다
-      if (now - fs.statSync(dir).mtimeMs < 10 * 60 * 1000) return false;
-      fs.rmSync(dir, { recursive: true, force: true });
+      // 두 번째로 띄운 앱은 이 함수를 부르지 않으므로(main.cjs의 잠금) 받는 중인 폴더를 지울 일이 없다
+      fs.rmSync(path.join(tempDir, n), { recursive: true, force: true });
       return true;
     } catch { return false; }
   });
