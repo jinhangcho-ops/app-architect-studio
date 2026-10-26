@@ -32,7 +32,7 @@ export function FeatureTablesTable({ project, className }: { project: Project; c
         </tr>
       ))}</tbody>
     </table></div> : <p className="muted">아직 테이블에 연결한 기능이 없어요. 행동에서 쓰는 테이블을, 연결선의 인터페이스에서 읽고 쓰는 테이블을 고르세요.</p>}
-    {unused.length > 0 && <p className="warn">어떤 기능에도 연결되지 않은 테이블: {unused.join(', ')}</p>}
+    {unused.length > 0 && <p className="warn">어떤 기능에도 연결되지 않은 테이블: {cell(unused.map((k) => { const d = k.indexOf('.'); return { node: k.slice(0, d), table: k.slice(d + 1) }; }))}</p>}
   </>;
 }
 

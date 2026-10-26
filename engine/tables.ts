@@ -33,10 +33,11 @@ const TEXT_TYPES = new Set<Column['type']>(['text', 'json', 'bytes']);
 const DEFAULT_VAR_BYTES = 32;
 
 /** 값 하나의 바이트. 저장 형식이 크기를 정한다 (같은 시각도 정수 8바이트, ISO 문자열 24바이트).
- *  padded: 고정장 테이블이고 시스템이 CHAR(n)을 선언 길이까지 채워 저장하면, 문자열·바이너리는 늘 최대 길이 */
+ *  padded: 고정장 테이블이고 시스템이 CHAR(n)을 선언 길이까지 채워 저장하면, 문자열은 늘 최대 길이.
+ *  바이너리는 실제 길이 (PostgreSQL BYTEA·SQLite BLOB은 채우지 않음. MySQL BINARY(n)은 채우므로 조금 적게 셈) */
 export function valueBytes(c: Column, assume: (s: string) => void = () => {}, padded = false): number {
   const storage = storageOf(c);
-  if (padded && (c.type === 'text' || c.type === 'bytes') && c.max_length) return c.max_length;
+  if (padded && c.type === 'text' && c.max_length) return c.max_length;
   const variable = () => {
     if (c.avg_bytes) return c.avg_bytes;
     if (c.max_length) { assume(`${c.name}: 평균 길이 없음 → 최대 길이의 절반 ${c.max_length / 2}바이트`); return c.max_length / 2; }

@@ -21,6 +21,11 @@ export const parseCodes = (s: string): Column['codes'] => {
   return cs.length ? cs : undefined;
 };
 
+/** 칸을 나올 때 저장하는 글자 칸. 바깥 값이 바뀌면(되돌리기 등) 새로 그리고, 값이 그대로면 저장하지 않는다 */
+function BlurInput({ value, onSave, ...rest }: { value: string; onSave: (v: string) => void; 'aria-label'?: string; placeholder?: string }) {
+  return <input key={value} defaultValue={value} {...rest} onBlur={(e) => e.target.value !== value && onSave(e.target.value)} />;
+}
+
 export function TablesSection({ node }: { node: ProjectNode }) {
   const { edit } = usePick('edit');
   const [spec, setSpec] = useState('');
@@ -77,7 +82,7 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
       <NumField label="보관 일수" value={t.retention_days} hint="비우면 프로젝트 보관 기간" onChange={(v) => upd({ retention_days: v })} />
       <NumField label="갱신 비율" value={t.update_ratio} step={0.05} hint="쓰기 중 새 행이 아니라 기존 행을 고치는 비율" onChange={(v) => upd({ update_ratio: v ?? 0 })} />
       <Row label="기본 키" hint="쉼표로 구분, 순서대로">
-        <input key={t.primary_key.join()} defaultValue={csv(t.primary_key)} onBlur={(e) => upd({ primary_key: list(e.target.value) })} />
+        <BlurInput value={csv(t.primary_key)} onSave={(v) => upd({ primary_key: list(v) })} />
       </Row>
       <Row label="파티션">
         <span className="inline">
@@ -121,12 +126,12 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
           <tbody>{t.columns.map((c, i) => (
             <tr key={`${i}-${c.name}`}>
               <td>{c.name}</td>
-              <td><input defaultValue={c.label ?? ''} aria-label={`${c.name} 논리명`} onBlur={(e) => setCol(i, { label: e.target.value || undefined })} /></td>
-              <td><input defaultValue={c.domain ?? ''} aria-label={`${c.name} 도메인`} placeholder="금액·코드·일시…" onBlur={(e) => setCol(i, { domain: e.target.value || undefined })} /></td>
-              <td><input defaultValue={codesText(c.codes)} aria-label={`${c.name} 코드 값`} onBlur={(e) => setCol(i, { codes: parseCodes(e.target.value) })} /></td>
-              <td><input defaultValue={c.default_value ?? ''} aria-label={`${c.name} 기본값`} onBlur={(e) => setCol(i, { default_value: e.target.value || undefined })} /></td>
+              <td><BlurInput value={c.label ?? ''} aria-label={`${c.name} 논리명`} onSave={(v) => setCol(i, { label: v || undefined })} /></td>
+              <td><BlurInput value={c.domain ?? ''} aria-label={`${c.name} 도메인`} placeholder="금액·코드·일시…" onSave={(v) => setCol(i, { domain: v || undefined })} /></td>
+              <td><BlurInput value={codesText(c.codes)} aria-label={`${c.name} 코드 값`} onSave={(v) => setCol(i, { codes: parseCodes(v) })} /></td>
+              <td><BlurInput value={c.default_value ?? ''} aria-label={`${c.name} 기본값`} onSave={(v) => setCol(i, { default_value: v || undefined })} /></td>
               <td><input type="checkbox" checked={c.personal} aria-label={`${c.name} 개인정보`} onChange={(e) => setCol(i, { personal: e.target.checked })} /></td>
-              <td><input defaultValue={c.description ?? ''} aria-label={`${c.name} 설명`} onBlur={(e) => setCol(i, { description: e.target.value || undefined })} /></td>
+              <td><BlurInput value={c.description ?? ''} aria-label={`${c.name} 설명`} onSave={(v) => setCol(i, { description: v || undefined })} /></td>
             </tr>
           ))}</tbody>
         </table></div>
@@ -136,8 +141,8 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
         <thead><tr><th>인덱스</th><th>컬럼(쉼표)</th><th>고유</th><th /></tr></thead>
         <tbody>{t.indexes.map((x, i) => (
           <tr key={`${i}-${x.name}-${x.columns.join()}`}>
-            <td><input defaultValue={x.name} onBlur={(e) => e.target.value && setIx(i, { name: e.target.value })} /></td>
-            <td><input defaultValue={csv(x.columns)} onBlur={(e) => setIx(i, { columns: list(e.target.value) })} /></td>
+            <td><BlurInput value={x.name} onSave={(v) => v && setIx(i, { name: v })} /></td>
+            <td><BlurInput value={csv(x.columns)} onSave={(v) => setIx(i, { columns: list(v) })} /></td>
             <td><input type="checkbox" checked={x.unique} onChange={(e) => setIx(i, { unique: e.target.checked })} /></td>
             <td><button aria-label="인덱스 삭제" onClick={() => upd({ indexes: t.indexes.filter((_, k) => k !== i) })}>×</button></td>
           </tr>

@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { analyze } from '../analyze';
 import { parseProject } from '../data';
-import { asyncApiDoc, bodyBytes, fastApiFiles, interfaceFiles, layoutCsv, openApiDocs, protoFiles, recordBytes, requestBytes, specAdvice, specGaps } from '../interfaces';
+import { asyncApiDoc, bodyBytes, csvCell, fastApiFiles, interfaceFiles, layoutCsv, openApiDocs, protoFiles, recordBytes, requestBytes, specAdvice, specGaps } from '../interfaces';
 import { checkProject } from '../schema';
 import { loadCatalog, loadLaws, loadPrices, loadProject } from '../io';
 import type { Interface, Project } from '../schema';
@@ -207,5 +207,27 @@ describe('파일·전문 (고정장·가변장)', () => {
     const p = withEdge(gc, 'N-03', 'N-04', [fixed]);
     expect(interfaceFiles(p).map((f) => f.name)).toContain('layout-N_03-N_04-TR0101.csv');
     expect(checkProject(withEdge(gc, 'N-03', 'N-04', [{ ...fixed, response: fields }]), catalog.items).join()).toMatch(/파일·전문은 응답이 없음/);
+  });
+
+  it('길이 없는 필드부터 뒤는 위치를 모름 (시작·끝·맞춤·채움 비움), 크기는 필드별 길이·평균·예시값 합으로 어림', () => {
+    const gap = { ...fixed, request: [fields[0], { name: 'memo', type: 'string' as const, required: true }, fields[1]] };
+    const lines = layoutCsv(gap, 'A', 'B').split('\r\n');
+    expect(lines).toContain('1,acct,,string,Y,10,1,10,왼쪽,공백');
+    expect(lines).toContain('2,memo,,string,Y,,,,,');
+    expect(lines).toContain('3,amount,,integer,Y,13,,,,');
+    // 10 + (길이 없는 문자열 예시 32) + 13 + CRLF 2
+    expect(requestBytes(gap)).toBe(57);
+  });
+
+  it('내보낼 파일 이름이 겹치면 -2, -3 (한글 ID → ___, 대소문자만 다른 이름도)', () => {
+    const f = (path: string) => ({ ...fixed, name: path, path });
+    const p = withEdge(gc, 'N-03', 'N-04', [f('주문.txt'), f('결제.txt'), f('ORD-01'), f('ORD_01'), f('ord_01')]);
+    expect(interfaceFiles(p).filter((x) => x.name.startsWith('layout-')).map((x) => x.name)).toEqual([
+      'layout-N_03-N_04-___txt.csv', 'layout-N_03-N_04-___txt-2.csv', 'layout-N_03-N_04-ORD_01.csv', 'layout-N_03-N_04-ORD_01-2.csv', 'layout-N_03-N_04-ord_01-3.csv',
+    ]);
+  });
+
+  it('CSV 칸이 = + - @로 시작하면 앞에 \' (엑셀 수식 막기), 진짜 숫자는 그대로', () => {
+    expect(['=1+1', '+82 10', '-x', '@a', '-1', -0.5, '-0.5', 'a=b'].map(csvCell)).toEqual(["'=1+1", "'+82 10", "'-x", "'@a", '-1', '-0.5', '-0.5', 'a=b']);
   });
 });

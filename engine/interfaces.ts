@@ -1,6 +1,7 @@
-// 서비스 내부 인터페이스 명세: 연결선마다 주고받는 REST·gRPC 호출과 큐 메시지.
+// 서비스 내부 인터페이스 명세: 연결선마다 주고받는 REST·gRPC 호출, 큐 메시지, 파일·전문.
 // 계산: 보내는 노드가 받는 요청 1건당 호출 수(per_request)로 연결선 부하를 나누고, 요청·응답 크기로 리전 간 전송량을 센다.
-// 내보내기: REST → OpenAPI 3.0 (받는 노드마다), gRPC → .proto (받는 노드마다), 메시지 → AsyncAPI 3.0 (토픽마다 보내는·받는 노드).
+// 내보내기: REST → OpenAPI 3.0 (받는 노드마다), gRPC → .proto (받는 노드마다), 메시지 → AsyncAPI 3.0 (토픽마다 보내는·받는 노드),
+// 파일·전문 → 레이아웃 CSV, 받는 노드가 FastAPI면 엔드포인트 뼈대(.py).
 // shortcut: 크기는 필드 형식별 예시 크기로 어림한다(JSON은 키 이름 포함, protobuf는 태그 1바이트). 실측 크기가 있으면 request_bytes·response_bytes에 넣는다
 import { FIELD_TYPES, type Interface, type Project, type ProjectEdge, type SpecField } from './schema';
 
@@ -29,7 +30,10 @@ export function recordBytes(i: Interface): number | undefined {
 /** 한쪽으로만 보내는 방식(응답·인증·에러 없음): 메시지, 파일·전문 */
 export const oneWay = (i: Pick<Interface, 'kind'>) => i.kind === 'message' || i.kind === 'file';
 
-export const requestBytes = (i: Interface) => i.request_bytes ?? (i.kind === 'file' ? recordBytes(i) ?? bodyBytes(i.request, 'rest') : bodyBytes(i.request, i.kind));
+/** 레코드 길이를 모를 때(고정장 길이 일부 없음, 장 형식 미정)의 어림: 필드마다 길이 → 평균 바이트 → 형식별 예시값 */
+const roughRecordBytes = (i: Interface) =>
+  i.request.length ? i.request.reduce((s, f) => s + (f.length ?? f.avg_bytes ?? PLAIN_BYTES[f.type]), 0) + NEWLINE[i.record?.newline ?? 'crlf'] : 0;
+export const requestBytes = (i: Interface) => i.request_bytes ?? (i.kind === 'file' ? recordBytes(i) ?? roughRecordBytes(i) : bodyBytes(i.request, i.kind));
 export const responseBytes = (i: Interface) => i.response_bytes ?? bodyBytes(i.response, i.kind);
 
 export const isWrite = (i: Interface) => (i.op ? i.op === 'write' : i.kind === 'rest' ? i.method !== 'GET' : oneWay(i));
@@ -427,15 +431,22 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
 const numeric = (f: SpecField) => f.type === 'integer' || f.type === 'number';
 export type LayoutRow = { no: number; field: SpecField; start?: number; end?: number; align?: '왼쪽' | '오른쪽'; pad?: string };
 export function layoutRows(i: Interface): LayoutRow[] {
-  let at = 1;
+  // 길이 없는 필드가 나오면 그 뒤 필드의 위치는 모른다
+  let at: number | undefined = 1;
   return i.request.map((field, k) => {
-    if (i.record?.format !== 'fixed' || !field.length) return { no: k + 1, field };
-    const row: LayoutRow = { no: k + 1, field, start: at, end: at + field.length - 1, align: numeric(field) ? '오른쪽' : '왼쪽', pad: numeric(field) ? '0' : '공백' };
-    at += field.length;
+    if (!field.length) at = undefined;
+    if (i.record?.format !== 'fixed' || at === undefined) return { no: k + 1, field };
+    const row: LayoutRow = { no: k + 1, field, start: at, end: at + field.length! - 1, align: numeric(field) ? '오른쪽' : '왼쪽', pad: numeric(field) ? '0' : '공백' };
+    at += field.length!;
     return row;
   });
 }
-export const csvCell = (v: unknown) => { const s = v === undefined ? '' : String(v); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+export const csvCell = (v: unknown) => {
+  let s = v === undefined ? '' : String(v);
+  // 엑셀이 = + - @로 시작하는 칸을 수식으로 읽지 않게 (진짜 숫자 -1 같은 것은 그대로)
+  if (/^[=+\-@]/.test(s) && !Number.isFinite(Number(s))) s = `'${s}`;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
 /** 레이아웃 표(CSV, 엑셀에서 한글이 깨지지 않게 BOM). 첫 줄들은 장 형식·인코딩·레코드 길이 */
 export function layoutCsv(i: Interface, from: string, to: string): string {
   const r = i.record;
@@ -456,7 +467,7 @@ export function layoutCsv(i: Interface, from: string, to: string): string {
 /** 내보낼 파일 전부: openapi-노드.json, 노드.proto, asyncapi.json, (받는 노드가 FastAPI면) 노드_fastapi.py, 파일·전문마다 layout-보내는-받는-ID.csv */
 export function interfaceFiles(p: Project): { name: string; text: string }[] {
   const a = asyncApiDoc(p);
-  return [
+  return uniqueNames([
     ...openApiDocs(p).map(({ nodeId, doc }) => ({ name: `openapi-${safe(nodeId)}.json`, text: JSON.stringify(doc, null, 2) })),
     ...protoFiles(p).map(({ nodeId, text }) => ({ name: `${safe(nodeId)}.proto`, text })),
     ...(a ? [{ name: 'asyncapi.json', text: JSON.stringify(a, null, 2) }] : []),
@@ -465,6 +476,17 @@ export function interfaceFiles(p: Project): { name: string; text: string }[] {
       name: `layout-${safe(e.from)}-${safe(e.to)}-${safe(i.path)}.csv`,
       text: layoutCsv(i, p.nodes.find((n) => n.id === e.from)?.name ?? e.from, p.nodes.find((n) => n.id === e.to)?.name ?? e.to),
     }))),
-  ];
+  ]);
+}
+
+/** 이름이 겹치면 확장자 앞에 -2, -3을 붙인다 (safe()로 바꾼 이름이 같아지거나 대소문자만 달라 Windows에서 덮어쓰는 것을 막음) */
+export function uniqueNames<T extends { name: string }>(files: T[]): T[] {
+  const used = new Set<string>();
+  return files.map((f) => {
+    let name = f.name;
+    for (let k = 2; used.has(name.toLowerCase()); k++) name = f.name.replace(/(\.[^.]*)?$/, `-${k}$1`);
+    used.add(name.toLowerCase());
+    return name === f.name ? f : { ...f, name };
+  });
 }
 

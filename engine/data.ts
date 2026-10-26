@@ -36,10 +36,13 @@ export function buildPrices(files: JsonFile[]): PriceRow[] {
 
 /** 저장 파일 형식 버전. 저장 파일의 모양이 바뀌면(필드 이름·뜻이 바뀜) 올리고 MIGRATIONS에 옛 모양을 새 모양으로 바꾸는 함수를 더한다.
  *  format_version이 없는 파일은 1 (버전을 넣기 전에 만든 파일) */
-export const FORMAT_VERSION = 1;
+export const FORMAT_VERSION = 2;
 type Raw = Record<string, unknown>;
 /** MIGRATIONS[v]: 형식 v인 파일을 v + 1로 바꾼다 */
-export const MIGRATIONS: Record<number, (d: Raw) => Raw> = {};
+export const MIGRATIONS: Record<number, (d: Raw) => Raw> = {
+  // 2: 고정장·데이터 사전·테이블 연결이 새로 생김. 모양은 그대로라 바꿀 것이 없고, 옛 앱이 새 칸을 지우며 저장하지 않게 버전만 올림
+  1: (d) => d,
+};
 
 /** 저장 파일을 지금 형식으로 바꾼다. 이 앱보다 새 버전에서 만든 파일은 모르는 값이 버려져 다시 저장할 때 사라지므로 열지 않는다 */
 export function migrate(data: unknown, where = '프로젝트', current = FORMAT_VERSION, steps = MIGRATIONS): unknown {

@@ -1,5 +1,5 @@
 {
-  "name": "행동·테이블 예시 — 3단계 예시 + 주문·리뷰 행동이 orders·order_items·reviews에 쓰기",
+  "name": "행동·테이블 예시 — 3단계 예시 + 주문·리뷰 행동이 orders·order_items·reviews에 쓰기, 데이터 사전·고정장 정산 파일",
   "deploy": {
     "mode": "web"
   },
@@ -128,24 +128,48 @@
           "columns": [
             {
               "name": "id",
-              "type": "uuid"
+              "type": "uuid",
+              "label": "주문 ID"
             },
             {
               "name": "user_id",
-              "type": "bigint"
+              "type": "bigint",
+              "label": "회원 번호",
+              "personal": true
             },
             {
               "name": "status",
               "type": "text",
-              "avg_bytes": 8
+              "avg_bytes": 8,
+              "label": "주문 상태",
+              "domain": "코드",
+              "codes": [
+                {
+                  "code": "P",
+                  "label": "결제 대기"
+                },
+                {
+                  "code": "C",
+                  "label": "결제 완료"
+                },
+                {
+                  "code": "X",
+                  "label": "취소"
+                }
+              ],
+              "default_value": "P"
             },
             {
               "name": "amount",
-              "type": "numeric"
+              "type": "numeric",
+              "label": "결제 금액",
+              "domain": "금액"
             },
             {
               "name": "created_at",
-              "type": "timestamp"
+              "type": "timestamp",
+              "label": "주문 시각",
+              "default_value": "CURRENT_TIMESTAMP"
             }
           ],
           "primary_key": [
@@ -163,7 +187,9 @@
           "partition": {
             "column": "created_at",
             "interval": "month"
-          }
+          },
+          "label": "주문",
+          "description": "주문 한 건"
         },
         {
           "name": "order_items",
@@ -268,7 +294,59 @@
       "from": "worker",
       "to": "db",
       "carries": "write",
-      "sync": false
+      "sync": false,
+      "interfaces": [
+        {
+          "name": "카드사 정산 파일",
+          "kind": "file",
+          "path": "SETTLE_YYYYMMDD.dat",
+          "description": "카드사가 보내는 하루 정산 내역",
+          "per_request": 1,
+          "on": "all",
+          "record": {
+            "format": "fixed",
+            "delimiter": ",",
+            "encoding": "euc-kr",
+            "newline": "crlf",
+            "header": false
+          },
+          "request": [
+            {
+              "name": "record_type",
+              "type": "string",
+              "required": true,
+              "length": 1,
+              "description": "D=내역"
+            },
+            {
+              "name": "order_id",
+              "type": "string",
+              "required": true,
+              "length": 36
+            },
+            {
+              "name": "approved_at",
+              "type": "datetime",
+              "required": true,
+              "length": 14,
+              "description": "YYYYMMDDhhmmss"
+            },
+            {
+              "name": "amount",
+              "type": "integer",
+              "required": true,
+              "length": 13
+            }
+          ],
+          "tables": [
+            {
+              "node": "db",
+              "table": "orders",
+              "op": "read"
+            }
+          ]
+        }
+      ]
     }
   ],
   "actions": [

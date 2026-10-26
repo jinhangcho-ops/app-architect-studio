@@ -178,4 +178,10 @@ describe('장 형식 (고정장·가변장)', () => {
     expect(checkTable(t)).toEqual(['고정장 테이블의 memo: 최대 길이(바이트)가 필요함', '고정장 테이블에 JSON 컬럼 raw은 넣을 수 없음 (길이가 정해지지 않음)', 'state: 코드 값 중복 A']);
     expect(checkTable(Table.parse({ name: 't', columns: [{ name: 'memo', type: 'text' }] }))).toEqual([]);
   });
+
+  it('고정장 채움은 문자열만: 바이너리는 PostgreSQL BYTEA처럼 실제 길이로 저장', () => {
+    const t = { ...fixed, columns: [...fixed.columns, { name: 'raw', type: 'bytes', max_length: 100, avg_bytes: 10 }] };
+    const a = size('postgresql', fixed), b = size('postgresql', t);
+    expect(b.rowBytes.inputs['값'] - a.rowBytes.inputs['값']).toBe(10);
+  });
 });

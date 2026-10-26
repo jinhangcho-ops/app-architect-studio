@@ -617,13 +617,16 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
       if (i.kind === 'rest' && !i.path.startsWith('/')) errors.push(`${at} ${i.name}: REST 경로는 /로 시작함`);
       if (i.kind === 'grpc' && !IDENT.test(i.path)) errors.push(`${at} ${i.name}: gRPC 메서드 이름은 영문 식별자 (예: CreateOrder)`);
       if ((i.kind === 'message' || i.kind === 'file') && i.response.length) errors.push(`${at} ${i.name}: ${i.kind === 'file' ? '파일·전문' : '메시지'}은 응답이 없음 (보내고 끝)`);
-      if (i.kind === 'file' && i.record?.format === 'delimited' && i.request.some((f) => f.name.includes(i.record!.delimiter))) errors.push(`${at} ${i.name}: 필드 이름에 구분자 "${i.record.delimiter}"가 들어 있음`);
+      if (i.kind === 'file' && (i.auth || i.errors.length)) errors.push(`${at} ${i.name}: 파일·전문은 인증·에러 응답이 없음 (보내고 끝)`);
+      // 필드 이름은 영문·숫자·_라서, 구분자가 그 밖의 글자면 이름과 섞이지 않는다
+      if (i.kind === 'file' && i.record?.format === 'delimited' && /[A-Za-z0-9_]/.test(i.record.delimiter)) errors.push(`${at} ${i.name}: 구분자 "${i.record.delimiter}"에 영문·숫자·_를 쓸 수 없음`);
       for (const d of dupes(i.errors.map((x) => `${x.status}${x.code ? ` ${x.code}` : ''}`))) errors.push(`${at} ${i.name}: 에러 응답 중복 ${d}`);
       for (const t of i.tables ?? []) {
         const node = p.nodes.find((n) => n.id === t.node);
         if (!node) errors.push(`${at} ${i.name}: 없는 노드 ${t.node}`);
         else if (!node.tables.some((x) => x.name === t.table)) errors.push(`${at} ${i.name}: ${t.node}에 없는 테이블 ${t.table}`);
       }
+      for (const d of dupes((i.tables ?? []).map((t) => `${t.node}.${t.table} ${t.op === 'read' ? '읽기' : '쓰기'}`))) errors.push(`${at} ${i.name}: 테이블 연결 중복 ${d}`);
       for (const side of ['request', 'response'] as const) for (const d of dupes(i[side].map((f) => f.name))) errors.push(`${at} ${i.name}: ${side === 'request' ? '요청' : '응답'} 필드 이름 중복 ${d}`);
     }
   }
@@ -635,7 +638,8 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
   for (const n of p.nodes) errors.push(...n.tables.flatMap((t) => checkTable(t).map((e) => `${n.id}.${t.name}: ${e}`)));
   for (const n of p.nodes) {
     if (n.tables.length && !(TABLE_LAYERS as readonly string[]).includes(n.layer)) errors.push(`${n.id}: 테이블은 ${TABLE_LAYERS.join('·')} 노드에만 둘 수 있음`);
-    for (const d of dupes(n.tables.map((t) => t.name))) errors.push(`${n.id}: 테이블 이름 중복 ${d}`);
+    // SQLite·PostgreSQL은 테이블과 인덱스가 한 이름 공간이라 노드 안에서 겹치면 DDL이 실패한다 (한 테이블 안의 인덱스 중복은 checkTable이 알림)
+    for (const d of dupes([...n.tables.map((t) => t.name), ...n.tables.flatMap((t) => [...new Set(t.indexes.map((x) => x.name))])])) errors.push(`${n.id}: 테이블·인덱스 이름 중복 ${d}`);
   }
   for (const d of dupes(p.actions.map((a) => a.name))) errors.push(`행동 이름 중복 ${d}`);
   const inflow = p.growth?.inflow;
@@ -649,6 +653,7 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
       if (!node) errors.push(`행동 ${a.name}: 없는 노드 ${w.node}`);
       else if (!node.tables.some((t) => t.name === w.table)) errors.push(`행동 ${a.name}: ${w.node}에 없는 테이블 ${w.table}`);
     }
+    for (const d of dupes(a.writes.map((w) => `${w.node}.${w.table}`))) errors.push(`행동 ${a.name}: 쓰는 테이블 중복 ${d}`);
   }
   for (const n of p.nodes) {
     const sp = nodeStorageProfile(n, byId);
@@ -673,7 +678,7 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
 
 const dupes = (xs: string[]) => [...new Set(xs.filter((x, i) => xs.indexOf(x) !== i))];
 
-/** 테이블 하나의 내부 참조(키·인덱스·파티션 컬럼)가 실제 컬럼인지 */
+/** 테이블 하나의 내부 참조(키·인덱스·파티션 컬럼)가 실제 컬럼인지, 기본값·코드 값이 컬럼 타입에 맞는지 */
 export function checkTable(t: Table): string[] {
   const cols = new Set(t.columns.map((c) => c.name));
   const errors = dupes(t.columns.map((c) => c.name)).map((d) => `컬럼 이름 중복 ${d}`);
@@ -688,8 +693,30 @@ export function checkTable(t: Table): string[] {
       else if ((c.type === 'text' || c.type === 'bytes') && !c.max_length) errors.push(`고정장 테이블의 ${c.name}: 최대 길이(바이트)가 필요함`);
     }
   }
-  for (const c of t.columns) for (const d of dupes((c.codes ?? []).map((x) => x.code))) errors.push(`${c.name}: 코드 값 중복 ${d}`);
+  for (const c of t.columns) {
+    const v = c.default_value;
+    if (v !== undefined && isNullText(v)) { if (!c.nullable) errors.push(`${c.name}: 필수(NOT NULL)인데 기본값이 null`); }
+    else if (v !== undefined && !fitsType(c.type, v)) errors.push(`${c.name}: 기본값이 타입(${c.type})과 안 맞음: ${v}`);
+    for (const x of c.codes ?? []) if (!fitsType(c.type, x.code)) errors.push(`${c.name}: 코드 값이 타입(${c.type})과 안 맞음: ${x.code}`);
+    for (const d of dupes((c.codes ?? []).map((x) => x.code))) errors.push(`${c.name}: 코드 값 중복 ${d}`);
+  }
   return errors;
+}
+
+/** 기본값 글자 null (대소문자 무관) = SQL NULL */
+export const isNullText = (v: string) => /^null$/i.test(v);
+/** 기본값·코드 값 글자가 컬럼 타입에 맞는지. 시각·날짜는 CURRENT_TIMESTAMP·CURRENT_DATE 또는 날짜 글자 */
+export function fitsType(type: Column['type'], v: string): boolean {
+  switch (type) {
+    case 'int': case 'bigint': return /^-?\d+$/.test(v);
+    case 'float': case 'numeric': return /^-?\d+(\.\d+)?$/.test(v);
+    case 'bool': return /^(true|false|1|0)$/i.test(v);
+    case 'timestamp': return /^current_timestamp$/i.test(v) || /^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?)?(Z|[+-]\d{2}:?\d{2})?$/.test(v);
+    case 'date': return /^current_date$/i.test(v) || /^\d{4}-\d{2}-\d{2}$/.test(v);
+    case 'uuid': return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+    case 'json': try { JSON.parse(v); return true; } catch { return false; }
+    default: return true;
+  }
 }
 
 // 15절 법령 표: 조문 내용은 넣지 않고 번호·트리거·출처만 둔다

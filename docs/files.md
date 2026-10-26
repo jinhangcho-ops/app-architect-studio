@@ -8,8 +8,8 @@
 | 열기 / 파일로 내보내기 | 프로젝트를 JSON으로 열고 저장 |
 | 코드 분석 불러오기 | `tools/analyze_py.py`가 파이썬 코드를 분석해 만든 JSON을 합침 (서비스·워커 후보) |
 | 저장 기록 | 저장한 시점 목록. 시점으로 되돌리거나 자동 저장 간격을 바꿈 |
-| 인터페이스 명세 내보내기 | 연결선의 명세를 표준 파일로: REST → `openapi-노드.json` (OpenAPI 3.0, 인증·에러 응답 포함), gRPC → `노드.proto`, 메시지 → `asyncapi.json` (AsyncAPI 3.0), 받는 노드가 FastAPI면 `노드_fastapi.py` (pydantic 모델 + 엔드포인트 뼈대, 각 함수는 501, 에러·인증 실패·요청 검증 실패를 모두 problem+json으로 돌려줌. 띄우면 `/docs`가 내보낸 OpenAPI와 같음). 응답 필드가 없는 인터페이스는 204(본문 없음)로 적습니다. 파일·전문은 `layout-보내는-받는-ID.csv` (장 형식·인코딩·레코드 길이, 필드 순서·길이·시작·끝·맞춤·채움). 데스크톱 앱은 폴더를 골라 한 번에, 브라우저는 파일마다 내려받기 |
-| 스키마(DDL)·데이터 사전 내보내기 | DB 노드마다 `schema-노드.sql` (CREATE TABLE·INDEX, NOT NULL·DEFAULT·PK·코드 값 CHECK, 주석). 방언은 주 항목으로: PostgreSQL(Neon·Supabase 포함, COMMENT ON) · MySQL(줄 안 COMMENT) · SQLite(libSQL 포함, `--` 주석) · 그 밖의 SQL DB는 표준에 가까운 형태. MongoDB·DynamoDB는 DDL 없이 데이터 사전에만. 그리고 `data-dictionary.csv` (컬럼마다 논리명·DB 타입·필수·기본값·PK·도메인·코드 값·개인정보·쓰는·읽는 기능, 엑셀용 BOM). 파티션·보관 기간은 DDL에 넣지 않음 |
+| 인터페이스 명세 내보내기 | 연결선의 명세를 표준 파일로: REST → `openapi-노드.json` (OpenAPI 3.0, 인증·에러 응답 포함), gRPC → `노드.proto`, 메시지 → `asyncapi.json` (AsyncAPI 3.0), 받는 노드가 FastAPI면 `노드_fastapi.py` (pydantic 모델 + 엔드포인트 뼈대, 각 함수는 501, 에러·인증 실패·요청 검증 실패를 모두 problem+json으로 돌려줌. 띄우면 `/docs`가 내보낸 OpenAPI와 같음). 응답 필드가 없는 인터페이스는 204(본문 없음)로 적습니다. 파일·전문은 `layout-보내는-받는-ID.csv` (장 형식·인코딩·레코드 길이, 필드 순서·길이·시작·끝·맞춤·채움. 길이가 빠진 필드부터는 위치를 비움). 이름의 영문·숫자·_ 밖 글자는 `_`로 바뀌고, 이름이 겹치면 `-2`, `-3`이 붙습니다. 데스크톱 앱은 폴더를 골라 한 번에, 브라우저는 파일마다 내려받기 |
+| 스키마(DDL)·데이터 사전 내보내기 | DB 노드마다 `schema-노드.sql` (CREATE TABLE·INDEX, NOT NULL·DEFAULT·PK·코드 값 CHECK, 주석). 방언은 주 항목으로: PostgreSQL(Neon·Supabase·CockroachDB 포함, COMMENT ON) · MySQL 8.0.13 이상(줄 안 COMMENT, TEXT·JSON 기본값은 괄호 식, 키로 쓰는 길이 없는 문자열은 VARCHAR(255), 255바이트가 넘는 고정장은 VARCHAR) · SQLite(libSQL 포함, `--` 주석, 정수로 저장하는 시각은 epoch 밀리초·날짜는 1970-01-01부터 날 수) · 그 밖의 SQL DB는 표준에 가까운 형태(열 저장 분석 DB는 CREATE INDEX 없음). MongoDB·DynamoDB와 캐시 노드는 DDL 없이 데이터 사전에만. 그리고 `data-dictionary.csv` (컬럼마다 논리명·DB 타입·필수·기본값·PK·도메인·코드 값·개인정보·쓰는·읽는 기능, 엑셀용 BOM. `= + - @`로 시작하는 글자 칸은 엑셀이 수식으로 읽지 않게 앞에 `'`를 붙임). 파티션·보관 기간은 DDL에 넣지 않음 |
 
 ## 저장
 
@@ -70,7 +70,7 @@ flowchart LR
 
 ## 파일 형식 버전
 
-저장 파일에는 `format_version`(지금 1)이 들어갑니다. 버전이 없는 옛 파일은 1로 봅니다.
+저장 파일에는 `format_version`(지금 2)이 들어갑니다. 버전이 없는 옛 파일은 1로 봅니다. 2는 v1.2.0에서 장 형식·데이터 사전·파일·전문·테이블 연결이 더해지며 올렸습니다(1 → 2는 바꾸는 값 없음). 필드를 더할 때도 버전을 올립니다: 옛 앱이 열고 저장하면 모르는 필드가 사라지기 때문입니다.
 
 ```mermaid
 flowchart LR
@@ -113,6 +113,6 @@ flowchart LR
 npm run judge -- examples/global-commerce.json
 ```
 
-같은 계산을 글로 출력합니다: 판정, 노드별 결과, 데이터 파이프라인, 장애 시나리오, 경로, 월 비용, 성장.
+같은 계산을 글로 출력합니다: 규모(테이블별 하루 행 포함), 노드별 결과, 데이터 파이프라인, 인터페이스 명세 점검(방식·장 형식·레코드 길이), 기능별 테이블, 장애 시나리오, 동기 경로, 월 비용, 성장, 판정, 구조 규칙, 확인할 조문. 파일을 내보내지는 않습니다(내보내기는 앱의 파일 메뉴).
 
 `tools/fetch_prices.py`는 클라우드 공식 가격 API에서 한국·일본 리전 가격을 받아 `data/prices/` 형식으로 저장합니다.

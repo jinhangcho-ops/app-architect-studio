@@ -19,7 +19,7 @@ import type { XY } from './layout';
 import { costTimeline, milestoneText, nodeCard, openIssues, sourcesOf } from './reportData';
 import { drawScreen, screenFrame } from './wireDraw';
 import { FeatureTablesTable } from './ResultsPanel';
-import { dialectOf, sqlType } from '../../engine/ddl';
+import { dialectOf, keyCols, sqlType } from '../../engine/ddl';
 
 const H = ({ n, children }: { n: number; children: ReactNode }) => <h2 className="r-h">{n}. {children}</h2>;
 const KV = ({ rows }: { rows: [string, ReactNode][] }) => (
@@ -285,7 +285,7 @@ function DataDictionary({ project: p }: { project: Project }) {
         <p><b>{n.name} · {t.name}</b>{t.label && ` (${t.label})`} · {t.record === 'fixed' ? '고정장' : '가변장'}{t.description && ` — ${t.description}`}</p>
         <table className="r-grid"><thead><tr><th>컬럼</th><th>논리명</th><th>타입{d ? ` (${d === 'generic' ? 'SQL' : d})` : ''}</th><th>필수</th><th>기본값</th><th>PK</th><th>도메인 · 코드 값</th><th>개인정보</th><th>설명</th></tr></thead><tbody>
           {t.columns.map((c) => <tr key={c.name}>
-            <td>{c.name}</td><td>{c.label ?? ''}</td><td>{d ? sqlType(c, d, t.record === 'fixed') : `${c.type}${c.max_length ? `(${c.max_length})` : ''}`}</td>
+            <td>{c.name}</td><td>{c.label ?? ''}</td><td>{d ? sqlType(c, d, t.record === 'fixed', keyCols(t).has(c.name)) : `${c.type}${c.max_length ? `(${c.max_length})` : ''}`}</td>
             <td>{c.nullable ? '' : 'Y'}</td><td>{c.default_value ?? ''}</td><td>{t.primary_key.includes(c.name) ? 'Y' : ''}</td>
             <td>{[c.domain, c.codes?.map((x) => (x.label ? `${x.code}=${x.label}` : x.code)).join(', ')].filter(Boolean).join(' · ')}</td>
             <td>{c.personal ? '⚠️ Y' : ''}</td><td>{c.description ?? ''}</td>
@@ -303,7 +303,8 @@ function Interfaces({ project: p, analysis: a }: { project: Project; analysis: A
   if (!edges.length) return null;
   const gaps = edges.flatMap((e) => e.interfaces.map((i) => ({ e, i, g: specGaps(i) }))).filter((x) => x.g.length);
   const advice = specAdvice(p);
-  const fields = (fs: SpecField[]) => fs.map((f) => `${f.name}${f.required ? '' : '?'}: ${f.type}${f.length ? `(${f.length}B)` : ''}`).join(', ') || '—';
+  // 바이트 길이는 파일·전문에서만 뜻이 있다
+  const fields = (fs: SpecField[], file = false) => fs.map((f) => `${f.name}${f.required ? '' : '?'}: ${f.type}${file && f.length ? `(${f.length}B)` : ''}`).join(', ') || '—';
   return <>
     <h3 className="r-sub">서비스 내부 인터페이스 명세</h3>
     <table className="r-grid"><thead><tr><th>보내는 → 받는</th><th>이름</th><th>방식 · 경로</th><th>부르는 요청 × 횟수</th><th>요청 필드</th><th>응답 필드</th><th>인증 · 에러</th><th>크기 (요청/응답)</th><th>피크 / 이벤트 호출</th></tr></thead><tbody>
@@ -316,7 +317,7 @@ function Interfaces({ project: p, analysis: a }: { project: Project; analysis: A
             <td>{i.name}{i.description && <div className="muted">{i.description}</div>}</td>
             <td>{i.kind === 'rest' ? `REST ${i.method ?? 'GET'} ${i.path}` : i.kind === 'grpc' ? `gRPC ${i.path}` : i.kind === 'file' ? `파일·전문 ${i.path}${i.record ? ` (${i.record.format === 'fixed' ? '고정장' : `가변장 ${JSON.stringify(i.record.delimiter)}`}, ${i.record.encoding})` : ''}` : `메시지 ${i.path}`}</td>
             <td>{{ all: '모든 요청', read: '읽기 요청', write: '쓰기 요청' }[i.on]} × {fmt(i.per_request)}</td>
-            <td>{fields(i.request)}</td>
+            <td>{fields(i.request, i.kind === 'file')}</td>
             <td>{oneWay(i) ? '— (보내고 끝)' : fields(i.response)}</td>
             <td>{oneWay(i) ? '—' : <>{i.auth ? AUTH_NAMES[i.auth] : '인증 미정'}{i.errors.map((x) => <div key={`${x.status}${x.code}`}>{x.status}{x.code && ` ${x.code}`}: {x.description}</div>)}</>}</td>
             <td>{fmt(requestBytes(i))}B{!oneWay(i) && ` / ${fmt(responseBytes(i))}B`}</td>
@@ -325,7 +326,7 @@ function Interfaces({ project: p, analysis: a }: { project: Project; analysis: A
         ));
       })}
     </tbody></table>
-    <p className="muted">크기는 필드 형식별 예시 크기로 어림한 값입니다(실측을 넣으면 그 값). 같은 명세를 파일 › 인터페이스 명세 내보내기로 OpenAPI·AsyncAPI·proto 파일로 받을 수 있습니다.</p>
+    <p className="muted">크기는 필드 형식별 예시 크기로 어림한 값입니다(실측을 넣으면 그 값). 같은 명세를 파일 › 인터페이스 명세 내보내기로 OpenAPI·AsyncAPI·proto, 파일·전문 레이아웃(CSV), 받는 쪽이 FastAPI면 엔드포인트 뼈대(.py) 파일로 받을 수 있습니다.</p>
     {gaps.length > 0 && <>
       <h3 className="r-sub">명세 점검: 비어 있는 것</h3>
       <ul>{gaps.map(({ e, i, g }) => <li key={`${e.from}>${e.to}>${i.name}`}>{name(e.from)} → {name(e.to)} · {i.name}: {g.join(', ')}</li>)}</ul>

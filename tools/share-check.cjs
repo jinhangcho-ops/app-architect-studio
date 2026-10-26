@@ -5,7 +5,8 @@ const { app, BrowserWindow, desktopCapturer } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const OUT = path.resolve(process.argv[process.argv.length - 1] || '.');
+// argv = [electron, 이 스크립트, 저장 폴더?]. 폴더를 안 주면 마지막 값이 스크립트 경로라 따로 본다
+const OUT = path.resolve(process.argv.slice(2).find((a) => !a.startsWith('-')) ?? '.');
 const URL = process.env.SHARE_CHECK_URL || 'http://localhost:5173';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

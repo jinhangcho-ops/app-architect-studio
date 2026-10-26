@@ -12,6 +12,7 @@ import { usePick } from './store';
 const KIND_NAMES = { rest: 'REST (HTTP)', grpc: 'gRPC', message: '메시지 (큐·이벤트)', file: '파일·전문' } as const;
 const PATH_LABEL = { rest: '경로', grpc: '메서드 이름', message: '토픽', file: '파일·전문 ID' } as const;
 const PATH_HINT = { rest: '/로 시작. 경로 변수는 {order_id}처럼', grpc: '영문 식별자 (예: CreateOrder)', message: '큐의 토픽·채널 이름 (예: orders.created)', file: '파일 이름 규칙이나 전문 ID (예: SALES_YYYYMMDD.dat, TR0101)' } as const;
+const DELIMITERS: Record<string, string> = { ',': '쉼표 (,)', '|': '파이프 (|)', ';': '세미콜론 (;)', '\t': '탭' };
 const DEFAULT_RECORD = { format: 'fixed', delimiter: ',', encoding: 'utf-8', newline: 'crlf', header: false } as const;
 const FIELD_NAMES: Record<(typeof FIELD_TYPES)[number], string> = {
   string: '문자열', integer: '정수', number: '실수', boolean: '참·거짓', datetime: '날짜·시각', uuid: 'UUID', object: '객체', array: '배열',
@@ -33,7 +34,7 @@ export function InterfacesSection({ e, analysis }: { e: ProjectEdge; analysis?: 
   const rates = from && e.interfaces.length ? { normal: interfaceRates(e, from, 'normal', readMiss(project, e)), event: interfaceRates(e, from, 'event', readMiss(project, e)) } : undefined;
 
   return (
-    <Section title={`인터페이스 명세 (${e.interfaces.length})`} desc="이 연결로 주고받는 호출·메시지예요. 적으면 호출 수로 부하를, 크기로 리전 간 전송량을 계산하고, 파일 › 인터페이스 명세 내보내기로 OpenAPI·AsyncAPI·proto 파일을 만들어요.">
+    <Section title={`인터페이스 명세 (${e.interfaces.length})`} desc="이 연결로 주고받는 호출·메시지예요. 적으면 호출 수로 부하를, 크기로 리전 간 전송량을 계산하고, 파일 › 인터페이스 명세 내보내기로 OpenAPI·AsyncAPI·proto, 파일·전문 레이아웃(CSV), 받는 쪽이 FastAPI면 엔드포인트 뼈대를 만들어요.">
       {e.interfaces.map((x, k) => (
         <details key={k} className="table-editor">
           <summary>
@@ -46,7 +47,12 @@ export function InterfacesSection({ e, analysis }: { e: ProjectEdge; analysis?: 
           <Row label="방식">
             <Select value={x.kind} onChange={(ev) => {
               const kind = ev.target.value as Interface['kind'];
-              upd(k, { kind, method: kind === 'rest' ? x.method ?? 'GET' : undefined, ...(oneWay({ kind }) && { response: [] }), record: kind === 'file' ? x.record ?? { ...DEFAULT_RECORD } : undefined });
+              // 파일·전문은 바이트 길이만 쓰고 인증·에러 응답이 없다. 다른 방식이면 길이를 지운다
+              const file = kind === 'file';
+              upd(k, {
+                kind, method: kind === 'rest' ? x.method ?? 'GET' : undefined, ...(oneWay({ kind }) && { response: [] }), record: file ? x.record ?? { ...DEFAULT_RECORD } : undefined,
+                ...(file ? { auth: undefined, errors: [], path: x.path.startsWith('/') ? 'FILE_ID' : x.path } : { request: x.request.map(({ length: _, ...f }) => f) }),
+              });
             }}>
               {Object.entries(KIND_NAMES).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </Select>
@@ -103,7 +109,12 @@ function RecordFields({ i, onChange }: { i: Interface; onChange: (r: NonNullable
       </Select>
     </Row>
     {r.format === 'delimited' && <>
-      <Row label="구분자"><input value={r.delimiter} maxLength={3} onChange={(ev) => ev.target.value && set({ delimiter: ev.target.value })} /></Row>
+      <Row label="구분자">
+        <Select value={r.delimiter} onChange={(ev) => set({ delimiter: ev.target.value })}>
+          {!Object.hasOwn(DELIMITERS, r.delimiter) && <option value={r.delimiter}>{r.delimiter}</option>}
+          {Object.entries(DELIMITERS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </Select>
+      </Row>
       <Row label="머리줄" hint="첫 줄에 필드 이름이 있는지"><input type="checkbox" checked={r.header} onChange={(ev) => set({ header: ev.target.checked })} /></Row>
     </>}
     <Row label="인코딩" hint="EUC-KR이면 한글 한 글자가 2바이트, UTF-8이면 3바이트">
@@ -127,7 +138,7 @@ function Fields({ title, fields, onChange, fixed }: { title: string; fields: Spe
     <div>
       <p className="muted">{title} — 이름은 영문 식별자 (코드 생성 도구가 그대로 써요)</p>
       {fields.length > 0 && <div className="plans"><table className="grid">
-        <thead><tr><th>이름</th><th>형식</th><th>필수</th>{fixed && <th>길이 B</th>}<th>평균 B</th><th>설명</th><th /></tr></thead>
+        <thead><tr><th>이름</th><th>형식</th><th>필수</th>{fixed ? <th>길이 B</th> : <th>평균 B</th>}<th>설명</th><th /></tr></thead>
         <tbody>
           {fields.map((f, k) => (
             <tr key={k}>
@@ -137,7 +148,8 @@ function Fields({ title, fields, onChange, fixed }: { title: string; fields: Spe
               </Select></td>
               <td><input type="checkbox" checked={f.required} onChange={(ev) => upd(k, { required: ev.target.checked })} /></td>
               {fixed && <td><input type="number" min={1} step={1} value={f.length ?? ''} aria-invalid={!f.length} onChange={(ev) => upd(k, { length: Number(ev.target.value) >= 1 ? Math.round(Number(ev.target.value)) : undefined })} /></td>}
-              <td><input type="number" value={f.avg_bytes ?? ''} placeholder="예시" onChange={(ev) => upd(k, { avg_bytes: ev.target.value === '' || Number(ev.target.value) <= 0 ? undefined : Number(ev.target.value) })} /></td>
+              {/* 고정장은 길이로 크기를 정해 평균 B를 쓰지 않는다 */}
+              {!fixed && <td><input type="number" value={f.avg_bytes ?? ''} placeholder="예시" onChange={(ev) => upd(k, { avg_bytes: ev.target.value === '' || Number(ev.target.value) <= 0 ? undefined : Number(ev.target.value) })} /></td>}
               <td><input value={f.description ?? ''} onChange={(ev) => upd(k, { description: ev.target.value || undefined })} /></td>
               <td><button aria-label="필드 빼기" onClick={() => onChange(fields.filter((_, j) => j !== k))}>✕</button></td>
             </tr>
@@ -159,6 +171,8 @@ function TableLinks({ i, project, onChange }: { i: Interface; project: Project; 
   const links = i.tables ?? [];
   const all = project.nodes.flatMap((n) => n.tables.map((t) => ({ node: n.id, table: t.name, label: `${n.name} · ${t.name}${t.label ? ` (${t.label})` : ''}` })));
   const upd = (k: number, patch: Partial<NonNullable<Interface['tables']>[number]>) => onChange(links.map((x, j) => (j === k ? { ...x, ...patch } : x)));
+  // 아직 연결하지 않은 첫 테이블
+  const free = all.find((t) => !links.some((x) => x.node === t.node && x.table === t.table));
   return (
     <div>
       <p className="muted">읽고 쓰는 테이블 — 기능별 테이블 표와 데이터 사전에 나와요</p>
@@ -180,7 +194,7 @@ function TableLinks({ i, project, onChange }: { i: Interface; project: Project; 
           ))}
         </tbody>
       </table></div>}
-      {all.length > 0 && <button onClick={() => onChange([...links, { node: all[0].node, table: all[0].table, op: isWrite(i) ? 'write' : 'read' }])}>+ 테이블</button>}
+      {free && <button onClick={() => onChange([...links, { node: free.node, table: free.table, op: isWrite(i) ? 'write' : 'read' }])}>+ 테이블</button>}
     </div>
   );
 }

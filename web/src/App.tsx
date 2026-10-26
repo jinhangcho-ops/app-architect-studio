@@ -150,9 +150,9 @@ export function App() {
   const exportTexts = async (files: { name: string; text: string }[], empty: string) => {
     if (!files.length) return say(empty, 4000);
     if (desktop) {
-      const out = await desktop.saveTexts(files);
-      if (out) say(`명세 파일 ${out.length}개를 저장했습니다`);
-      return;
+      return void desktop.saveTexts(files)
+        .then((out) => { if (out) say(`명세 파일 ${out.length}개를 저장했습니다`); })
+        .catch((err: Error) => say(`저장하지 못했습니다: ${err.message}`, 8000));
     }
     for (const f of files) {
       const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([f.text], { type: 'text/plain' })), download: f.name });
@@ -250,7 +250,7 @@ export function App() {
           <button role="menuitem" title="tools/analyze_py.py가 만든 JSON" onClick={() => { close(); codeRef.current?.click(); }}>코드 분석 불러오기</button>
           <hr />
           <button role="menuitem" onClick={() => { close(); exportFile(); }}>파일로 내보내기<small>Ctrl+Shift+S</small></button>
-          <button role="menuitem" title="연결선의 인터페이스 명세 → OpenAPI(REST)·AsyncAPI(메시지)·proto(gRPC)" onClick={() => { close(); void exportTexts(interfaceFiles(project), '연결선에 인터페이스 명세가 없습니다. 연결선을 고르고 "인터페이스 명세"에서 추가하세요'); }}>인터페이스 명세 내보내기</button>
+          <button role="menuitem" title="연결선의 인터페이스 명세 → OpenAPI(REST)·AsyncAPI(메시지)·proto(gRPC)·파일·전문 레이아웃(CSV), 받는 쪽이 FastAPI면 엔드포인트 뼈대(.py)" onClick={() => { close(); void exportTexts(interfaceFiles(project), '연결선에 인터페이스 명세가 없습니다. 연결선을 고르고 "인터페이스 명세"에서 추가하세요'); }}>인터페이스 명세 내보내기</button>
           <button role="menuitem" title="DB 노드의 테이블 명세 → 노드별 schema-….sql(CREATE TABLE·INDEX, 주석)과 data-dictionary.csv" onClick={() => { close(); void exportTexts(schemaFiles(project, catalog.byId), 'DB 노드에 테이블 명세가 없습니다. DB 노드를 고르고 "테이블 명세"에서 추가하세요'); }}>스키마(DDL)·데이터 사전 내보내기</button>
           <button role="menuitem" onClick={() => { close(); setHistory(!history); }}>저장 기록</button>
         </>}</Menu>

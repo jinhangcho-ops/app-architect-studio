@@ -4,7 +4,9 @@ import { analyze } from './analyze';
 import { loadCatalog, loadLaws, loadPrices, loadProject } from './io';
 import { VERDICT_NAMES, type Metric } from './model';
 import { failureLines } from './failure';
-import { GAP_EFFECT, specAdvice, specGaps } from './interfaces';
+import { GAP_EFFECT, recordBytes, specAdvice, specGaps } from './interfaces';
+import type { Interface } from './schema';
+import { featureTables, unusedTables } from './tables';
 import { flowLine } from './pipeline';
 import { lawLine } from './regulation';
 import { STALE_DAYS } from './cost';
@@ -17,6 +19,13 @@ if (!projectPath) {
 }
 
 const fmt = (v: number) => (!Number.isFinite(v) ? '∞' : v >= 100 ? Math.round(v).toLocaleString('ko-KR') : String(Math.round(v * 100) / 100));
+const KIND: Record<Interface['kind'], string> = { rest: 'REST', grpc: 'gRPC', message: '메시지', file: '파일·전문' };
+/** 인터페이스 방식. 파일·전문은 장 형식과 레코드 길이(가변장은 어림)까지 */
+const way = (i: Interface) => {
+  if (i.kind !== 'file') return KIND[i.kind];
+  const r = i.record, len = recordBytes(i);
+  return `${KIND.file} ${!r ? '장 형식 미정' : r.format === 'fixed' ? '고정장' : '가변장'}${len === undefined ? '' : ` · 레코드 ${r?.format === 'fixed' ? '' : '약 '}${len}바이트`}`;
+};
 const show = (mt: Metric) => (mt.unit === '비율' ? `${(mt.value * 100).toFixed(mt.value > 0.99 ? 3 : 1)}%` : `${fmt(mt.value)} ${mt.unit}`);
 
 try {
@@ -30,7 +39,7 @@ try {
 
   const t = a.traffic;
   if (t) {
-    console.log('## 규모 (4절)');
+    console.log('## 규모');
     const rows: [string, keyof typeof t][] = [
       ['오늘 접속한 사용자(DAU)', 'dau'], ['현지 시간대 창 안 접속 비율', 'inWindowShare'], ['피크 1시간 비중', 'peakShare'],
       ['하루 요청', 'dailyRequests'], ['평균 RPS', 'avgRps'], ['피크 RPS', 'peakRps'], ['이벤트 피크 RPS', 'peakRpsEvent'],
@@ -49,7 +58,7 @@ try {
     console.log(`(트래픽: ${why})`);
   }
 
-  console.log('\n## 노드 (8·12·13절, 평소 / 이벤트)');
+  console.log('\n## 노드 (평소 / 이벤트)');
   for (const n of project.nodes) {
     const x = a.nodes[n.id];
     const parts = [`가용성 ${show(x.availability)}`];
@@ -72,22 +81,27 @@ try {
   const specs = project.edges.flatMap((e) => e.interfaces.map((i) => ({ e, i, gaps: specGaps(i) })));
   if (specs.length) {
     console.log('\n## 인터페이스 명세 점검');
-    for (const { e, i, gaps } of specs) console.log(`  ${gaps.length ? '⚠️' : '✅'} ${nameOf(e.from)} → ${nameOf(e.to)} · ${i.name}${gaps.length ? `: ${gaps.join(', ')}` : ''}`);
+    for (const { e, i, gaps } of specs) console.log(`  ${gaps.length ? '⚠️' : '✅'} ${nameOf(e.from)} → ${nameOf(e.to)} · ${i.name} (${way(i)})${gaps.length ? `: ${gaps.join(', ')}` : ''}`);
     if (specs.some((x) => x.gaps.length)) console.log(`  → ${GAP_EFFECT}`);
     for (const x of specAdvice(project)) console.log(`  💡 ${nameOf(x.nodeId)} — ${x.title}: ${x.text}${x.file ? ` (${x.file})` : ''}`);
   }
 
+  const feats = featureTables(project), unused = unusedTables(project);
+  if (feats.length || unused.length) console.log('\n## 기능별 테이블');
+  for (const f of feats) console.log(`  ${f.name} (${f.via}): ${f.tables.map((x) => `${nameOf(x.node)}.${x.table} ${x.op === 'read' ? '읽기' : '쓰기'}`).join(', ')}`);
+  if (unused.length) console.log(`  ⚠️ 어느 기능에도 연결되지 않은 테이블: ${unused.join(', ')}`);
+
   if (a.failure) console.log('\n## 장애 시나리오 (사용률: 평소 / 이벤트)');
   for (const l of a.failure ? failureLines(a.failure, nameOf) : []) console.log(`  ${l}`);
 
-  if (a.paths.length) console.log('\n## 동기 경로 (12·13절)');
+  if (a.paths.length) console.log('\n## 동기 경로');
   for (const path of a.paths) {
     const p99 = path.p99 ? `p99 ${fmt(path.p99.value)} ms · ` : '';
     console.log(`  ${path.nodes.map(nameOf).join(' → ')}: ${p99}가용성 ${show(path.availability)} · 월 중단 ${fmt(path.downtime.value)}시간`);
   }
 
   if (a.cost) {
-    console.log('\n## 월 비용 (9절)');
+    console.log('\n## 월 비용');
     for (const [k, mt] of Object.entries(a.cost.parts)) console.log(`  ${project.nodes.some((n) => n.id === k) ? nameOf(k) : k}: ${fmt(mt.value)} ${mt.unit}`);
     if (a.cost.total) console.log(`  합계: ${fmt(a.cost.total.value)} ${a.cost.total.unit}`);
     if (a.cost.missing.length) console.log(`  ⚠️ 가격표에 없는 상품: ${a.cost.missing.join(', ')}`);
@@ -95,7 +109,7 @@ try {
   }
 
   if (a.growth) {
-    console.log('\n## 성장 타임라인 (14절)');
+    console.log('\n## 성장 타임라인');
     for (const ms of a.growth.milestones) {
       const when = ms.month === undefined ? '도달하지 않음' : `${ms.month}개월째 한계 → ${ms.startMonth}개월째 착수`;
       console.log(`  ${nameOf(ms.nodeId)}: ${when} (한계 ${fmt(ms.limitUsers)}명)`);
