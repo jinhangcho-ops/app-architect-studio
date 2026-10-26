@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseProject } from '../../engine/data';
 import { interfaceFiles } from '../../engine/interfaces';
+import { schemaFiles } from '../../engine/ddl';
 import { LAYERS, LAYER_NAMES, type Layer } from '../../engine/model';
 import { Canvas, Legend } from './Canvas';
 import { catalog, examples } from './data';
@@ -145,10 +146,9 @@ export function App() {
     URL.revokeObjectURL(a.href);
   };
 
-  /** 인터페이스 명세 파일들. 데스크톱 앱은 폴더를 골라 한 번에, 브라우저는 파일마다 내려받기 */
-  const exportSpecs = async () => {
-    const files = interfaceFiles(project);
-    if (!files.length) return say('연결선에 인터페이스 명세가 없습니다. 연결선을 고르고 "인터페이스 명세"에서 추가하세요', 4000);
+  /** 명세 파일들(인터페이스, 스키마·데이터 사전). 데스크톱 앱은 폴더를 골라 한 번에, 브라우저는 파일마다 내려받기 */
+  const exportTexts = async (files: { name: string; text: string }[], empty: string) => {
+    if (!files.length) return say(empty, 4000);
     if (desktop) {
       const out = await desktop.saveTexts(files);
       if (out) say(`명세 파일 ${out.length}개를 저장했습니다`);
@@ -250,7 +250,8 @@ export function App() {
           <button role="menuitem" title="tools/analyze_py.py가 만든 JSON" onClick={() => { close(); codeRef.current?.click(); }}>코드 분석 불러오기</button>
           <hr />
           <button role="menuitem" onClick={() => { close(); exportFile(); }}>파일로 내보내기<small>Ctrl+Shift+S</small></button>
-          <button role="menuitem" title="연결선의 인터페이스 명세 → OpenAPI(REST)·AsyncAPI(메시지)·proto(gRPC)" onClick={() => { close(); void exportSpecs(); }}>인터페이스 명세 내보내기</button>
+          <button role="menuitem" title="연결선의 인터페이스 명세 → OpenAPI(REST)·AsyncAPI(메시지)·proto(gRPC)" onClick={() => { close(); void exportTexts(interfaceFiles(project), '연결선에 인터페이스 명세가 없습니다. 연결선을 고르고 "인터페이스 명세"에서 추가하세요'); }}>인터페이스 명세 내보내기</button>
+          <button role="menuitem" title="DB 노드의 테이블 명세 → 노드별 schema-….sql(CREATE TABLE·INDEX, 주석)과 data-dictionary.csv" onClick={() => { close(); void exportTexts(schemaFiles(project, catalog.byId), 'DB 노드에 테이블 명세가 없습니다. DB 노드를 고르고 "테이블 명세"에서 추가하세요'); }}>스키마(DDL)·데이터 사전 내보내기</button>
           <button role="menuitem" onClick={() => { close(); setHistory(!history); }}>저장 기록</button>
         </>}</Menu>
         <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => e.target.files?.[0] && open(e.target.files[0])} />

@@ -156,3 +156,17 @@ export function tableSize(
 export function tableSizes(p: Project, traffic: Traffic | undefined, byId: Map<string, CatalogItem>, factor = 1): TableAnalysis[] {
   return p.nodes.flatMap((n) => n.tables.map((t) => tableSize(p, n, t, byId, traffic, factor)));
 }
+
+/** 기능별 테이블: 행동(쓰는 테이블)과 인터페이스(읽고 쓰는 테이블). via = 행동이면 '행동', 인터페이스면 보내는 → 받는 노드 id */
+export type FeatureTables = { name: string; via: string; tables: { node: string; table: string; op: 'read' | 'write' }[] };
+export function featureTables(p: Project): FeatureTables[] {
+  return [
+    ...p.actions.map((a) => ({ name: a.name, via: '행동', tables: a.writes.map((w) => ({ node: w.node, table: w.table, op: 'write' as const })) })),
+    ...p.edges.flatMap((e) => e.interfaces.filter((i) => i.tables?.length).map((i) => ({ name: i.name, via: `${e.from} → ${e.to}`, tables: i.tables! }))),
+  ];
+}
+/** 어떤 기능에도 연결되지 않은 테이블 (node.table) */
+export const unusedTables = (p: Project) => {
+  const used = new Set(featureTables(p).flatMap((f) => f.tables.map((t) => `${t.node}.${t.table}`)));
+  return p.nodes.flatMap((n) => n.tables.map((t) => `${n.id}.${t.name}`)).filter((k) => !used.has(k));
+};

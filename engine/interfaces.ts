@@ -47,7 +47,7 @@ export function interfaceRates(e: ProjectEdge, from: Load, s: 'normal' | 'event'
   });
 }
 
-const safe = (s: string) => s.replace(/[^A-Za-z0-9_]/g, '_').replace(/^(?=\d)/, 'N');
+export const safe = (s: string) => s.replace(/[^A-Za-z0-9_]/g, '_').replace(/^(?=\d)/, 'N');
 
 // ---------- OpenAPI ----------
 type Json = Record<string, unknown>;
@@ -435,7 +435,7 @@ export function layoutRows(i: Interface): LayoutRow[] {
     return row;
   });
 }
-const csvCell = (v: unknown) => { const s = v === undefined ? '' : String(v); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+export const csvCell = (v: unknown) => { const s = v === undefined ? '' : String(v); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
 /** 레이아웃 표(CSV, 엑셀에서 한글이 깨지지 않게 BOM). 첫 줄들은 장 형식·인코딩·레코드 길이 */
 export function layoutCsv(i: Interface, from: string, to: string): string {
   const r = i.record;

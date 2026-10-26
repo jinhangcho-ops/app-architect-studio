@@ -141,6 +141,18 @@ describe('테이블·행동 편집', () => {
     valid(removed);
   });
 
+  it('테이블 이름을 바꾸거나 지우면 인터페이스의 테이블 연결도 따라감', () => {
+    const e0 = p0.edges[0];
+    const linked = { ...p0, edges: p0.edges.map((e, k) => (k ? e : { ...e, interfaces: [{ name: '리뷰 조회', kind: 'rest' as const, method: 'GET' as const, path: '/reviews', per_request: 1, on: 'all' as const, request: [], response: [], errors: [],
+      tables: [{ node: 'db', table: 'reviews', op: 'read' as const }, { node: 'db', table: 'orders', op: 'read' as const }] }] })) };
+    const renamed = updateTable(linked, 'db', 'reviews', { name: 'review' });
+    expect(renamed.edges[0].interfaces[0].tables!.map((t) => t.table)).toEqual(['review', 'orders']);
+    valid(renamed);
+    const removed = removeTable(removeTable(renamed, 'db', 'review'), 'db', 'orders');
+    expect(removed.edges[0].interfaces[0].tables).toBeUndefined();
+    expect(e0.from).toBe(removed.edges[0].from);
+  });
+
   it('행동 이름을 바꾸면 페르소나별 빈도도 따라가고, 빈 칸은 기본값으로 돌아감', () => {
     const renamed = updateAction(p0, '주문', { name: '구매' });
     expect(renamed.personas[0].action_rates).toEqual({ 구매: 0.6, 리뷰: 0.1 });
@@ -213,5 +225,14 @@ describe('페르소나와 유입 모형', () => {
   it('단계 이동률 합이 1을 넘으면 검사에서 걸림', () => {
     const bad = { ...withInflow, growth: { ...withInflow.growth, inflow: { ...withInflow.growth.inflow, up: 0.7, down: 0.5 } } };
     expect(run(bad, '2026-10-24').error).toMatch(/1을 넘음/);
+  });
+});
+
+describe('코드 값 입력', () => {
+  it('"C=카드, M=현금" ↔ 코드 목록, 빈 칸은 없음', async () => {
+    const { codesText, parseCodes } = await import('./TablesPanel');
+    expect(parseCodes('C=카드, M=현금 , X')).toEqual([{ code: 'C', label: '카드' }, { code: 'M', label: '현금' }, { code: 'X', label: '' }]);
+    expect(codesText(parseCodes('C=카드, X'))).toBe('C=카드, X');
+    expect(parseCodes(' , ')).toBeUndefined();
   });
 });

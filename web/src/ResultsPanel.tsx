@@ -8,10 +8,33 @@ import { updateTable } from './edit';
 import { Section } from './fields';
 import { fmt, fmtMetric, howMetric } from './format';
 import { costTimeline, milestoneText } from './reportData';
+import { featureTables, unusedTables } from '../../engine/tables';
 import { useState } from 'react';
-import { nodeStorageProfile, selectedFeatures, storageProfileOf } from '../../engine/schema';
+import { nodeStorageProfile, selectedFeatures, storageProfileOf, type Project } from '../../engine/schema';
 import { loadSqlJs, runSqliteLab, type LabResult } from './sqliteLab';
 import { usePick } from './store';
+
+/** 기능 → 읽고 쓰는 테이블. 결과 패널과 보고서가 같이 쓴다 */
+export function FeatureTablesTable({ project, className }: { project: Project; className?: string }) {
+  const name = (id: string) => project.nodes.find((n) => n.id === id)?.name ?? id;
+  const label = (node: string, table: string) => project.nodes.find((n) => n.id === node)?.tables.find((t) => t.name === table)?.label;
+  const feats = featureTables(project), unused = unusedTables(project);
+  const cell = (ts: { node: string; table: string }[]) => ts.map((t) => `${name(t.node)}.${t.table}${label(t.node, t.table) ? ` (${label(t.node, t.table)})` : ''}`).join(', ') || '—';
+  return <>
+    {feats.length > 0 ? <div className="plans"><table className={className}>
+      <thead><tr><th>기능</th><th>어디서</th><th>쓰는 테이블</th><th>읽는 테이블</th></tr></thead>
+      <tbody>{feats.map((f) => (
+        <tr key={f.via + f.name}>
+          <td>{f.name}</td>
+          <td>{f.via === '행동' ? '사용자 행동' : f.via.split(' → ').map(name).join(' → ')}</td>
+          <td>{cell(f.tables.filter((t) => t.op === 'write'))}</td>
+          <td>{cell(f.tables.filter((t) => t.op === 'read'))}</td>
+        </tr>
+      ))}</tbody>
+    </table></div> : <p className="muted">아직 테이블에 연결한 기능이 없어요. 행동에서 쓰는 테이블을, 연결선의 인터페이스에서 읽고 쓰는 테이블을 고르세요.</p>}
+    {unused.length > 0 && <p className="warn">어떤 기능에도 연결되지 않은 테이블: {unused.join(', ')}</p>}
+  </>;
+}
 
 const Line = ({ label, m }: { label: string; m?: Metric }) =>
   m ? <tr title={howMetric(m)}><td>{label}</td><td>{fmtMetric(m)}</td></tr> : null;
@@ -88,6 +111,10 @@ ${howMetric(a.storage.personaGb)}`}>
         {a.growth && a.growth.tables.length > 0 && <ul>{a.growth.tables.map((ms) => (
           <li key={ms.nodeId}>{ms.nodeId}: {ms.month === undefined ? '성장해도 서버 메모리에 닿지 않음' : `${ms.month}개월째 서버 메모리를 넘음, ${ms.startMonth}개월째 파티션 착수`}</li>
         ))}</ul>}
+      </Section>}
+
+      {project.nodes.some((n) => n.tables.length) && <Section title="기능별 테이블" desc="행동과 인터페이스에 연결한 테이블이에요. 파일 › 스키마(DDL)·데이터 사전 내보내기로 CREATE TABLE과 데이터 사전을 받아요.">
+        <FeatureTablesTable project={project} />
       </Section>}
 
       <Section title="확장 한계">

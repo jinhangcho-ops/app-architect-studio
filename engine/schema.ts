@@ -246,6 +246,8 @@ export const Interface = z.object({
   auth: z.enum(['none', 'bearer', 'api_key']).optional(),
   /** 파일·전문의 장 형식과 인코딩 (kind가 file일 때) */
   record: FileRecord.optional(),
+  /** 이 기능(API·메시지·파일)이 읽고 쓰는 테이블. 기능별 테이블 표와 데이터 사전에 쓴다 (부하 계산에는 쓰지 않음) */
+  tables: z.array(z.object({ node: z.string(), table: z.string(), op: z.enum(['read', 'write']) })).optional(),
   /** 실패할 때 돌려주는 응답. 본문은 모두 같은 형식(RFC 9457 problem details: type·title·status·detail·code) */
   errors: z.array(z.object({
     status: z.number().int().min(400).max(599),
@@ -617,6 +619,11 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
       if ((i.kind === 'message' || i.kind === 'file') && i.response.length) errors.push(`${at} ${i.name}: ${i.kind === 'file' ? '파일·전문' : '메시지'}은 응답이 없음 (보내고 끝)`);
       if (i.kind === 'file' && i.record?.format === 'delimited' && i.request.some((f) => f.name.includes(i.record!.delimiter))) errors.push(`${at} ${i.name}: 필드 이름에 구분자 "${i.record.delimiter}"가 들어 있음`);
       for (const d of dupes(i.errors.map((x) => `${x.status}${x.code ? ` ${x.code}` : ''}`))) errors.push(`${at} ${i.name}: 에러 응답 중복 ${d}`);
+      for (const t of i.tables ?? []) {
+        const node = p.nodes.find((n) => n.id === t.node);
+        if (!node) errors.push(`${at} ${i.name}: 없는 노드 ${t.node}`);
+        else if (!node.tables.some((x) => x.name === t.table)) errors.push(`${at} ${i.name}: ${t.node}에 없는 테이블 ${t.table}`);
+      }
       for (const side of ['request', 'response'] as const) for (const d of dupes(i[side].map((f) => f.name))) errors.push(`${at} ${i.name}: ${side === 'request' ? '요청' : '응답'} 필드 이름 중복 ${d}`);
     }
   }

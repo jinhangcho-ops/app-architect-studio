@@ -138,7 +138,12 @@ export function importTables(p: Project, nodeId: string, tables: Table[]): { pro
 export function updateTable(p: Project, nodeId: string, name: string, patch: Partial<Table>): Project {
   const next = mapTables(p, nodeId, (ts) => ts.map((t) => (t.name === name ? { ...t, ...patch } : t)));
   if (patch.name === undefined || patch.name === name) return next;
-  return { ...next, actions: next.actions.map((a) => ({ ...a, writes: a.writes.map((w) => (w.node === nodeId && w.table === name ? { ...w, table: patch.name! } : w)) })) };
+  const rename = <T extends { node: string; table: string }>(w: T): T => (w.node === nodeId && w.table === name ? { ...w, table: patch.name! } : w);
+  return {
+    ...next,
+    actions: next.actions.map((a) => ({ ...a, writes: a.writes.map(rename) })),
+    edges: next.edges.map((e) => ({ ...e, interfaces: e.interfaces.map((i) => (i.tables ? { ...i, tables: i.tables.map(rename) } : i)) })),
+  };
 }
 
 /** 테이블을 지우면 그 테이블에 쓰는 행동 줄도 지우고, 쓸 곳이 없어진 행동은 없앤다 */
@@ -148,7 +153,11 @@ export function removeTable(p: Project, nodeId: string, name: string): Project {
     .map((a) => ({ ...a, writes: a.writes.filter((w) => !(w.node === nodeId && w.table === name)) }))
     .filter((a) => a.writes.length > 0);
   const gone = next.actions.filter((a) => !actions.some((x) => x.name === a.name)).map((a) => a.name);
-  return dropRates({ ...next, actions }, gone);
+  const edges = next.edges.map((e) => ({ ...e, interfaces: e.interfaces.map((i) => {
+    const tables = i.tables?.filter((t) => !(t.node === nodeId && t.table === name));
+    return i.tables ? { ...i, tables: tables!.length ? tables : undefined } : i;
+  }) }));
+  return dropRates({ ...next, actions, edges }, gone);
 }
 
 export function addTable(p: Project, nodeId: string): Project {

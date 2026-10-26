@@ -1,8 +1,8 @@
 // 연결선의 인터페이스 명세: 보내는 노드가 받는 노드에 부르는 REST·gRPC 호출과 큐 메시지. 호출 수는 부하 계산에, 크기는 리전 간 전송량에 쓰인다
 import type { Analysis } from '../../engine/analyze';
-import { GAP_EFFECT, interfaceRates, layoutRows, oneWay, recordBytes, requestBytes, responseBytes, specGaps } from '../../engine/interfaces';
+import { GAP_EFFECT, interfaceRates, isWrite, layoutRows, oneWay, recordBytes, requestBytes, responseBytes, specGaps } from '../../engine/interfaces';
 import { readMiss } from '../../engine/load';
-import { FIELD_TYPES, HTTP_METHODS, IDENT, type Interface, type ProjectEdge, type SpecField } from '../../engine/schema';
+import { FIELD_TYPES, HTTP_METHODS, IDENT, type Interface, type Project, type ProjectEdge, type SpecField } from '../../engine/schema';
 import { updateEdge } from './edit';
 import { NumField, Row, Section, TextField } from './fields';
 import { fmt } from './format';
@@ -81,6 +81,7 @@ export function InterfacesSection({ e, analysis }: { e: ProjectEdge; analysis?: 
           {!oneWay(x) && <Fields title="응답 필드" fields={x.response} onChange={(response) => upd(k, { response })} />}
           <NumField label="요청 크기(B, 실측)" value={x.request_bytes} hint="비우면 필드 형식별 예시 크기로 어림해요" onChange={(v) => upd(k, { request_bytes: v === undefined || v < 0 ? undefined : v })} />
           {!oneWay(x) && <Errors errors={x.errors} onChange={(errors) => upd(k, { errors })} />}
+          <TableLinks i={x} project={project} onChange={(tables) => upd(k, { tables: tables.length ? tables : undefined })} />
           {!oneWay(x) && <NumField label="응답 크기(B, 실측)" value={x.response_bytes} hint="비우면 필드 형식별 예시 크기로 어림해요" onChange={(v) => upd(k, { response_bytes: v === undefined || v < 0 ? undefined : v })} />}
           <button className="danger" onClick={() => set(e.interfaces.filter((_, j) => j !== k))}>이 인터페이스 삭제</button>
         </details>
@@ -153,6 +154,37 @@ function Fields({ title, fields, onChange, fixed }: { title: string; fields: Spe
 }
 
 /** 실패할 때 돌려주는 응답: 상태 코드, 앱 에러 코드, 설명. 본문은 모두 problem+json(type·title·status·detail·code) */
+/** 이 기능이 읽고 쓰는 테이블 (테이블이 있는 노드에서 고름) */
+function TableLinks({ i, project, onChange }: { i: Interface; project: Project; onChange: (t: NonNullable<Interface['tables']>) => void }) {
+  const links = i.tables ?? [];
+  const all = project.nodes.flatMap((n) => n.tables.map((t) => ({ node: n.id, table: t.name, label: `${n.name} · ${t.name}${t.label ? ` (${t.label})` : ''}` })));
+  const upd = (k: number, patch: Partial<NonNullable<Interface['tables']>[number]>) => onChange(links.map((x, j) => (j === k ? { ...x, ...patch } : x)));
+  return (
+    <div>
+      <p className="muted">읽고 쓰는 테이블 — 기능별 테이블 표와 데이터 사전에 나와요</p>
+      {!all.length && <p className="muted">테이블이 있는 DB 노드가 없어요. DB 노드의 테이블 명세에서 먼저 만들어 주세요.</p>}
+      {links.length > 0 && <div className="plans"><table className="grid">
+        <thead><tr><th>테이블</th><th>읽기·쓰기</th><th /></tr></thead>
+        <tbody>
+          {links.map((x, k) => (
+            <tr key={k}>
+              <td><Select value={`${x.node}\u0000${x.table}`} aria-label="테이블" onChange={(ev) => { const [node, table] = ev.target.value.split('\u0000'); upd(k, { node, table }); }}>
+                {!all.some((t) => t.node === x.node && t.table === x.table) && <option value={`${x.node}\u0000${x.table}`}>{x.node}.{x.table} (없음)</option>}
+                {all.map((t) => <option key={`${t.node}.${t.table}`} value={`${t.node}\u0000${t.table}`}>{t.label}</option>)}
+              </Select></td>
+              <td><Select value={x.op} aria-label="읽기·쓰기" onChange={(ev) => upd(k, { op: ev.target.value as 'read' | 'write' })}>
+                <option value="read">읽기</option><option value="write">쓰기</option>
+              </Select></td>
+              <td><button aria-label="테이블 빼기" onClick={() => onChange(links.filter((_, j) => j !== k))}>✕</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table></div>}
+      {all.length > 0 && <button onClick={() => onChange([...links, { node: all[0].node, table: all[0].table, op: isWrite(i) ? 'write' : 'read' }])}>+ 테이블</button>}
+    </div>
+  );
+}
+
 function Errors({ errors, onChange }: { errors: Interface['errors']; onChange: (e: Interface['errors']) => void }) {
   const upd = (k: number, patch: Partial<Interface['errors'][number]>) => onChange(errors.map((x, j) => (j === k ? { ...x, ...patch } : x)));
   return (

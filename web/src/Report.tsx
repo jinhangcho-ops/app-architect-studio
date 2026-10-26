@@ -1,5 +1,5 @@
 // 설계서 화면(7·17절): A4 인쇄용으로 그리고, 브라우저 인쇄 창의 "PDF로 저장"으로만 내보낸다.
-// 목차: 요약 → 구동 방식 → 규모 가정 → 구조도 → 화면 설계·API → 노드별 판정 근거 → 확장 한계·지연·비용 → 최선 조합 → 가용성·성장 → 조문 → 미해결 → 적용한 설정 → 출처
+// 목차: 요약 → 구동 방식 → 규모 가정 → 구조도 → 화면 설계·API → 데이터 명세 → 노드별 판정 근거 → 확장 한계·지연·비용 → 최선 조합 → 가용성·성장 → 조문 → 미해결 → 적용한 설정 → 출처
 import { useEffect, useRef, type ReactNode } from 'react';
 import type { Analysis } from '../../engine/analyze';
 import { MODE_NAMES, SCOPE_NAMES } from '../../engine/deploy';
@@ -18,6 +18,8 @@ import { fmt, fmtMetric, fmtShare } from './format';
 import type { XY } from './layout';
 import { costTimeline, milestoneText, nodeCard, openIssues, sourcesOf } from './reportData';
 import { drawScreen, screenFrame } from './wireDraw';
+import { FeatureTablesTable } from './ResultsPanel';
+import { dialectOf, sqlType } from '../../engine/ddl';
 
 const H = ({ n, children }: { n: number; children: ReactNode }) => <h2 className="r-h">{n}. {children}</h2>;
 const KV = ({ rows }: { rows: [string, ReactNode][] }) => (
@@ -115,7 +117,16 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={6}>노드별 선택과 판정 근거</H>
+            <H n={6}>데이터 명세 · 기능별 테이블 · 데이터 사전</H>
+            {p.nodes.some((n) => n.tables.length) ? <>
+              <h3 className="r-sub">기능별 테이블</h3>
+              <FeatureTablesTable project={p} className="r-grid" />
+              <DataDictionary project={p} />
+            </> : <p className="muted">DB 노드에 테이블 명세가 없습니다.</p>}
+          </section>
+
+          <section>
+            <H n={7}>노드별 선택과 판정 근거</H>
             {p.nodes.map((n) => {
               const c = nodeCard(p, a, catalog.byId, n.id);
               return (
@@ -130,7 +141,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={7}>확장 한계 · 지연시간 · 월 비용</H>
+            <H n={8}>확장 한계 · 지연시간 · 월 비용</H>
             <ul>{p.nodes.filter((n) => a.nodes[n.id].limitUsers).map((n) => <li key={n.id}>{n.name}: 한계 사용자 약 {fmt(a.nodes[n.id].limitUsers!.value)}명</li>)}</ul>
             <ul>{a.paths.map((pa) => <li key={pa.nodes.join()}>{pa.nodes.map(name).join(' → ')}: p99 {fmtMetric(pa.p99)}</li>)}</ul>
             {a.cost && <>
@@ -144,7 +155,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={8}>최선 조합과 선택 조건</H>
+            <H n={9}>최선 조합과 선택 조건</H>
             <KV rows={[
               ['우선순위', p.optimize.priorities.join(' > ') || '없음 (모든 목표 같은 무게)'],
               ['꼭 지킬 조건', [p.optimize.budget_monthly !== undefined && `월 예산 ${fmt(p.optimize.budget_monthly)}`, p.optimize.min_limit_users !== undefined && `한계 사용자 ${fmt(p.optimize.min_limit_users)}명 이상`, p.optimize.max_p99_ms !== undefined && `p99 ${p.optimize.max_p99_ms}ms 이하`, p.optimize.min_availability !== undefined && `가용성 ${fmtShare(p.optimize.min_availability)} 이상`].filter(Boolean).join(' · ') || '없음'],
@@ -154,7 +165,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={9}>가용성 · 성장 타임라인</H>
+            <H n={10}>가용성 · 성장 타임라인</H>
             <ul>{a.paths.map((pa) => <li key={pa.nodes.join()}>{pa.nodes.map(name).join(' → ')}: 가용성 {fmtMetric(pa.availability)}, 월 중단 {fmtMetric(pa.downtime)}</li>)}</ul>
             {a.spof.length > 0 && <p>단일 장애점: {a.spof.map(name).join(', ')}</p>}
             {a.failure && a.failure.regions.length > 0 && <ul>{regionLines(a.failure, name).map((l) => <li key={l}>{l}</li>)}</ul>}
@@ -166,7 +177,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={10}>확인 필요 조문</H>
+            <H n={11}>확인 필요 조문</H>
             {!a.regulation.length ? <p className="muted">개인정보 노드가 없거나 걸린 조문이 없습니다.</p> : <ul>
               {a.regulation.map((h) => <li key={h.nodeId + h.law + h.article}>{name(h.nodeId)} · {lawLine(h)}</li>)}
             </ul>}
@@ -174,12 +185,12 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={11}>미해결 ❌·⚠️ 목록</H>
+            <H n={12}>미해결 ❌·⚠️ 목록</H>
             {(() => { const xs = openIssues(p, a, catalog.byId); return xs.length ? <ul>{xs.map((x) => <li key={x}>{x}</li>)}</ul> : <p className="muted">없습니다.</p>; })()}
           </section>
 
           <section>
-            <H n={12}>적용한 설정</H>
+            <H n={13}>적용한 설정</H>
             <ul>{p.nodes.flatMap((n) => {
               const sp = nodeStorageProfile(n, catalog.byId);
               const feats = sp ? selectedFeatures(sp, n).map((f) => f.label) : [];
@@ -189,7 +200,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={13}>카탈로그 출처</H>
+            <H n={14}>카탈로그 출처</H>
             <ul className="r-src">
               {sourcesOf(p, catalog.byId).map((s) => <li key={s.item}>{s.item}: {s.urls.join(' · ')}</li>)}
               {usedPrices.map((r) => <li key={r.id}>가격 {r.id} ({r.as_of}): {r.source}</li>)}
@@ -264,6 +275,28 @@ function WireImage({ screen, frame }: { screen: Screen; frame: { w: number; h: n
 const AUTH_NAMES = { none: '인증 없음', bearer: 'Bearer 토큰', api_key: 'API 키' } as const;
 
 /** 서비스 내부 인터페이스 명세: 연결선마다 호출·메시지, 필드, 인증·에러, 피크 호출, 크기 */
+/** 데이터 사전: 테이블마다 컬럼의 논리명·DB 타입·필수·기본값·코드 값·개인정보 */
+function DataDictionary({ project: p }: { project: Project }) {
+  return <>
+    <h3 className="r-sub">데이터 사전</h3>
+    {p.nodes.filter((n) => n.tables.length).flatMap((n) => n.tables.map((t) => {
+      const d = dialectOf(n, catalog.byId);
+      return <div key={n.id + t.name}>
+        <p><b>{n.name} · {t.name}</b>{t.label && ` (${t.label})`} · {t.record === 'fixed' ? '고정장' : '가변장'}{t.description && ` — ${t.description}`}</p>
+        <table className="r-grid"><thead><tr><th>컬럼</th><th>논리명</th><th>타입{d ? ` (${d === 'generic' ? 'SQL' : d})` : ''}</th><th>필수</th><th>기본값</th><th>PK</th><th>도메인 · 코드 값</th><th>개인정보</th><th>설명</th></tr></thead><tbody>
+          {t.columns.map((c) => <tr key={c.name}>
+            <td>{c.name}</td><td>{c.label ?? ''}</td><td>{d ? sqlType(c, d, t.record === 'fixed') : `${c.type}${c.max_length ? `(${c.max_length})` : ''}`}</td>
+            <td>{c.nullable ? '' : 'Y'}</td><td>{c.default_value ?? ''}</td><td>{t.primary_key.includes(c.name) ? 'Y' : ''}</td>
+            <td>{[c.domain, c.codes?.map((x) => (x.label ? `${x.code}=${x.label}` : x.code)).join(', ')].filter(Boolean).join(' · ')}</td>
+            <td>{c.personal ? '⚠️ Y' : ''}</td><td>{c.description ?? ''}</td>
+          </tr>)}
+        </tbody></table>
+      </div>;
+    }))}
+    <p className="muted">같은 내용을 파일 › 스키마(DDL)·데이터 사전 내보내기로 data-dictionary.csv와 DB별 CREATE TABLE 파일로 받을 수 있습니다.</p>
+  </>;
+}
+
 function Interfaces({ project: p, analysis: a }: { project: Project; analysis: Analysis }) {
   const name = (id: string) => p.nodes.find((n) => n.id === id)?.name ?? id;
   const edges = p.edges.filter((e) => e.interfaces.length);

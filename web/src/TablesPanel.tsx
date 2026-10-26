@@ -5,7 +5,7 @@ import { COLUMN_TYPES, nodeStorageProfile, selectedFeatures, STORAGE_FORMATS, ST
 import { parseSpec } from '../../engine/spec';
 import { catalog } from './data';
 import { addTable, importTables, patchAt, removeTable, setFeature, updateNode, updateTable } from './edit';
-import { NumField, Row, Section } from './fields';
+import { NumField, Row, Section, TextField } from './fields';
 import { usePick } from './store';
 
 type Table = ProjectNode['tables'][number];
@@ -14,6 +14,12 @@ type Column = Table['columns'][number];
 const TEMPLATE = '테이블\t컬럼\t타입\t크기\t평균 길이\t저장 형식\tNULL\t키·인덱스\t설명';
 const csv = (xs: string[]) => xs.join(', ');
 const list = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean);
+/** 코드 값 "C=카드, M=현금" ↔ [{code, label}] */
+export const codesText = (cs?: Column['codes']) => (cs ?? []).map((x) => (x.label ? `${x.code}=${x.label}` : x.code)).join(', ');
+export const parseCodes = (s: string): Column['codes'] => {
+  const cs = list(s).map((x) => { const [code, ...rest] = x.split('='); return { code: code.trim(), label: rest.join('=').trim() }; }).filter((x) => x.code);
+  return cs.length ? cs : undefined;
+};
 
 export function TablesSection({ node }: { node: ProjectNode }) {
   const { edit } = usePick('edit');
@@ -55,11 +61,19 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
   const upd = (patch: Partial<Table>) => edit((p) => updateTable(p, node.id, t.name, patch));
   const setCol = (i: number, patch: Partial<Column>) => upd({ columns: patchAt(t.columns, i, patch) });
   const setIx = (i: number, patch: Partial<Table['indexes'][number]>) => upd({ indexes: patchAt(t.indexes, i, patch) });
+  const padded = !!nodeStorageProfile(node, catalog.byId)?.fixed_width_padded;
 
   return (
     <details className="table-editor" open={open}>
-      <summary><b>{t.name}</b> <span className="muted">컬럼 {t.columns.length} · 인덱스 {t.indexes.length}{t.partition ? ' · 파티션' : ''}</span></summary>
+      <summary><b>{t.name}</b>{t.label && ` ${t.label}`} <span className="muted">{t.record === 'fixed' ? '고정장 · ' : ''}컬럼 {t.columns.length} · 인덱스 {t.indexes.length}{t.partition ? ' · 파티션' : ''}</span></summary>
       <Row label="이름"><input defaultValue={t.name} onBlur={(e) => { if (e.target.value && e.target.value !== t.name) { upd({ name: e.target.value }); onRename?.(e.target.value); } }} /></Row>
+      <TextField label="논리명" value={t.label} onChange={(v) => upd({ label: v || undefined })} />
+      <TextField label="설명" value={t.description} onChange={(v) => upd({ description: v || undefined })} />
+      <Row label="장 형식" hint={`고정장: 문자열·바이너리를 최대 길이만큼 채워 저장(CHAR(n)·BINARY(n)). 가변장: 실제 길이(VARCHAR). ${padded ? '이 시스템은 고정장이면 최대 길이로 크기를 계산해요' : '이 시스템은 고정 길이 문자열도 실제 길이로 저장해 크기는 같아요'}`}>
+        <Select value={t.record} onChange={(e) => upd({ record: e.target.value as Table['record'] })}>
+          <option value="variable">가변장</option><option value="fixed">고정장</option>
+        </Select>
+      </Row>
       <NumField label="보관 일수" value={t.retention_days} hint="비우면 프로젝트 보관 기간" onChange={(v) => upd({ retention_days: v })} />
       <NumField label="갱신 비율" value={t.update_ratio} step={0.05} hint="쓰기 중 새 행이 아니라 기존 행을 고치는 비율" onChange={(v) => upd({ update_ratio: v ?? 0 })} />
       <Row label="기본 키" hint="쉼표로 구분, 순서대로">
@@ -90,7 +104,7 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
               <option value="">(기본)</option>
               {STORAGE_FORMATS.map((x) => <option key={x} value={x}>{STORAGE_NAMES[x]}</option>)}
             </Select></td>
-            <td><input type="number" value={c.max_length ?? ''} onChange={(e) => setCol(i, { max_length: e.target.value ? Number(e.target.value) : undefined })} /></td>
+            <td><input type="number" value={c.max_length ?? ''} aria-invalid={t.record === 'fixed' && (c.type === 'text' || c.type === 'bytes') && !c.max_length} onChange={(e) => setCol(i, { max_length: e.target.value ? Number(e.target.value) : undefined })} /></td>
             <td><input type="number" value={c.avg_bytes ?? ''} onChange={(e) => setCol(i, { avg_bytes: e.target.value ? Number(e.target.value) : undefined })} /></td>
             <td><input type="checkbox" checked={c.nullable} onChange={(e) => setCol(i, { nullable: e.target.checked })} /></td>
             <td><button aria-label="컬럼 삭제" onClick={() => upd({ columns: t.columns.filter((_, k) => k !== i) })}>×</button></td>
@@ -98,6 +112,25 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
         ))}</tbody>
       </table></div>
       <button onClick={() => upd({ columns: [...t.columns, { name: `col_${t.columns.length + 1}`, type: 'text', nullable: false, personal: false }] })}>컬럼 추가</button>
+
+      <details>
+        <summary>데이터 사전 (논리명·도메인·코드 값·기본값·개인정보)</summary>
+        <p className="muted">코드 값은 "C=카드, M=현금"처럼 쉼표로. 넣으면 DDL에 CHECK 제약이 들어가요. 기본값의 숫자·true·CURRENT_TIMESTAMP는 그대로, 나머지는 문자열로 넣어요</p>
+        <div className="plans"><table className="grid">
+          <thead><tr><th>컬럼</th><th>논리명</th><th>도메인</th><th>코드 값</th><th>기본값</th><th>개인정보</th><th>설명</th></tr></thead>
+          <tbody>{t.columns.map((c, i) => (
+            <tr key={`${i}-${c.name}`}>
+              <td>{c.name}</td>
+              <td><input defaultValue={c.label ?? ''} aria-label={`${c.name} 논리명`} onBlur={(e) => setCol(i, { label: e.target.value || undefined })} /></td>
+              <td><input defaultValue={c.domain ?? ''} aria-label={`${c.name} 도메인`} placeholder="금액·코드·일시…" onBlur={(e) => setCol(i, { domain: e.target.value || undefined })} /></td>
+              <td><input defaultValue={codesText(c.codes)} aria-label={`${c.name} 코드 값`} onBlur={(e) => setCol(i, { codes: parseCodes(e.target.value) })} /></td>
+              <td><input defaultValue={c.default_value ?? ''} aria-label={`${c.name} 기본값`} onBlur={(e) => setCol(i, { default_value: e.target.value || undefined })} /></td>
+              <td><input type="checkbox" checked={c.personal} aria-label={`${c.name} 개인정보`} onChange={(e) => setCol(i, { personal: e.target.checked })} /></td>
+              <td><input defaultValue={c.description ?? ''} aria-label={`${c.name} 설명`} onBlur={(e) => setCol(i, { description: e.target.value || undefined })} /></td>
+            </tr>
+          ))}</tbody>
+        </table></div>
+      </details>
 
       <div className="plans"><table className="grid">
         <thead><tr><th>인덱스</th><th>컬럼(쉼표)</th><th>고유</th><th /></tr></thead>
