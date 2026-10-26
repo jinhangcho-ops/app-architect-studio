@@ -3,6 +3,12 @@
 import { useState } from 'react';
 import { desktop, type UpdateInfo } from './desktop';
 
+/** 버전 뒤 조사: 끝 숫자를 읽는 소리에 받침이 없으면(2 이, 4 사, 5 오, 9 구) "가", 있으면(0 영, 1 일, 3 삼, 6 육, 7 칠, 8 팔) "이" */
+export const subjectParticle = (version: string) => {
+  const last = version.trim().slice(-1);
+  return /\d/.test(last) ? ('2459'.includes(last) ? '가' : '이') : '이(가)';
+};
+
 /** 노트의 ## · ### 머리를 "■ "로 바꿔 보이게 (나머지 줄은 그대로) */
 export const notesText = (notes: string) => notes.replace(/^#{2,3} +/gm, '■ ');
 
@@ -20,7 +26,7 @@ export function UpdatePrompt({ info, prepare }: { info: UpdateInfo; prepare: () 
   };
   return <>
     <div className="update" role="status">
-      <span>새 버전 <b>v{info.version}</b>이 있어요</span>
+      <span>새 버전 <b>v{info.version}</b>{subjectParticle(info.version)} 있어요</span>
       <button className="primary" onClick={() => setOpen(true)}>업데이트</button>
     </div>
     {open && (
