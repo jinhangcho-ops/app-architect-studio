@@ -1,5 +1,6 @@
 // 설계서 화면(7·17절): A4 인쇄용으로 그리고, 브라우저 인쇄 창의 "PDF로 저장"으로만 내보낸다.
 // 목차: 요약 → 구동 방식 → 규모 가정 → 구조도 → 화면 설계·API → 데이터 명세 → 노드별 판정 근거 → 확장 한계·지연·비용 → 최선 조합 → 가용성·성장 → 조문 → 미해결 → 적용한 설정 → 출처
+import { PATHS_CUT_TEXT } from '../../engine/latency';
 import { useEffect, useRef, type ReactNode } from 'react';
 import type { Analysis } from '../../engine/analyze';
 import { MODE_NAMES, SCOPE_NAMES } from '../../engine/deploy';
@@ -145,7 +146,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
             <H n={8}>확장 한계 · 지연시간 · 월 비용</H>
             <ul>{p.nodes.filter((n) => a.nodes[n.id].limitUsers).map((n) => <li key={n.id}>{n.name}: 한계 사용자 약 {fmt(a.nodes[n.id].limitUsers!.value)}명</li>)}</ul>
             <ul>{a.paths.map((pa) => <li key={pa.nodes.join()}>{pa.nodes.map(name).join(' → ')}: p99 {fmtMetric(pa.p99)}</li>)}</ul>
-            {a.pathsCut && <p>동기 경로가 500개를 넘어 앞쪽 500개만 계산했어요 (가장 느린 경로·단일 장애점을 놓칠 수 있음)</p>}
+            {a.pathsCut && <p>{PATHS_CUT_TEXT}</p>}
             {a.cost && <>
               <table className="r-grid"><tbody>
                 {Object.entries(a.cost.parts).map(([k, m]) => <tr key={k}><td>{p.nodes.some((n) => n.id === k) ? name(k) : k}</td><td>{fmtMetric(m)}</td></tr>)}

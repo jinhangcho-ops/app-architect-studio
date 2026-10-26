@@ -1,5 +1,6 @@
 import type { Analysis } from '../../engine/analyze';
 import { regionLines } from '../../engine/failure';
+import { PATHS_CUT_TEXT } from '../../engine/latency';
 import { GAP_EFFECT, specAdvice, specGaps } from '../../engine/interfaces';
 import type { Traffic } from '../../engine/traffic';
 import type { Metric } from '../../engine/model';
@@ -135,7 +136,7 @@ ${howMetric(a.storage.personaGb)}`}>
       </Section>
 
       <Section title="경로 (화면에서 동기 호출)">
-        {a.pathsCut && <p className="warn">동기 경로가 500개를 넘어 앞쪽 500개만 계산했어요 (가장 느린 경로·단일 장애점을 놓칠 수 있음)</p>}
+        {a.pathsCut && <p className="warn">{PATHS_CUT_TEXT}</p>}
         {a.paths.map((pa) => (
           <div key={pa.nodes.join('>')} className="path">
             <div>{pa.nodes.map(name).join(' → ')}</div>

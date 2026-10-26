@@ -264,11 +264,21 @@ describe('감사 6: 명세 파일 정확성', () => {
       request: [{ name: '_id', type: 'string', required: true }], response: [{ name: 'model_config', type: 'string', required: true }] })]);
     const text = fastApiFiles({ ...p, nodes: p.nodes.map((n) => (n.id === 'U-01' ? { ...n, name: 'C:\\New\\x' } : n)) })[0].text;
     expect(text).toContain('    "부르는 노드: C:\\\\New\\\\x"');
-    expect(text).toContain('f_N1: Annotated[str, Path(alias="1")], class_: Annotated[str, Path(alias="class")], f_order_id: Annotated[str, Path(alias="order-id")], body:');
+    // Starlette는 영문 식별자 경로 변수만 받아 경로에서도 이름을 바꾸고, 예약어만 alias
+    expect(text).toContain('@app.post("/k/{f_N1}/{class}/{f_order_id}"');
+    expect(text).toContain('f_N1: str, class_: Annotated[str, Path(alias="class")], f_order_id: str, body:');
     expect(text).toContain('f__id: str = Field(..., alias="_id")');
     expect(text).toContain('f_model_config: str = Field(..., alias="model_config")');
     expect(text).toContain('from typing import Annotated, Any, Optional');
     expect(text).toContain('from fastapi import Depends, FastAPI, Path, Query, Request');
+  });
+  it('FastAPI 함수 인자 이름은 겹치지 않음 (한글 경로 변수 둘, {body}와 본문)', () => {
+    const p = withEdge(ledger, 'U-01', 'B-01', [iface({ name: 'k', kind: 'rest', method: 'POST', path: '/o/{주문}/{번호}/{body}', auth: 'bearer',
+      request: [{ name: 'x', type: 'string', required: true }] })]);
+    const text = fastApiFiles(p)[0].text;
+    expect(text).toContain('@app.post("/o/{f___}/{f____2}/{body}"');
+    expect(text).toContain('(f___: str, f____2: str, body: str, body_2: PostOBodyRequest, _token: HTTPAuthorizationCredentials');
+    expect(specGaps(p.edges.find((e) => e.from === 'U-01' && e.to === 'B-01')!.interfaces.at(-1)!).join()).toContain('경로 변수 {주문}가 영문 식별자가 아님');
   });
   it('경로 변수 {order-id}·{주문}도 OpenAPI parameter가 됨', () => {
     const doc = openApiDocs(two([iface({ name: 'a', kind: 'rest', method: 'GET', path: '/o/{order-id}/{주문}' })]))[0].doc as { paths: Record<string, { get: { parameters: { name: string; in: string }[] } }> };

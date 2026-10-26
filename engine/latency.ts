@@ -38,6 +38,7 @@ export function nodeP99(lambda: number, serviceMs: number, c: number, serviceP99
 
 // shortcut: 경로가 이보다 많으면(깊은 사슬에서 갈래마다 두 배) 앞쪽 경로만 본다. 가장 나쁜 경로를 놓칠 수 있어 화면에 알린다. 그런 설계가 흔해지면 노드별 최악값을 동적 계획으로 구한다
 export const MAX_PATHS = 500;
+export const PATHS_CUT_TEXT = `동기 경로가 ${MAX_PATHS}개를 넘어 앞쪽 ${MAX_PATHS}개만 계산했어요 (가장 느린 경로·단일 장애점을 놓칠 수 있음)`;
 
 /** 화면 노드에서 출발해 동기 연결선만 따라간 경로들. 비동기 연결에서 경로가 끊긴다. MAX_PATHS + 1개에서 멈춘다(넘었는지 알 수 있게). */
 export function syncPaths(p: Project): string[][] {

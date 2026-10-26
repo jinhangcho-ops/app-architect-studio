@@ -257,6 +257,7 @@ export function specGaps(i: Interface): string[] {
   if (i.kind === 'rest') {
     const inPath = [...i.path.matchAll(PATH_VAR)].map((x) => x[1]);
     for (const v of inPath.filter((v) => !i.request.some((f) => f.name === v))) gaps.push(`경로 변수 {${v}}의 형식이 없음 (문자열로 가정)`);
+    for (const v of inPath.filter((v) => !IDENT.test(v))) gaps.push(`경로 변수 {${v}}가 영문 식별자가 아님 (FastAPI·Spring 등이 그대로 받지 못해 FastAPI 뼈대에서는 이름을 바꿈)`);
     if (['POST', 'PUT', 'PATCH'].includes(i.method ?? 'GET') && !i.request.some((f) => !inPath.includes(f.name))) gaps.push('요청 본문 필드가 없음');
   }
   // 방식을 바꾸거나 경로를 고치는 중에 생기는 모양이라 막지 않고 알린다 (이대로 내보내면 OpenAPI·proto 파일이 틀림)
@@ -335,26 +336,35 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
   const nameOf = (id: string) => p.nodes.find((n) => n.id === id)?.name ?? id;
   return [...restOps(p)].filter(([id]) => p.nodes.find((n) => n.id === id)?.primary === 'fastapi').map(([nodeId, ops]) => {
     const auth = new Set(ops.map((o) => o.i.auth));
-    const pathAlias = ops.some((o) => o.inPath.some((f) => needsAlias(f.name)));
     const models = ops.flatMap((o) => [...pyModel(`${pascal(o.opId)}Request`, o.body), ...pyModel(`${pascal(o.opId)}Response`, o.i.response)]);
     const routes = ops.flatMap((o) => {
       const { i } = o, P = pascal(o.opId);
+      // 함수 인자 이름은 겹치면 안 된다 (한글 경로 변수 둘이 같은 이름이 되거나, {body}와 본문 인자). 겹치면 _2, _3에 alias
+      const used = new Set<string>();
+      const arg = (n: string) => { let x = n; for (let k = 2; used.has(x); k++) x = `${n}_${k}`; used.add(x); return x; };
+      // Starlette는 영문 식별자 경로 변수만 받으므로 그 밖의 이름({order-id}, {주문})은 이 파일의 경로에서도 파이썬 이름으로 바꾼다 (명세 점검이 알림)
+      let route = i.path;
       const params = [
         // Annotated: 기본값 없는 인자라 뒤에 오는 본문(body) 인자와 순서가 어긋나지 않는다
-        ...o.inPath.map((f) => `${pyName(f.name)}: ${needsAlias(f.name) ? `Annotated[${PY_TYPE[f.type]}, Path(alias=${py(f.name)})]` : PY_TYPE[f.type]}`),
+        ...o.inPath.map((f) => {
+          const t = PY_TYPE[f.type];
+          if (!IDENT.test(f.name)) { const n = arg(`f_${safe(f.name)}`); route = route.replace(`{${f.name}}`, `{${n}}`); return `${n}: ${t}`; }
+          const n = arg(PY_KEYWORDS.has(f.name) ? `${f.name}_` : f.name);
+          return n === f.name ? `${n}: ${t}` : `${n}: Annotated[${t}, Path(alias=${py(f.name)})]`;
+        }),
         ...o.query.map((f) => {
           // 객체·배열은 질의 문자열로 못 받아 JSON 문자열로 받는다
-          const t = f.type === 'object' || f.type === 'array' ? 'str' : PY_TYPE[f.type];
-          const args = [f.required ? '...' : 'None', ...(needsAlias(f.name) ? [`alias=${py(f.name)}`] : []), ...(f.description ? [`description=${py(f.description)}`] : [])];
-          return `${pyName(f.name)}: ${f.required ? t : `Optional[${t}]`} = Query(${args.join(', ')})`;
+          const t = f.type === 'object' || f.type === 'array' ? 'str' : PY_TYPE[f.type], n = arg(pyName(f.name));
+          const args = [f.required ? '...' : 'None', ...(n !== f.name ? [`alias=${py(f.name)}`] : []), ...(f.description ? [`description=${py(f.description)}`] : [])];
+          return `${n}: ${f.required ? t : `Optional[${t}]`} = Query(${args.join(', ')})`;
         }),
-        ...(o.body.length ? [`body: ${P}Request`] : []),
-        ...(i.auth === 'bearer' ? ['_token: HTTPAuthorizationCredentials = Depends(require_bearer)'] : i.auth === 'api_key' ? ['_key: str = Depends(require_api_key)'] : []),
+        ...(o.body.length ? [`${arg('body')}: ${P}Request`] : []),
+        ...(i.auth === 'bearer' ? [`${arg('_token')}: HTTPAuthorizationCredentials = Depends(require_bearer)`] : i.auth === 'api_key' ? [`${arg('_key')}: str = Depends(require_api_key)`] : []),
       ];
       const ret = i.response.length ? `${P}Response` : 'None';
       const errs = groupErrors(i);
       const deco = [
-        py(i.path), ...(i.response.length ? [`response_model=${P}Response`] : ['status_code=204', 'response_class=Response']), `summary=${py(i.name)}`,
+        py(route), ...(i.response.length ? [`response_model=${P}Response`] : ['status_code=204', 'response_class=Response']), `summary=${py(i.name)}`,
         ...(i.description ? [`description=${py(i.description)}`] : []),
         ...(errs.length ? [`responses={${errs.map(([st, list]) => `${st}: {"description": ${py(list.map((x) => `${x.code ? `${x.code}: ` : ''}${x.description}`).join(' / '))}, "content": PROBLEM_JSON}`).join(', ')}}`] : []),
       ];
@@ -368,6 +378,7 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
         '', '',
       ];
     });
+    const pathAlias = routes.some((l) => l.includes('Path(alias='));
     const text = [
       `# ${nameOf(nodeId)} — FastAPI 엔드포인트 뼈대 (${p.name})`,
       '# App Architect Studio의 인터페이스 명세에서 만들었습니다. 모델과 엔드포인트만 있고, 각 함수는 501(구현 필요)을 돌려줍니다.',

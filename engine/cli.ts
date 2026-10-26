@@ -1,6 +1,7 @@
 // 사용법: npm run judge -- <프로젝트.json> [카탈로그 폴더] [가격표 폴더]
 import { fileURLToPath } from 'node:url';
 import { analyze } from './analyze';
+import { PATHS_CUT_TEXT } from './latency';
 import { loadCatalog, loadLaws, loadPrices, loadProject } from './io';
 import { VERDICT_NAMES, type Metric } from './model';
 import { failureLines } from './failure';
@@ -99,7 +100,7 @@ try {
   for (const l of a.failure ? failureLines(a.failure, nameOf) : []) console.log(`  ${l}`);
 
   if (a.paths.length) console.log('\n## 동기 경로');
-  if (a.pathsCut) console.log('  ! 동기 경로가 500개를 넘어 앞쪽 500개만 계산했어요 (가장 느린 경로·단일 장애점을 놓칠 수 있음)');
+  if (a.pathsCut) console.log(`  ! ${PATHS_CUT_TEXT}`);
   for (const path of a.paths) {
     const p99 = path.p99 ? `p99 ${fmt(path.p99.value)} ms · ` : '';
     console.log(`  ${path.nodes.map(nameOf).join(' → ')}: ${p99}가용성 ${show(path.availability)} · 월 중단 ${fmt(path.downtime.value)}시간`);
