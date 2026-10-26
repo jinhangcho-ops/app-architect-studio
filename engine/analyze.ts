@@ -50,6 +50,8 @@ export type Analysis = {
   spof: string[];
   cost?: CostResult;
   bottleneck?: { nodeId: string; limitUsers: Metric };
+  /** 한계를 계산한 노드 중 100만 배 넘게 버틴 노드가 있음 (그 노드는 limitUsers·병목에 넣지 않는다) */
+  unbounded?: boolean;
   growth?: { milestones: Milestone[]; monthlyCost: (Metric | undefined)[]; /** 파티션 없는 테이블이 서버 메모리를 넘는 달 (nodeId = '노드.테이블') */ tables: Milestone[];
     /** 유입 모형이 있을 때 달마다 경로별 유입·페르소나별 사용자 */ adoption?: AdoptionMonth[] };
   /** 테이블별 크기·파티션 */
@@ -84,8 +86,10 @@ export function perInstance(node: ProjectNode, catalog: Map<string, CatalogItem>
   const cal = th?.rps && calibrate(th.rps, node.spec, node.measured.rps);
   // 처리 시간·workers가 있으면 p99(nodeP99, c = 대수 × workers, μ = 1000/처리 시간)와 같은 한계로 자른다
   const perf = cal && node.perf && (node.perf.workers * 1000) / node.perf.service_ms;
+  // 실측값이 잘리면 값은 실측이 아니라 처리 시간에서 나오므로 basis '실측'을 뺀다. 보정값이 이미 inputs에 있으면(실측·업계 값) 다시 넣지 않는다
   const rps = cal && perf !== undefined && perf < cal.value
-    ? { ...cal, value: perf, formula: `min(${cal.formula}, workers × 1000 / 처리 시간)`, inputs: { ...cal.inputs, 보정값: cal.value, workers: node.perf!.workers, 처리ms: node.perf!.service_ms } }
+    ? { ...cal, ...(cal.basis === '실측' && { basis: undefined }), value: perf, formula: `min(${cal.formula}, workers × 1000 / 처리 시간)`,
+      inputs: { ...cal.inputs, ...(!Object.values(cal.inputs).includes(cal.value) && { 보정값: cal.value }), workers: node.perf!.workers, 처리ms: node.perf!.service_ms } }
     : cal;
   const max = th?.max_instances && calibrate(th.max_instances, node.spec, node.measured.max_instances);
   return { rps, max: max?.value ?? Infinity };
@@ -225,7 +229,8 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     const load = loads?.get(n.id);
     const per = perOf.get(n.id)!;
     // 이중화(replicas > 1)는 부하와 무관하게 늘 떠 있어야 하는 대수다. 1이면 0대까지 줄어드는 워커를 막지 않도록 하한으로 쓰지 않는다
-    const floor = n.replicas > 1 ? n.replicas : 0;
+    // 최대 대수(api_single = 1대)보다 많이 띄울 수 없으므로 그 대수로 자른다 (가용성의 standingInstances와 같은 상한)
+    const floor = n.replicas > 1 ? Math.min(per.max, n.replicas) : 0;
     const db = primaryShape(n, d.catalog, load);
     const hourly = autoOf(n.id, factor, 'normal')?.hourly ?? (load && per.rps && shape
       ? shape.map((s) => sizeAt(n, per.rps!.value, per.max, load.rps.normal * factor * s, u, db).N)
@@ -306,7 +311,7 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
   }
 
   // 한계 사용자와 첫 병목
-  let bottleneck: Analysis['bottleneck'];
+  let bottleneck: Analysis['bottleneck'], unbounded = false;
   if (p.scale && t) {
     for (const n of p.nodes) {
       // 배수마다 다시 계산하는 값: 사용률(대수가 계단식·최대 대수에서 멈춤), 연결 수(사람이 직접 넣었으면 그 값 그대로)
@@ -319,6 +324,8 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
       const f = limitFactor(n, d.catalog, judged.get(n.id)!, conn || util || piped
         ? (x) => ({ ...(conn && { db_connections: conn(x, 'event').total }), ...(util && { utilization: util(x) }), ...(piped && pipeVars(flowsAt(x), n.id, 'event')) }) : undefined);
       if (f === undefined) continue;
+      // 한계 없음(∞)은 화면 그래프 축·성장 타임라인을 깨므로 노드 값으로 두지 않고 표시만 한다
+      if (f === Infinity) { unbounded = true; continue; }
       const lim = m(p.scale.users * f, '명', '현재 활성 사용자 × 이벤트 피크에서 안 됨이 되기 직전 배수', { 활성사용자: p.scale.users, 배수: f });
       nodes[n.id].limitUsers = lim;
       if (!bottleneck || lim.value < bottleneck.limitUsers.value) bottleneck = { nodeId: n.id, limitUsers: lim };
@@ -353,6 +360,7 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     spof: singlePointsOfFailure(p, paths, (n) => perOf.get(n.id)!.max),
     cost,
     bottleneck,
+    ...(unbounded && { unbounded }),
     growth,
     judgements: p.nodes.map((n) => judgeNode(n, d.catalog, judged.get(n.id))),
     rules: checkRules(p, d.rules, tables.map((x) => ({ target: `${p.nodes.find((n) => n.id === x.nodeId)!.name}.${x.table}`, vars: x.vars }))),

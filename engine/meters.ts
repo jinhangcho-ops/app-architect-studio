@@ -1,13 +1,14 @@
 // 9절 계량: 노드의 주 항목 과금 방식에 따라 한 달 사용량을 구해 cost.ts의 LineItem으로 만든다.
-//   provisioned  = 시간대별 필요 대수 × 30일 (월 정액 상품이면 최대 대수)
+//   provisioned  = 시간대별 필요 대수 × 730/24일 (월 730시간, 월 정액 상품이면 최대 대수)
 //   usage        = 요청 수 · 연산 시간(vCPU·초, GB·초) · 스캔량
 //   plan         = 월 정액 1개
 // 다른 리전 복사본(dr): active = 같은 대수를 그 리전에, standby = 대기 대수(기본 1)를 하루 내내. 월 정액이면 1개 더, 사용량 과금은 요청이 나뉠 뿐이라 늘지 않는다.
 //   데이터 노드는 복사본 리전에도 같은 저장량을 둔다.
-//   복사본 리전으로 가는 복제 = 하루 쓰는 행(새 행 + 갱신) × 행 크기 × 30일을 리전 간 전송으로 센다.
+//   복사본 리전으로 가는 복제 = 하루 쓰는 행(새 행 + 갱신) × 행 크기 × 730/24일을 리전 간 전송으로 센다.
 // shortcut: 복제 1건을 행 크기로 본다 (WAL·binlog의 머리말·인덱스 변경은 빠짐). 실제 복제량을 재면 그 값으로 바꾼다
 // 저장(GB·월), 인터넷 송신(GB), 리전이 다른 노드 사이 전송(GB)은 프로젝트 단위로 더한다.
 import type { LineItem } from './cost';
+import { DAYS_PER_MONTH } from './model';
 import { callSplit } from './api';
 import { interfaceRates, requestBytes, responseBytes } from './interfaces';
 import { edgeFlow, readMiss, type NodeLoad } from './load';
@@ -28,7 +29,7 @@ export function costLines(
   // 노드의 하루 요청 = 전체 하루 요청 × (이 노드 피크 / 전체 피크). 부하가 연결선을 따라 같은 비율로 전파되기 때문
   const requestsPerMonth = (n: ProjectNode) => {
     const l = loads?.get(n.id);
-    return l && t && t.peakRps.value > 0 ? t.dailyRequests.value * (l.rps.normal / t.peakRps.value) * 30 * factor : 0;
+    return l && t && t.peakRps.value > 0 ? t.dailyRequests.value * (l.rps.normal / t.peakRps.value) * DAYS_PER_MONTH * factor : 0;
   };
   const gbPerRequest = t && t.dailyRequests.value > 0 ? t.egressGbPerDay.value / t.dailyRequests.value : 0;
 
@@ -42,17 +43,17 @@ export function costLines(
       const hourly = hourlyOf(n, factor);
       lines.push({
         key: n.id, product, region,
-        quantities: { hour: sum(hourly) * 30, month: Math.max(...hourly) },
-        how: { hour: '30일 × Σ 시간대 필요 대수', month: '하루 중 최대 대수' },
+        quantities: { hour: sum(hourly) * DAYS_PER_MONTH, month: Math.max(...hourly) },
+        how: { hour: '730/24일 × Σ 시간대 필요 대수', month: '하루 중 최대 대수' },
       });
       if (!dr) return;
       const copy = dr.mode === 'active' ? hourly : Array<number>(24).fill(dr.instances ?? 1);
       lines.push({
         key: n.id, product, region: dr.region,
-        quantities: { hour: sum(copy) * 30, month: Math.max(...copy) },
+        quantities: { hour: sum(copy) * DAYS_PER_MONTH, month: Math.max(...copy) },
         how: dr.mode === 'active'
-          ? { hour: '복사본(active): 30일 × Σ 시간대 필요 대수', month: '복사본(active): 하루 중 최대 대수' }
-          : { hour: '복사본(standby): 30일 × 24시간 × 대기 대수', month: '복사본(standby): 대기 대수' },
+          ? { hour: '복사본(active): 730/24일 × Σ 시간대 필요 대수', month: '복사본(active): 하루 중 최대 대수' }
+          : { hour: '복사본(standby): 730시간 × 대기 대수', month: '복사본(standby): 대기 대수' },
       });
     };
     // 노드에 상품을 직접 지정했으면 그 상품을 대수×시간으로 쓴다
@@ -105,7 +106,7 @@ export function costLines(
       if (n.dr && n.dr.mode !== 'backup') lines.push({ key: '저장', product: p.cost.storage, region: n.dr.region, quantities: { gb_month: gb }, how: { gb_month: `${n.id} 복사본 테이블 저장량` } });
     }
   } else if (t && p.cost.storage) lines.push({ key: '저장', product: p.cost.storage, region: p.cost.region, quantities: { gb_month: t.storageGbWithOverhead.value * factor }, how: { gb_month: '보관 기간 저장량(여유분 포함)' } });
-  if (t && p.cost.egress) lines.push({ key: '송신', product: p.cost.egress, region: p.cost.region, quantities: { gb: t.egressGbPerDay.value * 30 * factor }, how: { gb: '하루 송신 × 30' } });
+  if (t && p.cost.egress) lines.push({ key: '송신', product: p.cost.egress, region: p.cost.region, quantities: { gb: t.egressGbPerDay.value * DAYS_PER_MONTH * factor }, how: { gb: '하루 송신 × 730/24' } });
   if (t && p.cost.transfer) {
     const byId = new Map(p.nodes.map((n) => [n.id, n]));
     for (const e of p.edges) {
@@ -125,8 +126,8 @@ export function costLines(
     for (const n of p.nodes.filter((x) => (x.layer === 'db' || x.layer === 'analytics') && x.dr && x.dr.mode !== 'backup' && x.region !== 'local')) {
       const mine = tables.filter((x) => x.nodeId === n.id);
       if (!mine.length) { missing.push(`${n.name}: 테이블이 없어 리전 복제량을 모름`); continue; }
-      const gb = mine.reduce((s, x) => s + x.writtenRowsPerDay * x.rowBytes.value, 0) * 30 / 1e9;
-      lines.push({ key: '리전 간 전송', product: p.cost.transfer, region: regionOf(n), quantities: { gb_interregion: gb }, how: { gb_interregion: `${n.id}→${n.dr!.region} 복제: 하루 쓰는 행 × 행 크기 × 30` } });
+      const gb = mine.reduce((s, x) => s + x.writtenRowsPerDay * x.rowBytes.value, 0) * DAYS_PER_MONTH / 1e9;
+      lines.push({ key: '리전 간 전송', product: p.cost.transfer, region: regionOf(n), quantities: { gb_interregion: gb }, how: { gb_interregion: `${n.id}→${n.dr!.region} 복제: 하루 쓰는 행 × 행 크기 × 730/24` } });
     }
   }
   return { lines, missing };

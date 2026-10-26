@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { parseProject } from '../../engine/data';
+import { parseProject, readProject } from '../../engine/data';
 import { catalog, examples } from './data';
 import { parseSpec } from '../../engine/spec';
 import { Table as TableSchema } from '../../engine/schema';
-import { applyIndustry, setPersonaMix, addAction, addEdge, addWrite, removeWrite, addNode, addTable, applyAlternative, importTables, removeAction, removeColumn, removeNode, removePersona, removeTable, renameColumn, run, setActionRate, setVar, updateAction, updateNode, updatePersona, updateTable, worstVerdict } from './edit';
+import { applyIndustry, setPersonaMix, addAction, addEdge, addWrite, removeWrite, addNode, addTable, applyAlternative, importTables, patchAt, removeAction, removeColumn, removeNode, removePersona, removeTable, renameColumn, run, setActionRate, setVar, updateAction, updateNode, updatePersona, updateTable, worstVerdict } from './edit';
 import { autoLayout } from './layout';
 
 const today = '2026-10-23';
@@ -292,6 +292,20 @@ describe('컬럼 이름 바꾸기·삭제가 기본 키·인덱스·파티션을
     const removed = removeTable(dup, 'db', name);
     expect(tables(removed).sort()).toEqual(tables(p0).sort());
     expect(removed.actions).toEqual(dup.actions);
+  });
+
+  it('이름이 겹친 둘째 테이블을 순번으로 고치거나 지우면 첫째는 그대로', () => {
+    const p = { name: 'p', nodes: [{ id: 'db', name: 'DB', layer: 'db', tables: [
+      { name: 't', columns: [{ name: 'a', type: 'int' }, { name: 'b', type: 'int' }], primary_key: ['a'] },
+      { name: 't', columns: [{ name: 'x', type: 'text' }], primary_key: [] },
+    ] }] };
+    const p0 = readProject(p, catalog.items);
+    const t2 = p0.nodes[0].tables[1];
+    const next = updateTable(p0, 'db', 't', { columns: patchAt(t2.columns, 0, { nullable: true }) }, 1);
+    expect(next.nodes[0].tables[0]).toEqual(p0.nodes[0].tables[0]);
+    expect(next.nodes[0].tables[1].columns[0]).toMatchObject({ name: 'x', nullable: true });
+    const removed = removeTable(p0, 'db', 't', 1);
+    expect(removed.nodes[0].tables).toEqual([p0.nodes[0].tables[0]]);
   });
 });
 

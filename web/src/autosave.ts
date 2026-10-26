@@ -137,13 +137,18 @@ export function scheduleFolderAutosave(file: string, p: Project, positions: Reco
   }, WAIT_MS);
 }
 
-/** 직접 저장: 프로젝트 파일을 덮어쓰고(처음이면 저장 창) .saves/에 시점 파일을 남긴다. 저장한 경로, 취소면 null */
-export async function saveToFolder(file: string | undefined, p: Project, positions: Record<string, XY>): Promise<string | null> {
-  const api = desktop!;
+/** 직접 저장: 프로젝트 파일을 덮어쓰고(처음이면 저장 창) .saves/에 시점 파일을 남긴다. 저장한 경로와 시점을 남겼는지, 취소면 null.
+ *  프로젝트 파일 저장이 실패하면 던진다. 시점 쓰기만 실패하면 파일은 저장됐으므로 경로는 돌려준다 (snapshot: false) */
+export async function saveToFolder(file: string | undefined, p: Project, positions: Record<string, XY>, api = desktop!): Promise<{ path: string; snapshot: boolean } | null> {
   const text = JSON.stringify(exportProject(p, positions), null, 2);
   const saved = await api.saveFile(file, text, `${p.name.replace(/[\\/:*?"<>|]/g, '_').slice(0, 60)}.aas.json`);
-  if (saved) await api.writeSnapshot(saved, 'manual', stamp(), text, MAX_MANUAL);
-  return saved;
+  if (!saved) return null;
+  try {
+    await api.writeSnapshot(saved, 'manual', stamp(), text, MAX_MANUAL);
+    return { path: saved, snapshot: true };
+  } catch {
+    return { path: saved, snapshot: false };
+  }
 }
 
 export async function readFolderSnapshots(file: string, kind: 'manual' | 'auto'): Promise<Snapshot[]> {

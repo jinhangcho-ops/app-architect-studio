@@ -53,8 +53,10 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
       <Section title="기본">
         <TextField label="이름" value={n.name} onChange={(v) => upd({ name: v })} />
         <Row label="레이어">
-          <Select value={n.layer} onChange={(e) => changeLayer(e.target.value as Layer)}>
-            {LAYERS.map((l) => <option key={l} value={l}>{LAYER_NAMES[l]}</option>)}
+          {/* 테이블은 db·cache·analytics 노드에만 둘 수 있어, 테이블이 있으면 다른 레이어로 바꾸면 계산이 막힌다 */}
+          <Select value={n.layer} onChange={(e) => changeLayer(e.target.value as Layer)}
+            title={n.tables.length ? `테이블이 있는 노드는 ${TABLE_LAYERS.map((l) => LAYER_NAMES[l]).join('·')} 레이어만 고를 수 있어요. 다른 레이어로 바꾸려면 테이블을 먼저 지우세요` : undefined}>
+            {LAYERS.map((l) => <option key={l} value={l} disabled={n.tables.length > 0 && !(TABLE_LAYERS as readonly string[]).includes(l)}>{LAYER_NAMES[l]}</option>)}
           </Select>
         </Row>
         <Row label="설명"><textarea value={n.description ?? ''} onChange={(e) => upd({ description: e.target.value || undefined })} /></Row>

@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { parseProject } from '../../engine/data';
 import { catalog, examples } from './data';
 import { addWire, bindApi } from './edit';
-import { EdgePanel } from './NodePanel';
+import { EdgePanel, NodePanel } from './NodePanel';
+import { LAYER_NAMES } from '../../engine/model';
 import { useStore } from './store';
 
 describe('연결선 패널', () => {
@@ -43,5 +44,26 @@ describe('연결선 패널', () => {
     expect(out).toContain('인터페이스 명세 (1)');
     expect(out).toContain('인터페이스 명세의 호출 수가 이 연결의 부하를 정합니다');
     expect(out.match(/disabled/g)!.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('노드 패널 레이어', () => {
+  it('테이블이 있는 노드는 db·cache·analytics 레이어만 고를 수 있음 (나머지는 비활성 + 이유)', () => {
+    const ex = examples.find((e) => e.name === 'actions.json')!;
+    const p = parseProject(ex.data, catalog.items, ex.name);
+    const db = p.nodes.find((n) => n.tables.length)!;
+    useStore.setState({ project: p });
+    const el = document.createElement('div');
+    document.body.append(el);
+    const root = createRoot(el);
+    flushSync(() => root.render(<NodePanel id={db.id} />));
+    const pick = el.querySelector('button[title*="테이블"]') as HTMLButtonElement;
+    expect(pick).toBeTruthy();
+    flushSync(() => pick.click());
+    const off = [...document.querySelectorAll('.select-list [role="option"][aria-disabled="true"]')].map((o) => o.textContent);
+    expect(off).toContain(LAYER_NAMES.backend);
+    expect(off).not.toContain(LAYER_NAMES.cache);
+    root.unmount();
+    el.remove();
   });
 });

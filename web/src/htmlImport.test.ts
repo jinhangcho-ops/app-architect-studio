@@ -31,6 +31,11 @@ describe('관문: v2 예시 화면(order_checkout.html)에서 영역 7개', () =
     expect(r.apiCalls).toEqual([{ method: 'POST', path: '/api/v2/orders' }, { method: 'GET', path: '/api/v2/pricing' }]);
   });
 
+  it('data-api 앞뒤 공백은 무시', () => {
+    expect(parseHtml('<button data-api="  post /api/x ">a</button><button data-api=" /api/y">b</button>').apiCalls)
+      .toEqual([{ method: 'POST', path: '/api/x' }, { method: 'GET', path: '/api/y' }]);
+  });
+
   it('시맨틱 태그가 아니어도 클래스 이름으로 역할을 맞힘', () => {
     const div = parseHtml('<div class="modal-popup"><button>닫기</button></div><div id="left-sidebar"></div>');
     expect(div.regions.map((x) => x.role)).toEqual(['모달', '사이드바']);

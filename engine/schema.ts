@@ -603,8 +603,8 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
   const nodeIds = new Set(p.nodes.map((n) => n.id));
   // 노드 id가 겹치면 연결선이 어느 노드인지 몰라 순환처럼 보이므로 맨 먼저 알린다
   const errors: string[] = dupes(p.nodes.map((n) => n.id)).map((d) => `노드 id 중복 ${d}`);
-  // load.ts와 같은 몫(entry_share, 없으면 1 / 화면 수). 합이 1을 넘으면 사용자 수보다 많은 요청이 들어온다
-  const entries = entryNodes(p), shareSum = entries.reduce((s, n) => s + (n.entry_share ?? 1 / entries.length), 0);
+  // 정한 몫만의 합이 1을 넘으면 사용자 수보다 많은 요청이 들어온다 (비운 칸은 load.ts가 남은 몫을 나눠 주므로 오류를 만들지 않음)
+  const shareSum = entryNodes(p).reduce((s, n) => s + (n.entry_share ?? 0), 0);
   if (shareSum > 1 + 1e-9) errors.push(`화면 노드 진입 몫(entry_share) 합이 1을 넘음 (${+shareSum.toFixed(4)})`);
   for (const n of p.nodes) {
     for (const id of itemIds(n)) {

@@ -38,15 +38,16 @@ describe('관문: 12절 지연시간 (λ, S = 20ms, 대당 동시 처리 8)', ()
 });
 
 describe('관문: 13절 가용성 (1대 99.9%)', () => {
-  it('3개 노드 직렬 → 99.70%, 월 약 2.16시간 중단', () => {
+  // 한 달 = 730시간 (감사 5 M7)
+  it('3개 노드 직렬 → 99.70%, 월 약 2.19시간 중단', () => {
     const a = pathAvailability([0.999, 0.999, 0.999]).value;
     expect(a).toBeCloseTo(0.997003, 6);
-    expect(monthlyDowntimeHours(a).value).toBeCloseTo(2.16, 2);
+    expect(monthlyDowntimeHours(a).value).toBeCloseTo(0.002997001 * 730, 6);
   });
-  it('DB만 2대로 이중화 → 99.80%, 월 약 1.44시간', () => {
+  it('DB만 2대로 이중화 → 99.80%, 월 약 1.46시간', () => {
     const a = pathAvailability([0.999, 0.999, nodeAvailability(0.999, 2)]).value;
     expect(a).toBeCloseTo(0.998, 5);
-    expect(monthlyDowntimeHours(a).value).toBeCloseTo(1.44, 2);
+    expect(monthlyDowntimeHours(a).value).toBeCloseTo(1.46, 2);
   });
   it('장애 영향: 동기로 닿는 화면은 멈춤, 비동기를 거치면 지연', () => {
     const p = Project.parse({
@@ -81,6 +82,10 @@ describe('관문: 8절 한계 사용자 (활성 사용자 10만, 이벤트 900 R
       { normal: { writer_nodes: 2, peak_write_rps: 1 }, event: { writer_nodes: 2, peak_write_rps: 1 } })).toBe(0);
     expect(limitFactor(node({ layer: 'gateway', primary: 'round_robin' }), catalog.byId,
       { normal: { service_time_cv: 0.3 }, event: { service_time_cv: 0.3 } })).toBeUndefined();
+  });
+  it('100만 배까지 버티면 Infinity(한계 없음), 모름(undefined)과 나눔 (리뷰 4 L2)', () => {
+    expect(limitFactor(node({ layer: 'backend', primary: 'api_autoscale' }), catalog.byId,
+      { normal: { peak_rps: 1e-6 }, event: { peak_rps: 1e-6 } })).toBe(Infinity);
   });
 });
 
@@ -162,10 +167,10 @@ describe('analyze: 예시 프로젝트 전체', () => {
 });
 
 describe('이중화 대수가 비용에 들어감', () => {
-  it('3단계 예시의 PostgreSQL 2대 → 2대 × 720시간 × 0.2', () => {
+  it('3단계 예시의 PostgreSQL 2대 → 2대 × 730시간 × 0.2', () => {
     const p = loadProject(here('../../examples/phase3.json'), catalog.items);
     const a = analyze(p, { catalog: catalog.byId, rules: catalog.rules, prices }, '2026-10-23');
-    expect(a.cost!.parts.db.value).toBeCloseTo(2 * 720 * 0.2);
+    expect(a.cost!.parts.db.value).toBeCloseTo(2 * 730 * 0.2);
   });
 });
 

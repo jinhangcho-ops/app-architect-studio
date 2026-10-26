@@ -153,18 +153,18 @@ export function importTables(p: Project, nodeId: string, tables: Table[]): { pro
   return { project, replaced };
 }
 
-/** 이름이 name인 첫 테이블만 바꾸거나(fn) 지운다(fn이 없을 때). 이름이 겹친 깨진 파일에서도 하나씩 고칠 수 있게 */
-const atFirst = (p: Project, nodeId: string, name: string, fn?: (t: Table) => Table): Project =>
+/** 이름이 name인 테이블 하나만 바꾸거나(fn) 지운다(fn이 없을 때). at(순번)이 그 이름이면 그것, 아니면 첫 일치 — 이름이 겹친 깨진 파일에서도 하나씩 고칠 수 있게 */
+const atOne = (p: Project, nodeId: string, name: string, at: number | undefined, fn?: (t: Table) => Table): Project =>
   mapTables(p, nodeId, (ts) => {
-    const i = ts.findIndex((t) => t.name === name);
+    const i = at !== undefined && ts[at]?.name === name ? at : ts.findIndex((t) => t.name === name);
     return ts.flatMap((t, k) => (k !== i ? [t] : fn ? [fn(t)] : []));
   });
 /** 같은 이름 테이블이 아직 남아 있으면 그 이름을 가리키는 행동·인터페이스는 그대로 둔다 */
 const still = (p: Project, nodeId: string, name: string) => !!p.nodes.find((n) => n.id === nodeId)?.tables.some((t) => t.name === name);
 
 /** 테이블 고치기. 이름이 바뀌면 그 테이블을 가리키는 행동도 같이 고친다 */
-export function updateTable(p: Project, nodeId: string, name: string, patch: Partial<Table>): Project {
-  const next = atFirst(p, nodeId, name, (t) => ({ ...t, ...patch }));
+export function updateTable(p: Project, nodeId: string, name: string, patch: Partial<Table>, at?: number): Project {
+  const next = atOne(p, nodeId, name, at, (t) => ({ ...t, ...patch }));
   if (patch.name === undefined || patch.name === name || still(next, nodeId, name)) return next;
   const rename = <T extends { node: string; table: string }>(w: T): T => (w.node === nodeId && w.table === name ? { ...w, table: patch.name! } : w);
   return {
@@ -175,18 +175,23 @@ export function updateTable(p: Project, nodeId: string, name: string, patch: Par
 }
 
 /** 테이블을 지우면 그 테이블에 쓰는 행동 줄도 지우고, 쓸 곳이 없어진 행동은 없앤다 */
-export function removeTable(p: Project, nodeId: string, name: string): Project {
-  const next = atFirst(p, nodeId, name);
+export function removeTable(p: Project, nodeId: string, name: string, at?: number): Project {
+  const next = atOne(p, nodeId, name, at);
   if (still(next, nodeId, name)) return next;
-  const actions = next.actions
-    .map((a) => ({ ...a, writes: a.writes.filter((w) => !(w.node === nodeId && w.table === name)) }))
-    .filter((a) => a.writes.length > 0);
-  const gone = next.actions.filter((a) => !actions.some((x) => x.name === a.name)).map((a) => a.name);
   const edges = next.edges.map((e) => ({ ...e, interfaces: e.interfaces.map((i) => {
     const tables = i.tables?.filter((t) => !(t.node === nodeId && t.table === name));
     return i.tables ? { ...i, tables: tables!.length ? tables : undefined } : i;
   }) }));
-  return dropRates({ ...next, actions, edges }, gone);
+  return keepWrites({ ...next, edges }, (w) => !(w.node === nodeId && w.table === name));
+}
+
+/** keep이 거른 쓰기 줄만 남긴다. 쓸 곳이 없어진 행동은 없애고 페르소나의 그 행동 빈도도 지운다 */
+export function keepWrites(p: Project, keep: (w: Action['writes'][number]) => boolean): Project {
+  const actions = p.actions
+    .map((a) => ({ ...a, writes: a.writes.filter(keep) }))
+    .filter((a) => a.writes.length > 0);
+  const gone = p.actions.filter((a) => !actions.some((x) => x.name === a.name)).map((a) => a.name);
+  return dropRates({ ...p, actions }, gone);
 }
 
 export function addTable(p: Project, nodeId: string): Project {

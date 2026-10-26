@@ -55,6 +55,35 @@ describe('되돌리기·다시 하기 (Ctrl+Z / Ctrl+Y)', () => {
     rename('편집');
     expect(s().undo()).toBe(false);
   });
+
+  it('같은 파일의 이전 시점 복구(경계 아님)는 되돌려도 불러오기를 넘었다고 알리지 않음', () => {
+    const p = s().project;
+    s().load({ ...p, name: '같은 파일 이전 시점' }, undefined, false);
+    expect(s().undo()).toBe(false);
+    expect(s().redo()).toBe(false);
+  });
+});
+
+describe('범위 밖 숫자 편집은 적용하지 않음 (저장하면 그 파일을 못 열게 되므로)', () => {
+  const scale = (patch: object) => s().edit((p) => ({ ...p, scale: { ...p.scale!, ...patch } }));
+  it('범위 밖·정수 아님·빈 숫자는 막고 알림, 범위 안 숫자와 글자 칸 비우기는 적용', () => {
+    const before = s().project;
+    for (const bad of [{ window_share: 80 }, { event_multiplier: 0.5 }, { users: -5 }, { seed: 1.5 }, { users: undefined }]) {
+      s().set({ rejected: undefined });
+      scale(bad);
+      expect(s().project).toBe(before);
+      expect(s().rejected).toMatch(/scale\./);
+    }
+    s().edit((p) => ({ ...p, target_utilization: 70 }));
+    expect(s().project).toBe(before);
+    s().set({ rejected: undefined });
+    scale({ users: 1234 });
+    expect(s().project.scale!.users).toBe(1234);
+    rename('');
+    expect(nameOf('api')).toBe('');
+    expect(s().rejected).toBeUndefined();
+    useStore.setState({ project: before });
+  });
 });
 
 describe('파일 불러오기에서 화면으로 고칠 수 없는 것을 걸러 냄', () => {
@@ -67,5 +96,24 @@ describe('파일 불러오기에서 화면으로 고칠 수 없는 것을 걸러
     expect(r.dropped).toContain('연결선 2개');
     expect(r.dropped).toContain('행동 비율 1개');
     expect(importProject(JSON.parse(JSON.stringify(p)), 'x.json').dropped).toBeUndefined();
+  });
+
+  it('id가 겹친 노드는 둘째부터 -2, -3을 붙이고 연결선은 첫째에만 남김', () => {
+    const p = exportProject(s().project, {});
+    const api = p.nodes.find((n) => n.id === 'api')!;
+    const data = { ...p, nodes: [...p.nodes, { ...api, name: '둘째', pos: { x: 1, y: 2 } }, { ...api, name: '셋째' }] };
+    const r = importProject(JSON.parse(JSON.stringify(data)), 'x.json');
+    expect(r.project.nodes.filter((n) => n.name === '둘째' || n.name === '셋째').map((n) => n.id)).toEqual(['api-2', 'api-3']);
+    expect(r.project.nodes.find((n) => n.id === 'api')!.name).toBe(api.name);
+    expect(r.project.edges).toEqual(s().project.edges);
+    expect(r.positions['api-2']).toEqual({ x: 1, y: 2 });
+    expect(r.dropped).toContain('노드 id');
+  });
+
+  it('범위 밖 선택 숫자 칸은 빼고 열고 알림에 합침', () => {
+    const p = exportProject(s().project, {});
+    const r = importProject(JSON.parse(JSON.stringify({ ...p, scale: { ...p.scale, window_share: 80 } })), 'x.json');
+    expect(r.project.scale!.window_share).toBe(0.8);
+    expect(r.dropped).toContain('scale.window_share');
   });
 });

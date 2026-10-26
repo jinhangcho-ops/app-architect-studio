@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseProject } from '../../engine/data';
 import { catalog, examples } from './data';
-import { applyIndustry, updatePersona } from './edit';
+import { applyIndustry, removeNode, run, updatePersona, updateTable } from './edit';
 import { changedCounts, resetSettings } from './settingsDiff';
 
 const ex = examples.find((e) => e.name === 'phase3.json')!;
@@ -19,5 +19,19 @@ describe('설정 화면: 불러온 값에서 바뀐 항목', () => {
     const back = resetSettings(p, base);
     expect(Object.values(changedCounts(back, base)).every((n) => n === 0)).toBe(true);
     expect(back.nodes).toBe(p.nodes);
+  });
+
+  it('되돌린 행동이 지금 없는 노드·테이블에 쓰면 그 줄을 빼고, 쓸 곳이 없으면 행동과 페르소나 빈도도 정리', () => {
+    const ax = examples.find((e) => e.name === 'actions.json')!;
+    const b = parseProject(ax.data, catalog.items, ax.name);
+    const w = b.actions[0].writes[0];
+    const renamed = updateTable(b, w.node, w.table, { name: `${w.table}_v2` });
+    const back = resetSettings({ ...renamed, scale: { ...renamed.scale!, users: renamed.scale!.users * 2 } }, b);
+    expect(run(back, '2026-10-27').error).toBeUndefined();
+    expect(back.actions.flatMap((a) => a.writes).some((x) => x.node === w.node && x.table === w.table)).toBe(false);
+    const gone = resetSettings(removeNode(b, w.node), b);
+    expect(run(gone, '2026-10-27').error).toBeUndefined();
+    const names = new Set(gone.actions.map((a) => a.name));
+    expect(gone.personas.every((ps) => Object.keys(ps.action_rates).every((k) => names.has(k)))).toBe(true);
   });
 });

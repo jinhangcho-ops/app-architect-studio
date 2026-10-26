@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Component, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { parseProject } from '../../engine/data';
 import { interfaceFiles } from '../../engine/interfaces';
 import { schemaFiles } from '../../engine/ddl';
@@ -61,9 +61,11 @@ class Guard extends Component<{ children: ReactNode }, { error?: Error }> {
 }
 
 export function App() {
-  const { project, baseline, positions, selected, load, edit, relayout, select, focus, setFocus, undo, redo, past, future, clipboard, set, move } = useStore();
-  // 위치를 끌어도 다시 계산하지 않도록 프로젝트가 바뀔 때만 분석한다
-  const result = useMemo(() => run(project, today), [project]);
+  const { project, baseline, positions, selected, load, edit, relayout, select, focus, setFocus, undo, redo, past, future, clipboard, set, move, rejected } = useStore();
+  // 위치를 끌어도 다시 계산하지 않도록 프로젝트가 바뀔 때만 분석한다.
+  // 계산은 입력 뒤로 미룬다(사용자가 많으면 한 번에 0.5초 넘게 걸려 칸에 글자를 칠 때마다 멈추므로). 그동안은 바로 전 결과를 보인다
+  const computed = useDeferredValue(project);
+  const result = useMemo(() => run(computed, today), [computed]);
   const [tab, setTab] = useState<'selected' | 'results' | 'optimize'>('results');
   const fileRef = useRef<HTMLInputElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
@@ -92,13 +94,16 @@ export function App() {
   const [filePath, setFilePath] = useState<string>();
   useEffect(() => { document.title = filePath ? `${baseName(filePath)} - App Architect Studio` : 'App Architect Studio'; }, [filePath]);
   const restore = (snap: Snapshot, sameFile = false) => {
-    load(snap.project, snap.positions);
+    // 같은 파일의 이전 시점이면 경로가 그대로 맞으므로 되돌리기 경계로 치지 않는다
+    load(snap.project, snap.positions, !sameFile);
     if (!sameFile) setFilePath(undefined);
     startNewSnapshot();
     setRecovery(undefined);
     setHistory(false);
   };
   const say = (msg: string, ms = 2500) => { setNotice(msg); setTimeout(() => setNotice(undefined), ms); };
+  // 범위 밖 숫자라 적용하지 않은 편집 알림
+  useEffect(() => { if (rejected) { say(rejected, 6000); set({ rejected: undefined }); } }, [rejected]);
   // 다른 파일을 열기 전으로 되돌리면 Ctrl+S·폴더 자동 저장이 엉뚱한 파일에 쓰지 않게 열린 파일을 잊는다
   const leaveFile = (crossed: boolean) => {
     if (!crossed || !filePath) return;
@@ -111,7 +116,12 @@ export function App() {
   const loadNew: typeof load = (p, pos) => { load(p, pos); startNewSnapshot(); };
   /** 데스크톱 앱 저장: path가 없으면 "다른 이름으로 저장" 창. 저장한 파일로 이어서 작업한다 */
   const saveDesktop = (path: string | undefined, extra = '') => saveToFolder(path, project, positions)
-    .then((saved) => { if (saved) { setFilePath(saved); say(`저장했습니다: ${baseName(saved)}${extra}`); } })
+    .then((r) => {
+      if (!r) return;
+      setFilePath(r.path);
+      if (r.snapshot) say(`저장했습니다: ${baseName(r.path)}${extra}`);
+      else say(`저장했습니다: ${baseName(r.path)} · 저장 기록 시점은 남기지 못했습니다 (.saves 폴더에 쓸 수 없음)`, 8000);
+    })
     .catch((err: Error) => say(`저장하지 못했습니다: ${err.message}`, 8000));
   // 직접 저장(Ctrl+S). 데스크톱 앱: 프로젝트 파일 + 같은 폴더 .saves/ (최대 20개). 브라우저: 브라우저 저장소 (최대 20개)
   const save = () => {
@@ -244,7 +254,8 @@ export function App() {
   const analysis = result.analysis;
   const kpi = useMemo(() => <KpiStrip analysis={analysis} />, [analysis]);
   const left = useMemo(() => focus && <Palette nodeId={focus} analysis={analysis} />, [focus, analysis]);
-  const chart = useMemo(() => <LimitChart project={project} analysis={analysis} />, [project, analysis]);
+  // 분석과 짝을 맞춰 그리는 곳(그래프·범례·설계서)은 계산에 쓴 프로젝트를 넘긴다 (새 노드가 아직 분석에 없을 수 있어서)
+  const chart = useMemo(() => <LimitChart project={computed} analysis={analysis} />, [computed, analysis]);
   const right = useMemo(() => <>
     {tab === 'results' && <ResultsPanel analysis={analysis} />}
     {tab === 'optimize' && <OptimizePanel today={today} />}
@@ -316,7 +327,7 @@ export function App() {
           <button className="btn" onClick={relayout} disabled={view === '3d' || !!focus} title="카드를 보기 좋게 다시 늘어놓아요">자동 배치</button>
           <button className="btn" aria-pressed={view === '3d'} onClick={() => setView(view === '2d' ? '3d' : '2d')} disabled={!!focus} title="입체로 보기">3D 보기</button>
           <span className="spacer" />
-          {!focus && <Legend project={project} analysis={analysis} />}
+          {!focus && <Legend project={computed} analysis={analysis} />}
           <span className="panel-toggles" role="group" aria-label="패널 보이기">
             <button aria-pressed={!hide.bottom} title="아래 그래프" aria-label="아래 그래프" onClick={() => toggle({ bottom: !hide.bottom })}><PanelIcon side="bottom" /></button>
             <button aria-pressed={!hide.right} title="오른쪽 결과 패널" aria-label="오른쪽 결과 패널" onClick={() => toggle({ right: !hide.right })}><PanelIcon side="right" /></button>
@@ -390,7 +401,7 @@ export function App() {
     </div>
     <Tooltip />
     {/* 인쇄할 때 .app은 숨기고 설계서만 남기므로 .app 밖에 둔다 */}
-    {report && <Report project={project} analysis={result.analysis} positions={positions} plans={report.plans} today={today} onClose={() => setReport(undefined)} />}
+    {report && <Report project={computed} analysis={result.analysis} positions={positions} plans={report.plans} today={today} onClose={() => setReport(undefined)} />}
     </>
   );
 }

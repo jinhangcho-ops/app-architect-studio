@@ -16,7 +16,7 @@ const scaled = (vars: Vars, f: number): Vars => {
 
 /**
  * 이벤트 피크 기준으로 '안 됨'이 되기 직전의 배수. 부하와 무관하게 이미 안 되면 0,
- * 1,000,000배까지 버티거나 부하 변수가 없으면 undefined(한계 없음).
+ * 1,000,000배를 넘게 버티면 Infinity(한계 없음), 항목이나 부하 변수가 없으면 undefined(모름).
  */
 export function limitFactor(node: ProjectNode, catalog: Map<string, CatalogItem>, s: Scenario, at?: (f: number) => Vars): number | undefined {
   const items = itemIds(node).map((id) => catalog.get(id)!);
@@ -31,7 +31,7 @@ export function limitFactor(node: ProjectNode, catalog: Map<string, CatalogItem>
   let hi = 1;
   while (!fails(hi)) {
     hi *= 2;
-    if (hi > MAX_FACTOR) return undefined;
+    if (hi > MAX_FACTOR) return Infinity;
   }
   let lo = hi === 1 ? 0 : hi / 2; // 여기서 fails(lo)는 거짓, fails(hi)는 참
   // 상대 오차 1e-9까지 (사용자 수로 보면 1명보다 훨씬 작다)

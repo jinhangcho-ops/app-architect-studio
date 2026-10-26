@@ -50,7 +50,7 @@ export function extractApiCalls(doc: Document): ApiCall[] {
   doc.querySelectorAll('form[action]').forEach((f) => calls.push({ method: (f.getAttribute('method') ?? 'GET').toUpperCase(), path: f.getAttribute('action')! }));
   doc.querySelectorAll('a[href^="/api"]').forEach((a) => calls.push({ method: 'GET', path: a.getAttribute('href')! }));
   doc.querySelectorAll('[data-api]').forEach((e) => {
-    const [method, path] = e.getAttribute('data-api')!.split(/\s+/);
+    const [method, path] = e.getAttribute('data-api')!.trim().split(/\s+/);
     calls.push(path ? { method: method.toUpperCase(), path } : { method: 'GET', path: method });
   });
   const seen = new Set<string>();

@@ -46,6 +46,13 @@ describe('관문: 설계서 15절 표시 예시', () => {
     expect(checkRegulation(q, laws).map((h) => `${h.law} ${h.article}`)).toContain('개인정보 보호법 제28조의8');
   });
 
+  it('민감정보: 한국 사용자 → 제23조, 일본 사용자 → 第20条第2項(要配慮個人情報 취득 동의, 미확인) (감사 5 M9)', () => {
+    const q = Project.parse({ name: 'q', nodes: [{ id: 'h', name: '건강 DB', layer: 'db', region: 'aws:ap-northeast-1', privacy: { personal: true, sensitive: true, subjects: ['KR', 'JP'] } }] });
+    const r = checkRegulation(q, laws);
+    expect(r.map((h) => `${h.law} ${h.article}`)).toEqual(expect.arrayContaining(['개인정보 보호법 제23조', '個人情報保護法 第20条第2項']));
+    expect(r.find((h) => h.article === '第20条第2項')!.verified).toBe(false);
+  });
+
   it('조문 내용은 없고, 원문 대조 여부와 출처·기준일이 붙음', () => {
     for (const h of hits) {
       expect(Object.keys(h).sort()).toEqual(['article', 'asOf', 'law', 'nodeId', 'reason', 'source', 'verified']);

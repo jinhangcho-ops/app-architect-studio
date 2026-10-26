@@ -83,11 +83,11 @@ describe('백업·RPO', () => {
 
 describe('리전 복사본의 비용과 처리량', () => {
   const hours = (a: ReturnType<typeof run>, id: string) => a.cost!.parts[id].inputs;
-  it('standby는 대기 대수 × 24시간 × 30일을 복사본 리전 가격으로 더하고, active는 같은 대수를 한 번 더', () => {
+  it('standby는 대기 대수 × 730시간을 복사본 리전 가격으로 더하고, active는 같은 대수를 한 번 더', () => {
     const none = run(node(base, 'N-06', { dr: undefined })).cost!.parts['N-06'].value;
     const standby = run(node(base, 'N-06', { dr: { region: 'aws:ap-northeast-2', mode: 'standby', instances: 2 } }));
-    expect(standby.cost!.parts['N-06'].value - none).toBeCloseTo(2 * 24 * 30 * 0.2);
-    expect(hours(standby, 'N-06')['대·시간 aws-seoul-db-2vcpu 수량']).toBe(2 * 24 * 30);
+    expect(standby.cost!.parts['N-06'].value - none).toBeCloseTo(2 * 730 * 0.2);
+    expect(hours(standby, 'N-06')['대·시간 aws-seoul-db-2vcpu 수량']).toBeCloseTo(2 * 730, 9);
     const active = run(node(base, 'N-03', { dr: { region: 'aws:ap-northeast-1', mode: 'active' } })).cost!.parts['N-03'].value;
     expect(active).toBeGreaterThan(run(base).cost!.parts['N-03'].value * 1.9);
   });
@@ -98,9 +98,9 @@ describe('리전 복사본의 비용과 처리량', () => {
     expect(a.cost!.parts['저장'].value - b.cost!.parts['저장'].value).toBeCloseTo(gb * 0.1);
   });
 
-  it('데이터 노드 복사본은 하루 쓰는 행 × 행 크기 × 30을 리전 간 전송으로 더함', () => {
+  it('데이터 노드 복사본은 하루 쓰는 행 × 행 크기 × 730/24일을 리전 간 전송으로 더함', () => {
     const a = run(base), b = run(node(base, 'N-06', { dr: undefined }));
-    const gb = a.tables.filter((x) => x.nodeId === 'N-06').reduce((s2, x) => s2 + x.writtenRowsPerDay * x.rowBytes.value, 0) * 30 / 1e9;
+    const gb = a.tables.filter((x) => x.nodeId === 'N-06').reduce((s2, x) => s2 + x.writtenRowsPerDay * x.rowBytes.value, 0) * (730 / 24) / 1e9;
     expect(gb).toBeGreaterThan(0);
     const price = d.prices.find((r) => (r.product ?? r.id) === base.cost.transfer && r.region === 'aws:ap-northeast-1')!.price;
     expect(a.cost!.parts['리전 간 전송'].value - b.cost!.parts['리전 간 전송'].value).toBeCloseTo(gb * price, 6);

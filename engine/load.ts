@@ -16,8 +16,11 @@ export function nodeLoads(p: Project, t: Traffic): Map<string, NodeLoad> {
   }]));
 
   const entries = entryNodes(p);
+  // 진입 몫을 비운 화면은 남은 몫(1 − 정한 몫 합, 음수면 0)을 똑같이 나눈다
+  const unset = entries.filter((n) => n.entry_share === undefined).length;
+  const rest = Math.max(0, 1 - entries.reduce((s, n) => s + (n.entry_share ?? 0), 0)) / Math.max(1, unset);
   for (const n of entries) {
-    const share = n.entry_share ?? 1 / entries.length;
+    const share = n.entry_share ?? rest;
     const l = loads.get(n.id)!;
     l.rps = { normal: t.peakRps.value * share, event: t.peakRpsEvent.value * share };
     l.writeRps = { normal: t.peakWriteRps.value * share, event: t.peakWriteRpsEvent.value * share };

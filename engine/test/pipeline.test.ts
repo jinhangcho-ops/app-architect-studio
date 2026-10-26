@@ -139,12 +139,12 @@ describe('소비자 자동 확장 (KEDA처럼)', () => {
     expect(autoscaleDay(Array(1440).fill(20), { ...o, max: 10 }).lag).toBe(Infinity);
   });
 
-  it('예시: 사용자 패턴에서 대수가 나오고, 비용은 시간대별 평균 대수 × 30일', () => {
+  it('예시: 사용자 패턴에서 대수가 나오고, 비용은 시간대별 평균 대수 × 730/24일', () => {
     expect(af.auto!.normal.min).toBeLessThan(af.auto!.normal.max);
     expect(af.auto!.event.max).toBe(6);
     expect(auto.nodes['N-05'].instances!.event.value).toBe(6);
     const qty = Object.entries(auto.cost!.parts['N-05'].inputs).find(([k]) => k.endsWith('수량'))![1];
-    expect(qty).toBeCloseTo(af.auto!.normal.hourly.reduce((a, x) => a + x, 0) * 30);
+    expect(qty).toBeCloseTo(af.auto!.normal.hourly.reduce((a, x) => a + x, 0) * (730 / 24));
     expect(auto.cost!.parts['N-05'].value).toBeLessThan(run(base).cost!.parts['N-05'].value);
     const calm = run({ ...gc, scale: { ...gc.scale!, event_multiplier: 1 } });
     expect(flow(calm, 'N-05').auto!.event.max).toBeLessThan(6);

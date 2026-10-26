@@ -2,7 +2,7 @@
 // 새 버전 확인·업데이트 (electron/update.cjs): 네트워크·창·설치 프로그램 없이 가짜로 확인한다
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,6 +21,7 @@ const u = require('../../electron/update.cjs') as {
     install: () => Promise<{ ok: boolean; reason?: string }>;
   };
   RELEASES: string;
+  removeOldDownloads: (dir: string) => string[];
 };
 
 const res = (body: string | Buffer, status = 200, url = ''): Res => {
@@ -174,5 +175,15 @@ describe('지금 업데이트', () => {
     const { updater, calls } = setup();
     expect((await updater.install()).ok).toBe(false);
     expect(calls).toEqual([]);
+  });
+});
+
+describe('지난 업데이트 설치 파일 정리', () => {
+  it('이 앱이 만든 aas-update-xxxxxx 폴더만 지움', () => {
+    const dir = mkdtempSync(join(tmp, 'clean-'));
+    const ours = mkdtempSync(join(dir, 'aas-update-'));
+    for (const n of ['aas-update-keep-me', 'other']) mkdirSync(join(dir, n));
+    expect(u.removeOldDownloads(dir)).toEqual([ours.slice(dir.length + 1)]);
+    expect(readdirSync(dir).sort()).toEqual(['aas-update-keep-me', 'other']);
   });
 });

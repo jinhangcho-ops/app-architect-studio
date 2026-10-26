@@ -142,9 +142,19 @@ function latestRedirect(net) {
   });
 }
 
+/** 지난 업데이트가 남긴 설치 파일 폴더(이 앱이 mkdtemp로 만든 aas-update-*만)를 지운다. 설치가 끝나면 앱이 꺼져서 그때는 못 지운다 */
+function removeOldDownloads(tempDir) {
+  let names = [];
+  try { names = fs.readdirSync(tempDir); } catch { return []; }
+  return names.filter((n) => /^aas-update-[A-Za-z0-9]{6}$/.test(n)).filter((n) => {
+    try { fs.rmSync(path.join(tempDir, n), { recursive: true, force: true }); return true; } catch { return false; }
+  });
+}
+
 /** Electron에 연결 */
 function registerUpdateApi() {
   const { app, ipcMain, net } = require('electron');
+  removeOldDownloads(app.getPath('temp'));
   const updater = createUpdater({
     latestUrl: () => latestRedirect(net),
     fetchImpl: (url, init) => net.fetch(url, init),
@@ -161,4 +171,4 @@ function registerUpdateApi() {
   ipcMain.handle('update:install', () => updater.install());
 }
 
-module.exports = { parseVersion, compareVersions, tagFromUrl, createUpdater, registerUpdateApi, RELEASES, MIN_FREE };
+module.exports = { parseVersion, compareVersions, tagFromUrl, createUpdater, registerUpdateApi, removeOldDownloads, RELEASES, MIN_FREE };

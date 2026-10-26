@@ -76,7 +76,8 @@ def analyze_folder(root: str) -> dict:
                 path = os.path.join(dirpath, fn)
                 try:
                     modules.append(analyze_file(root, path))
-                except (SyntaxError, UnicodeDecodeError) as e:  # 파일 하나 때문에 폴더 전체가 멈추지 않게
+                # ValueError: 3.11 이하 NUL 바이트, OSError: 잠긴 파일. 파일 하나 때문에 폴더 전체가 멈추지 않게
+                except (SyntaxError, ValueError, UnicodeDecodeError, OSError) as e:
                     print(f"건너뜀: {os.path.relpath(path, root)} ({type(e).__name__}: {e})", file=sys.stderr)
     ids = {m["id"] for m in modules}
     edges, matches = [], []

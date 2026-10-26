@@ -1,5 +1,5 @@
 import { Select } from './Select';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { Persona, REGIONS, Scale, PATTERN_IDS, SERVICE_KINDS, type Exchange, type PriceRow, type Project } from '../../engine/schema';
 import { RECOMMEND, SERVICE_NAMES } from './exchange';
 import { DayPeakSection, PersonaMixEditor } from './PeakSections';
@@ -52,6 +52,7 @@ export function ProjectPanel() {
               {Object.keys(STANDARD_OFFSET).map((c) => <option key={c} value={c}>{c}</option>)}
             </Select>
           </Row>
+          <NumField label="보관 기간(일)" hint="데이터를 지우지 않고 두는 기간. 테이블마다 따로 정하지 않으면 이 값으로 저장량을 계산해요" value={p.scale.retention_days} step={30} onChange={(v) => setScale({ retention_days: v ?? 365 })} />
           <NumField label="시드" hint="같은 값이면 같은 결과가 나와요" value={p.scale.seed} step={1} onChange={(v) => setScale({ seed: v ?? 1 })} />
           <NumField label="목표 사용률" hint="이 선을 넘으면 착수 시점으로 봐요" value={p.target_utilization} step={0.05} onChange={(v) => v && set({ target_utilization: v })} />
           <Row label="큐 적체 계산 단위" hint="대수가 고정된 큐 소비자의 적체를 몇 분 칸 평균 도착으로 계산할지. 짧을수록 몇 분짜리 몰림이 적체에 보여요 (자동 확장 소비자는 늘 1분)">
@@ -78,7 +79,8 @@ export function ProjectPanel() {
           );
         })}
         {editPersonas && p.personas.map((ps, i) => (
-          <div key={i} className="persona">
+          <Fragment key={i}>
+          <div className="persona">
             <input value={ps.name} onChange={(e) => setPersona(i, { name: e.target.value })} aria-label="이름" />
             <Select value={ps.pattern} onChange={(e) => setPersona(i, { pattern: e.target.value as typeof ps.pattern })} aria-label="패턴">
               {PATTERN_IDS.map((id) => <option key={id} value={id}>{PATTERNS[id].label}</option>)}
@@ -89,6 +91,10 @@ export function ProjectPanel() {
             </Select>
             <button onClick={() => edit((x) => removePersona(x, i))} aria-label="삭제">×</button>
           </div>
+          {/* 비우면 패턴의 기본값을 쓴다 */}
+          <NumField label={`${ps.name} 접속 횟수(하루)`} value={ps.sessions_per_day} step={0.5} hint={`비우면 패턴 기본 ${PATTERNS[ps.pattern].sessions_per_day}회`} onChange={(v) => setPersona(i, { sessions_per_day: v })} />
+          <NumField label={`${ps.name} 접속 시간(분)`} value={ps.session_minutes} step={1} hint={`접속 한 번에 머무는 시간. 비우면 패턴 기본 ${PATTERNS[ps.pattern].session_minutes}분`} onChange={(v) => setPersona(i, { session_minutes: v })} />
+          </Fragment>
         ))}
         <div className="inline">
           <button onClick={() => setEditPersonas(!editPersonas)}>{editPersonas ? '편집 끝' : '편집'}</button>
@@ -139,6 +145,7 @@ export function ProjectPanel() {
         {!p.growth && <button onClick={() => set({ growth: { monthly_rate: 0.1, months: 24, lead_months: 3 } })}>성장률 입력하기</button>}
         {p.growth && <>
           {!p.growth.inflow && <NumField label="월 성장률" value={p.growth.monthly_rate} step={0.01} onChange={(v) => set({ growth: { ...p.growth!, monthly_rate: v ?? 0 } })} />}
+          <NumField label="보는 기간(월)" value={p.growth.months} step={6} hint="월별 비용·유입 곡선을 몇 개월까지 보일지" onChange={(v) => set({ growth: { ...p.growth!, months: v ?? 24 } })} />
           <NumField label="준비 기간(월)" value={p.growth.lead_months} step={1} onChange={(v) => set({ growth: { ...p.growth!, lead_months: v ?? 0 } })} />
           {!p.growth.inflow && p.scale && p.personas.length > 0 && <button onClick={() => set({ growth: { ...p.growth!, inflow: {
             market: p.scale!.users * 10, external: 0.01, word_of_mouth: 0.3, up: 0.05, down: 0.03, leave: 0.1,

@@ -10,6 +10,10 @@ export type Metric = {
   basis?: Basis;
 };
 
+/** 한 달 = 730시간 (클라우드 가격표의 월 환산 기준, 365일 × 24 / 12) */
+export const HOURS_PER_MONTH = 730;
+export const DAYS_PER_MONTH = HOURS_PER_MONTH / 24;
+
 /** Metric 만들기 (basis 없이) */
 export const metric = (value: number, unit: string, formula: string, inputs: Record<string, number>): Metric => ({ value, unit, formula, inputs });
 

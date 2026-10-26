@@ -70,7 +70,8 @@ export function paginate(entries: Entry[], frame: { w: number; h: number }, name
     const y = e.y - page * frame.h;
     (pages[page] ??= []).push({ ...e, x: Math.max(0, e.x), y, w: Math.min(e.w, frame.w - Math.max(0, e.x)), h: Math.min(e.h, frame.h - y) });
   }
-  const filled = pages.map((p) => p ?? []).filter((p, i, all) => p.length || i < all.length - 1);
+  // pages는 건너뛴 장이 비어 있는 희소 배열이라 map은 빈 자리를 건너뛴다 → Array.from으로 채운다
+  const filled = Array.from(pages, (p) => p ?? []).filter((p, i, all) => p.length || i < all.length - 1);
   if (!filled.length) return [{ name, items: [] }];
   return filled.map((items, i) => ({
     name: filled.length > 1 ? `${name} (${i + 1}/${filled.length})` : name,

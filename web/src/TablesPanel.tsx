@@ -66,7 +66,7 @@ export function TablesSection({ node }: { node: ProjectNode }) {
         {report.errors.length > 0 && <ul className="warn">{report.errors.map((e) => <li key={e}>{e}</li>)}</ul>}
       </details>
       {/* 이름이 겹친 깨진 파일에서도 키가 겹치지 않게 순서를 더한다 */}
-      {node.tables.map((t, i) => <TableEditor key={`${i}:${t.name}`} node={node} t={t} />)}
+      {node.tables.map((t, i) => <TableEditor key={`${i}:${t.name}`} node={node} t={t} at={i} />)}
       <button onClick={() => edit((p) => addTable(p, node.id))}>테이블 추가</button>
     </Section>
   );
@@ -80,9 +80,10 @@ const warningsOf = (p: Project) => {
   return w;
 };
 
-export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t: Table; open?: boolean; onRename?: (name: string) => void }) {
+/** at: 노드 안 순번. 이름이 겹친 깨진 파일에서 이 테이블만 고치게 (없으면 이름이 같은 첫 테이블) */
+export function TableEditor({ node, t, at, open, onRename }: { node: ProjectNode; t: Table; at?: number; open?: boolean; onRename?: (name: string) => void }) {
   const { project, edit } = usePick('project', 'edit');
-  const upd = (patch: Partial<Table>) => edit((p) => updateTable(p, node.id, t.name, patch));
+  const upd = (patch: Partial<Table>) => edit((p) => updateTable(p, node.id, t.name, patch, at));
   const warns = warningsOf(project).filter((w) => w.node === node.id && w.table === t.name);
   const setCol = (i: number, patch: Partial<Column>) => upd({ columns: patchAt(t.columns, i, patch) });
   const setIx = (i: number, patch: Partial<Table['indexes'][number]>) => upd({ indexes: patchAt(t.indexes, i, patch) });
@@ -175,7 +176,7 @@ export function TableEditor({ node, t, open, onRename }: { node: ProjectNode; t:
         ))}</tbody>
       </table></div>
       <button onClick={() => upd({ indexes: [...t.indexes, { name: newIndexName(node, t), columns: [t.columns[0].name], unique: false }] })}>인덱스 추가</button>
-      <button className="danger" onClick={() => edit((p) => removeTable(p, node.id, t.name))}>테이블 삭제</button>
+      <button className="danger" onClick={() => edit((p) => removeTable(p, node.id, t.name, at))}>테이블 삭제</button>
     </details>
   );
 }

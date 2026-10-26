@@ -1,5 +1,5 @@
 // 13절 가용성: 노드 = 1 − (1 − a)^n, 경로 = 노드 곱(장애가 서로 독립이라고 가정).
-import type { Metric } from './model';
+import { HOURS_PER_MONTH, type Metric } from './model';
 import { entryNodes, type Project, type ProjectNode } from './schema';
 
 export const nodeAvailability = (a: number, replicas: number) => 1 - (1 - a) ** replicas;
@@ -10,7 +10,7 @@ export function pathAvailability(nodeAs: number[]): Metric {
 }
 
 export const monthlyDowntimeHours = (availability: number): Metric =>
-  ({ value: (1 - availability) * 720, unit: '시간/월', formula: '(1 − 가용성) × 720시간', inputs: { 가용성: availability } });
+  ({ value: (1 - availability) * HOURS_PER_MONTH, unit: '시간/월', formula: `(1 − 가용성) × ${HOURS_PER_MONTH}시간`, inputs: { 가용성: availability } });
 
 /** 부하와 무관하게 늘 떠 있는 대수: max(1, 이중화, 최소 대수)를 최대 대수로 자른 것 (장애 시나리오도 같은 상한) */
 export const standingInstances = (n: ProjectNode, max = Infinity) => Math.min(max, Math.max(1, n.replicas, n.min_instances));

@@ -1,5 +1,6 @@
 // 설정 화면의 칸과 그 칸이 다루는 값. 불러온 프로젝트(baseline)와 비교해 바뀐 항목 수를 세고, 한 번에 되돌린다.
 import type { Project } from '../../engine/schema';
+import { keepWrites } from './edit';
 
 const flat = (o: object | undefined, pre = ''): Record<string, unknown> =>
   Object.fromEntries(Object.entries(o ?? {}).map(([k, v]) => [pre + k, v]));
@@ -32,9 +33,13 @@ export function changedCounts(now: Project, base: Project): Record<string, numbe
   }));
 }
 
-/** 설정 화면이 다루는 값만 불러온 때로 되돌린다 (노드·연결선·위치는 그대로) */
-export const resetSettings = (now: Project, base: Project): Project => ({
-  ...now,
-  name: base.name, deploy: base.deploy, scale: base.scale, target_utilization: base.target_utilization,
-  personas: base.personas, persona_mix: base.persona_mix, actions: base.actions, exchange: base.exchange, growth: base.growth, cost: base.cost, recovery: base.recovery,
-});
+/** 설정 화면이 다루는 값만 불러온 때로 되돌린다 (노드·연결선·위치는 그대로).
+ *  되돌린 행동의 쓰기 줄은 지금 있는 노드·테이블로 거른다 (그 사이 지우거나 이름을 바꿨을 수 있어서) */
+export const resetSettings = (now: Project, base: Project): Project => {
+  const tables = new Set(now.nodes.flatMap((n) => n.tables.map((t) => `${n.id}\u0000${t.name}`)));
+  return keepWrites({
+    ...now,
+    name: base.name, deploy: base.deploy, scale: base.scale, target_utilization: base.target_utilization,
+    personas: base.personas, persona_mix: base.persona_mix, actions: base.actions, exchange: base.exchange, growth: base.growth, cost: base.cost, recovery: base.recovery,
+  }, (w) => tables.has(`${w.node}\u0000${w.table}`));
+};

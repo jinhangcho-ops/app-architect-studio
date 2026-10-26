@@ -34,6 +34,14 @@ describe('데이터 명세서 → 테이블', () => {
     expect(r.tables[1].indexes).toEqual([{ name: 'uq_sku', columns: ['sku'], unique: true }]);
   });
 
+  it('빈 첫 열(모든 줄이 탭으로 시작)과 앞뒤 빈 줄이 있어도 같게 읽음 (감사 5 M11)', () => {
+    const shifted = parseSpec(`\r\n  \n${tsv.split('\n').map((l) => `\t${l}`).join('\n')}\n\n`);
+    expect(shifted.errors).toEqual([]);
+    expect(shifted.tables).toEqual(r.tables);
+    // 머리 줄 앞 BOM은 지금처럼 지움
+    expect(parseSpec(String.fromCharCode(0xfeff) + tsv).tables).toEqual(r.tables);
+  });
+
   it('CSV(따옴표 안 쉼표)와 영문 머리글', () => {
     const csv = 'table,column,type,description\nusers,id,bigint,"번호, 자동 증가"\nusers,email,text,';
     const c = parseSpec(csv);

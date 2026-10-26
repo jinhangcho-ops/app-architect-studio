@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { FORMAT_VERSION, migrate, parseProject } from '../../engine/data';
-import { snapshotFromFile } from './autosave';
+import { saveToFolder, snapshotFromFile } from './autosave';
 import { catalog, examples } from './data';
-import { stamp, stampTime } from './desktop';
+import { stamp, stampTime, type DesktopApi } from './desktop';
 import { exportProject, importProject } from './store';
 
 const require = createRequire(import.meta.url);
@@ -50,6 +50,16 @@ describe('데스크톱 앱 폴더 저장 (electron/files.cjs)', () => {
   it('경로가 섞인 이름이나 모르는 종류는 거부', () => {
     expect(() => files.writeSnapshot(project, 'manual', '../../evil', '{}', 20)).toThrow('시점 이름 형식');
     expect(() => files.writeSnapshot(project, 'secret', '2026-10-24_03-00-00', '{}', 20)).toThrow('알 수 없는 저장 종류');
+  });
+});
+
+describe('직접 저장 (saveToFolder)', () => {
+  const p = parseProject(examples.find((e) => e.name === 'phase3.json')!.data, catalog.items);
+  // 데스크톱 API 흉내: 프로젝트 파일은 저장되고 .saves 시점 쓰기만 실패
+  const api = (snap: () => Promise<boolean>) => ({ saveFile: async (f: string | undefined) => f ?? 'C:/새.aas.json', writeSnapshot: snap }) as unknown as DesktopApi;
+  it('시점 쓰기만 실패해도 저장한 경로는 돌려주고 시점 실패만 알림', async () => {
+    expect(await saveToFolder('C:/a.aas.json', p, {}, api(() => Promise.reject(new Error('디스크'))))).toEqual({ path: 'C:/a.aas.json', snapshot: false });
+    expect(await saveToFolder(undefined, p, {}, api(async () => true))).toEqual({ path: 'C:/새.aas.json', snapshot: true });
   });
 });
 

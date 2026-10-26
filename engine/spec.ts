@@ -95,9 +95,10 @@ function splitRows(text: string, sep: string): string[][] {
 }
 
 export function parseSpec(text: string): SpecResult {
-  const trimmed = text.trim();
-  if (!trimmed) return { tables: [], errors: ['명세서가 비어 있음'] };
-  if (trimmed.startsWith('[') || trimmed.startsWith('{')) return parseJson(trimmed);
+  // 앞 빈 줄과 머리 줄 앞 탭 아닌 공백(BOM 포함, \s에 듦)·뒤 공백만 지운다. trim()은 머리 줄 앞 탭까지 지워 빈 첫 열을 붙여 넣으면 칸이 밀렸다
+  const trimmed = text.replace(/^(?:\s*\n)?[^\S\t]*/, '').trimEnd();
+  if (!trimmed.trim()) return { tables: [], errors: ['명세서가 비어 있음'] };
+  if (/^\s*[[{]/.test(trimmed)) return parseJson(trimmed);
   return parseDelimited(trimmed, trimmed.split('\n')[0].includes('\t') ? '\t' : ',');
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { FORMAT_VERSION, migrate } from '../data';
+import { FORMAT_VERSION, migrate, readProject } from '../data';
+import { nodeLoads } from '../load';
 import { CatalogItem, Project, Table, checkCatalog, checkProject, checkTable, fitsType } from '../schema';
 
 const item = {
@@ -64,9 +65,21 @@ describe('테이블·연결 검증 (감사 2)', () => {
     const ui = (id: string, entry_share?: number) => ({ id, name: id, layer: 'ui', ...(entry_share !== undefined && { entry_share }) });
     const err = (nodes: object[]) => checkProject(Project.parse({ name: 'p', nodes }), []);
     expect(err([ui('a', 0.7), ui('b', 0.7)])).toEqual(['화면 노드 진입 몫(entry_share) 합이 1을 넘음 (1.4)']);
-    expect(err([ui('a', 0.9), ui('b')])).toEqual(['화면 노드 진입 몫(entry_share) 합이 1을 넘음 (1.4)']);
+    // 비운 칸은 남은 몫을 나눠 가지므로 오류가 아님 (리뷰 4 L4)
+    expect(err([ui('a', 0.9), ui('b')])).toEqual([]);
+    expect(err([ui('a', 1), ui('b')])).toEqual([]);
     expect(err([ui('a', 0.3), ui('b', 0.7)])).toEqual([]);
     expect(err([ui('a'), ui('b'), ui('c')])).toEqual([]);
+  });
+
+  it('비운 화면의 몫 = (1 − 정한 몫 합) / 비운 화면 수 (리뷰 4 L4)', () => {
+    const t = { peakRps: { value: 100 }, peakRpsEvent: { value: 200 }, peakWriteRps: { value: 10 }, peakWriteRpsEvent: { value: 20 } } as never;
+    const ui = (id: string, entry_share?: number) => ({ id, name: id, layer: 'ui', ...(entry_share !== undefined && { entry_share }) });
+    const rps = (nodes: object[]) => [...nodeLoads(Project.parse({ name: 'p', nodes }), t).values()].map((l) => +l.rps.normal.toFixed(9));
+    expect(rps([ui('a', 0.3), ui('b')])).toEqual([30, 70]);
+    expect(rps([ui('a', 0.4), ui('b'), ui('c')])).toEqual([40, 30, 30]);
+    expect(rps([ui('a', 1), ui('b')])).toEqual([100, 0]);
+    expect(rps([ui('a'), ui('b')])).toEqual([50, 50]);
   });
 
   it('노드 안 테이블·인덱스 이름 겹침은 오류 아님(경고), 테이블 이름 중복은 오류', () => {
@@ -99,5 +112,38 @@ describe('테이블·연결 검증 (감사 2)', () => {
     expect(FORMAT_VERSION).toBe(2);
     expect(migrate({ name: 'p', format_version: 1 })).toEqual({ name: 'p' });
     expect(migrate({ name: 'p' })).toEqual({ name: 'p' });
+  });
+});
+
+describe('앱 열기: 선택 숫자 칸의 범위 오류는 그 칸을 빼고 엶 (감사 5 M1)', () => {
+  const raw = (scale: object, persona: object = {}) => ({
+    name: 'p', nodes: [], scale: { users: 100, ...scale }, personas: [{ name: 'a', share: 1, pattern: 'regular', ...persona }],
+  });
+
+  it('비율 80·배수 0.5·정수 아님은 빼고(기본값이 있으면 기본값) 열고, 뺀 칸을 notes에 적음', () => {
+    const notes: string[] = [];
+    const p = readProject(raw({ window_share: 80, event_multiplier: 0.5 }, { window_share: 1.5 }), [], '파일', notes);
+    expect(p.scale!.window_share).toBe(0.8);
+    expect(p.scale!.event_multiplier).toBe(1);
+    expect(p.personas[0].window_share).toBeUndefined();
+    expect(notes).toHaveLength(3);
+    expect(notes.join('\n')).toMatch(/scale\.window_share.*80/);
+  });
+
+  it('화면에서 비운 인터페이스·행동 이름(필수)은 "이름 없음"으로 채워 엶', () => {
+    const notes: string[] = [];
+    const p = readProject({
+      ...raw({}), nodes: [{ id: 'a', name: 'A', layer: 'backend' }, { id: 'b', name: 'B', layer: 'backend' }],
+      edges: [{ from: 'a', to: 'b', interfaces: [{ name: '', kind: 'rest', method: 'GET', path: '/x' }] }],
+      actions: [{ name: '', per_session: 1, writes: [{ node: 'b', table: 't' }] }],
+    }, [], '파일', notes);
+    expect([p.edges[0].interfaces[0].name, p.actions[0].name]).toEqual(['이름 없음', '이름 없음']);
+    expect(notes).toHaveLength(2);
+  });
+
+  it('필수 칸이나 다른 종류 오류가 섞이면 지금처럼 던짐', () => {
+    expect(() => readProject(raw({ users: -5 }), [], '파일', [])).toThrow(/검증 실패/);
+    expect(() => readProject({ ...raw({ window_share: 80 }), name: 1 }, [], '파일', [])).toThrow(/검증 실패/);
+    expect(() => readProject(raw({ window_share: 80 }), [])).not.toThrow();
   });
 });

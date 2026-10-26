@@ -36,6 +36,12 @@
     "as_of": "2026-10-23", "source": "https://laws.e-gov.go.jp/law/415AC0000000057", "verified": false
   },
   {
+    "id": "jp-20-2", "law": "個人情報保護法", "article": "第20条第2項",
+    "trigger": "sensitive and subject_JP",
+    "reason": "일본 사용자 민감정보(要配慮個人情報) 포함: 취득 동의",
+    "as_of": "2026-10-27", "source": "https://laws.e-gov.go.jp/law/415AC0000000057", "verified": false
+  },
+  {
     "id": "jp-28", "law": "個人情報保護法", "article": "第28条",
     "trigger": "personal and subject_JP and store_country != 'JP' and store_country != 'local' and store_country != 'unknown'",
     "reason": "일본 사용자 개인정보 + {store_country} 리전 저장",

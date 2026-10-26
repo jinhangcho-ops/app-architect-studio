@@ -65,4 +65,31 @@ describe('한계 사용자를 모르면 "목표 한계 사용자"를 통과시�
     expect(r.best).toBeUndefined();
     expect(r.evaluated.every((x) => x.violations.includes('한계 사용자'))).toBe(true);
   });
+
+  it('항목이 없어 한계를 계산할 노드가 없으면 모름(통과 안 함), 계산한 노드가 모두 100만 배를 버티면 무한(통과) (리뷰 4 L2)', () => {
+    const goal = { optimize: { priorities: [], min_limit_users: 1e12 } };
+    const none = optimize(proj(1000, {}, goal), d, today).current;
+    expect(none.metrics.limitUsers).toBeUndefined();
+    expect(none.violations).toContain('한계 사용자');
+    const big = analyze(proj(1, { primary: 'api_autoscale' }, goal), d, today);
+    expect(big.bottleneck).toBeUndefined();
+    expect(big.nodes.api.limitUsers).toBeUndefined();
+    const cur = optimize(proj(1, { primary: 'api_autoscale' }, goal), d, today).current;
+    expect(cur.metrics.limitUsers).toBe(Infinity);
+    expect(cur.violations).not.toContain('한계 사용자');
+  });
+});
+
+describe('리뷰 4: 비용 하한, 실측 rps 자름', () => {
+  it('최대 1대 패턴(api_single)에 이중화 2를 넣어도 비용은 1대 (L3)', () => {
+    const cost = (replicas: number) => analyze(proj(1000, { primary: 'api_single', replicas }), d, today).cost!.parts.api.value;
+    expect(cost(2)).toBe(cost(1));
+  });
+
+  it('실측 rps가 처리 시간으로 잘리면 기준은 실측이 아니고, 같은 값이 inputs에 두 번 나오지 않음 (L5)', () => {
+    const per = analyze(proj(1000, { primary: 'api_autoscale', perf: { service_ms: 20, workers: 4 }, measured: { rps: 1000 } }), d, today).nodes.api.perInstanceRps!;
+    expect(per.value).toBe(200);
+    expect(per.basis).toBeUndefined();
+    expect(per.inputs).toEqual({ measured: 1000, workers: 4, 처리ms: 20 });
+  });
 });

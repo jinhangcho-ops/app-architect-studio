@@ -73,4 +73,13 @@ describe('긴 페이지 나누기', () => {
     expect(pages[1].items[0]).toMatchObject({ label: 'b', y: 56, w: 370 });
     expect(paginate([], f, '빈')).toEqual([{ name: '빈', items: [] }]);
   });
+
+  it('가운데 빈 장도 남김 (장 번호가 실제 위치와 맞게)', () => {
+    const f = DEVICES.mobile;
+    const pages = paginate([
+      { kind: 'header', label: 'h', x: 0, y: 0, w: 390, h: 60 },
+      { kind: 'text', label: 'z', x: 0, y: f.h * 2 + 10, w: 100, h: 20 },
+    ], f, '홈');
+    expect(pages.map((p) => [p.name, p.items.length])).toEqual([['홈 (1/3)', 1], ['홈 (2/3)', 0], ['홈 (3/3)', 1]]);
+  });
 });

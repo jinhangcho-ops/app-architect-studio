@@ -2,7 +2,7 @@
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { FORMAT_VERSION, parseProject, readProject } from '../../engine/data';
-import type { Project } from '../../engine/schema';
+import { Project as ProjectSchema, type Project } from '../../engine/schema';
 import { catalog, examples } from './data';
 import { autoLayout, type XY } from './layout';
 
@@ -15,8 +15,9 @@ type State = {
   baseline: Project;
   positions: Record<string, XY>;
   selected: Selection;
-  /** 프로젝트 전체를 바꾼다(예시·파일 불러오기). 위치가 없으면 자동 배치 */
-  load: (p: Project, positions?: Record<string, XY>) => void;
+  /** 프로젝트 전체를 바꾼다(예시·파일 불러오기). 위치가 없으면 자동 배치.
+   *  boundary=false: 같은 파일의 이전 시점 복구처럼 열린 파일 경로가 그대로 맞는 경우 (되돌려도 불러오기 경계로 치지 않음) */
+  load: (p: Project, positions?: Record<string, XY>, boundary?: boolean) => void;
   edit: (fn: (p: Project) => Project) => void;
   move: (id: string, xy: XY) => void;
   relayout: () => void;
@@ -36,7 +37,9 @@ type State = {
   clipboard?: Project['nodes'][number];
   /** 찾기에서 고른 노드로 캔버스를 옮기라는 요청 (캔버스가 처리하고 지운다) */
   flyTo?: string;
-  set: (patch: Partial<Pick<State, 'clipboard' | 'flyTo' | 'focusTab'>>) => void;
+  /** 범위 밖 숫자라 적용하지 않은 편집의 알림 (App이 보이고 지운다) */
+  rejected?: string;
+  set: (patch: Partial<Pick<State, 'clipboard' | 'flyTo' | 'focusTab' | 'rejected'>>) => void;
 };
 
 const HISTORY = 100;
@@ -53,6 +56,21 @@ const remember = (s: State, merge: boolean): Pick<State, 'past' | 'future'> => {
   return { past: join ? s.past : [...s.past, s.project].slice(-HISTORY), future: [] };
 };
 
+/** p의 숫자 범위·정수 오류 (경로 → 한국어 설명). 글자 칸 비우기 같은 다른 중간 상태는 세지 않는다 */
+function numberIssues(p: Project): Map<string, string> {
+  const r = ProjectSchema.safeParse(p);
+  const out = new Map<string, string>();
+  for (const i of r.success ? [] : r.error.issues) {
+    const why = (i.code === 'too_small' || i.code === 'too_big') && i.origin === 'number'
+      ? (i.code === 'too_small' ? `${String(i.minimum)}${i.inclusive ? ' 이상' : '보다 커야'}` : `${String(i.maximum)}${i.inclusive ? ' 이하' : '보다 작아야'}`)
+      : i.code === 'not_multiple_of' ? `${String(i.divisor)}의 배수`
+      : i.code === 'invalid_type' && (i.expected === 'number' || i.expected === 'int') ? (i.expected === 'int' ? '정수' : '숫자')
+      : undefined;
+    if (why) out.set(i.path.join('.'), why);
+  }
+  return out;
+}
+
 const first = examples.find((e) => e.name === 'phase3.json') ?? examples[0];
 const initial = parseProject(first.data, catalog.items, first.name);
 
@@ -64,10 +82,17 @@ export const useStore = create<State>((set, get) => ({
   positions: autoLayout(initial),
   selected: null,
   // 다른 프로젝트를 불러오는 것도 되돌릴 수 있다
-  load: (p, positions) => { loaded.add(p); set((s) => ({ ...remember(s, false), project: p, baseline: p, positions: { ...autoLayout(p), ...positions }, selected: null, focus: undefined })); },
+  load: (p, positions, boundary = true) => { if (boundary) loaded.add(p); set((s) => ({ ...remember(s, false), project: p, baseline: p, positions: { ...autoLayout(p), ...positions }, selected: null, focus: undefined })); },
   edit: (fn) => set((s) => {
     const project = fn(s.project);
     if (project === s.project) return {};
+    // 범위 밖 숫자(비율 80, 배수 0.5 …)를 저장하면 그 파일·자동 저장 시점을 못 연다 → 새로 생기는 숫자 오류면 적용하지 않고 알림
+    const bad = numberIssues(project);
+    if (bad.size) {
+      const had = numberIssues(s.project);
+      const fresh = [...bad].filter(([k]) => !had.has(k));
+      if (fresh.length) return { rejected: `허용 범위 밖 숫자라 바꾸지 않았어요: ${fresh.map(([k, why]) => `${k} (${why})`).join(', ')}` };
+    }
     const history = remember(s, true);
     // 새로 생긴 노드에만 자리를 준다
     const missing = project.nodes.filter((n) => !s.positions[n.id]);
@@ -105,10 +130,24 @@ export function exportProject(p: Project, positions: Record<string, XY>) {
 /** 저장 파일 → 프로젝트와 노드 위치 (exportProject의 반대). 모양이 틀린 파일이면 던지고, checkProject 오류는 run()이 배너로 보인다.
  *  화면에서 고를 수도 지울 수도 없는 것(없는 노드에 닿은 연결선, 페르소나의 없는 행동 비율)은 걸러 내고 dropped로 알린다 */
 export function importProject(data: unknown, name: string): { project: Project; positions: Record<string, XY>; dropped?: string } {
-  const nodes = (data as { nodes?: { id: string; pos?: XY }[] }).nodes ?? [];
-  const positions = Object.fromEntries(nodes.filter((n) => n.pos).map((n) => [n.id, n.pos!]));
-  const p = readProject(data, catalog.items, name);
-  const ids = new Set(p.nodes.map((n) => n.id));
+  const raw = (data as { nodes?: { id: string; pos?: XY }[] }).nodes ?? [];
+  const notes: string[] = [];
+  const read = readProject(data, catalog.items, name, notes);
+  // id가 겹친 노드는 둘째부터 -2, -3… (연결선·행동은 어느 쪽인지 모르므로 첫째에 남는다)
+  const ids = new Set(read.nodes.map((n) => n.id));
+  const seen = new Set<string>();
+  let renamed = 0;
+  const nodes = read.nodes.map((n) => {
+    if (!seen.has(n.id)) { seen.add(n.id); return n; }
+    let k = 2;
+    while (ids.has(`${n.id}-${k}`)) k++;
+    const id = `${n.id}-${k}`;
+    ids.add(id); seen.add(id); renamed++;
+    return { ...n, id };
+  });
+  const p = renamed ? { ...read, nodes } : read;
+  // 위치도 바뀐 id로 (readProject는 노드 순서를 그대로 둔다)
+  const positions = Object.fromEntries(raw.flatMap((n, k) => (n.pos && nodes[k] ? [[nodes[k].id, n.pos]] : [])));
   const acts = new Set(p.actions.map((a) => a.name));
   const edges = p.edges.filter((e) => ids.has(e.from) && ids.has(e.to));
   let rates = 0;
@@ -118,8 +157,13 @@ export function importProject(data: unknown, name: string): { project: Project; 
     return keep.length < Object.keys(ps.action_rates).length ? { ...ps, action_rates: Object.fromEntries(keep) } : ps;
   });
   const lost = [p.edges.length > edges.length && `없는 노드에 닿은 연결선 ${p.edges.length - edges.length}개`, rates && `페르소나의 없는 행동 비율 ${rates}개`].filter(Boolean);
-  if (!lost.length) return { project: p, positions };
-  return { project: { ...p, edges, personas }, positions, dropped: `파일에서 고칠 수 없는 항목을 뺐습니다: ${lost.join(', ')}` };
+  const said = [
+    lost.length && `파일에서 고칠 수 없는 항목을 뺐습니다: ${lost.join(', ')}`,
+    renamed && `노드 id가 겹친 ${renamed}개는 뒤에 -2, -3…을 붙였습니다 (연결선은 첫 노드에만 남음)`,
+    // readProject가 범위 밖 선택 숫자 칸을 빼고 연 내용 (한 줄씩)
+    ...notes,
+  ].filter(Boolean);
+  return { project: lost.length ? { ...p, edges, personas } : p, positions, ...(said.length && { dropped: said.join(' · ') }) };
 }
 
 /** 필요한 값만 구독한다. 노드를 끄는 동안 위치(positions)만 바뀌면 이것을 쓰는 패널은 다시 그리지 않는다 */
