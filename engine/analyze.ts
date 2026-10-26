@@ -20,7 +20,7 @@ import { minuteShape, pipelineFlows, type PipelineFlow } from './pipeline';
 import { checkRegulation, type LawHit } from './regulation';
 import type { CatalogItem, LawRow, PriceRow, Project, ProjectNode, Rule } from './schema';
 import { tableSizes, type TableAnalysis } from './tables';
-import { dayCurve, traffic, type Traffic } from './traffic';
+import { dayCurve, spikeFactors, traffic, type Traffic } from './traffic';
 
 export type NodeAnalysis = {
   load?: NodeLoad;
@@ -159,11 +159,14 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     const c = p.nodes.find((x) => x.id === id)!, cl = loads?.get(id), per = perOf.get(id)!;
     return cl && per.rps && enabled(p.deploy, 'scale') ? sizeAt(c, per.rps.value, per.max, cl.rps[s] * f, u, primaryShape(c, d.catalog, cl)).N : undefined;
   };
-  // 자동 확장 소비자는 1분 단위 트래픽 곡선(페르소나·하루 피크의 기대 곡선)으로 돈다
-  let minute = t && p.nodes.some((n) => n.autoscale) ? minuteOf.get(t) : undefined;
-  if (t && !minute && p.nodes.some((n) => n.autoscale)) {
-    const curve = dayCurve(p, 1)?.total;
-    if (curve) minuteOf.set(t, (minute = minuteShape(curve)));
+  // 큐 소비자는 1분 단위 트래픽 곡선(페르소나·하루 피크·일시적 급증의 기대 곡선)으로 돈다
+  const queued = p.nodes.some((n) => n.layer === 'queue');
+  let minute = t && queued ? minuteOf.get(t) : undefined;
+  if (t && !minute && queued) {
+    // 하루 양은 급증 없는 곡선으로 트래픽 계산과 맞추고, 급증은 그 위에 더한다 (급증만큼 하루 도착이 는다)
+    const sc = p.scale!, curve = dayCurve({ ...p, scale: { ...sc, spikes: undefined } }, 1)?.total;
+    const spike = sc.spikes && spikeFactors(sc.spikes, sc.seed);
+    if (curve && shape) minuteOf.set(t, (minute = minuteShape(curve, shape).map((x, i) => x * (spike ? spike[i] : 1))));
   }
   const flowCache = new Map<number, PipelineFlow[]>();
   const flowsAt = (f: number) => {

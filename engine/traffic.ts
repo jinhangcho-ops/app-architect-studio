@@ -185,6 +185,21 @@ export function perSession(p: Project, ps: Persona): { reqPer: number; writePer:
   return { reqPer: pt.reads_per_session + refreshes + writeReq, writePer: writeReq, dataWrites: writes };
 }
 
+/** 일시적 급증: 1분 칸마다 부하에 곱하는 값. 무작위 시각(시드 고정)을 가운데로 duration_min분 동안 1 → height → 1로 산 모양.
+ *  급증끼리 겹쳐도 더 큰 쪽만 써서 height를 넘지 않는다 */
+export function spikeFactors(sp: { count: number; duration_min: number; height: number }, seed: number, minutes = 1440): number[] {
+  const r = rng(seed + 7919), f = Array<number>(minutes).fill(1), half = sp.duration_min / 2;
+  for (let k = 0; k < sp.count; k++) {
+    const c = r() * minutes;
+    for (let i = Math.floor(c - half); i <= Math.ceil(c + half); i++) {
+      const x = 1 + (sp.height - 1) * Math.max(0, 1 - Math.abs(i + 0.5 - c) / half);
+      const j = ((i % minutes) + minutes) % minutes;
+      f[j] = Math.max(f[j], x);
+    }
+  }
+  return f;
+}
+
 /** 하루 기대 트래픽 곡선 (기준 나라 시각, stepMin분 칸마다 평균 RPS). 무작위 하루(traffic)와 같은 가정을 기댓값으로 계산한다:
  *  접속 시작 시각 = startModel(봉우리들의 정규분포 + 하루 전체 고른 바닥), 접속의 요청은 접속 시간 동안 고르게 나뉜다.
  *  그래서 곡선이 계산 결과로 부드럽다 (1시간 칸에 몰아 담지 않음) */
@@ -192,6 +207,7 @@ export function dayCurve(p: Project, stepMin = 5): { personas: { name: string; r
   if (!enabled(p.deploy, 'traffic') || !p.scale || !p.personas.length) return undefined;
   const MIN = 1440;
   const reportOffset = utcOffset(p.scale.report_country, p.scale.report_utc_offset);
+  const spike = p.scale.spikes && spikeFactors(p.scale.spikes, p.scale.seed, MIN);
   const personas = p.personas.map((ps) => {
     const pt = patternOf(ps);
     const sessions = Math.round(p.scale!.users * ps.share) * pt.sessions_per_day;
@@ -213,6 +229,7 @@ export function dayCurve(p: Project, stepMin = 5): { personas: { name: string; r
       const reqPerMin = (sessions * w * reqPer) / dur;
       for (let k = 0; k < dur; k++) perMin[(((i + shift + k) % MIN) + MIN) % MIN] += reqPerMin;
     });
+    if (spike) perMin.forEach((x, i) => { perMin[i] = x * spike[i]; });
     const slots = MIN / stepMin;
     return { name: ps.name, rps: Array.from({ length: slots }, (_, j) => perMin.slice(j * stepMin, (j + 1) * stepMin).reduce((s, x) => s + x, 0) / (stepMin * 60)) };
   });

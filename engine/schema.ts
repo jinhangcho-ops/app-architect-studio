@@ -308,6 +308,15 @@ export const Scale = z.object({
   event_multiplier: z.number().min(1).default(1),
   overhead_k: z.number().min(1).default(2),
   burst: z.object({ share: z.number().min(0).max(1), window_s: z.number().positive(), requests: z.number().nonnegative() }).optional(),
+  /** 고정 대수 큐 소비자의 적체를 계산하는 시간 칸(분). 짧을수록 몇 분짜리 몰림이 적체에 보인다 (자동 확장 소비자는 늘 1분) */
+  queue_step_min: z.union([z.literal(1), z.literal(5), z.literal(15), z.literal(60)]).default(60),
+  /** 일시적 급증: 하루 count번 무작위 시각(시드가 같으면 같은 시각)에 duration_min분 동안 부하가 산 모양으로 올랐다 내려온다.
+   *  가장 높을 때 평소의 height배이고, 갑자기 두 배가 되는 일은 없게 1.5배까지만 받는다 */
+  spikes: z.object({
+    count: z.number().int().min(1).max(48).default(6),
+    duration_min: z.number().int().min(2).max(60).default(10),
+    height: z.number().min(1.01).max(1.5).default(1.2),
+  }).optional(),
 });
 
 /** 데이터 주고받기의 서비스 성격 (추천값을 고르는 기준) */

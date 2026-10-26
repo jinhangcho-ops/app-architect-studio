@@ -25,6 +25,7 @@ export function DayPeakSection() {
   const shape = sc?.day ?? preset;
   type Day = NonNullable<NonNullable<typeof sc>['day']>;
   const setDay = (day: Day) => edit((x) => (x.scale ? { ...x, scale: { ...x.scale, day } } : x));
+  const setSpikes = (spikes: NonNullable<typeof sc>['spikes']) => edit((x) => (x.scale ? { ...x, scale: { ...x.scale, spikes } } : x));
   const custom = !!sc?.day;
   return (
     <Section id="s-peak" title="하루 피크 (업종)" desc="몇 시에 사용자가 몰리는지예요. 업종을 고르면 피크 시각과 페르소나 분포가 한 번에 바뀌고, 봉우리를 끌어서 고칠 수 있어요.">
@@ -50,6 +51,17 @@ export function DayPeakSection() {
             onChange={(v) => v !== undefined && v >= 0 && v <= 24 && setDay({ window: [v, shape.window[1]], peaks: shape.peaks })} />
           <NumField label="깨어 있는 시간 끝(시)" hint="시작보다 작으면 자정을 넘어요 (예: 11~2시)" value={shape.window[1]} step={1}
             onChange={(v) => v !== undefined && v >= 0 && v <= 24 && setDay({ window: [shape.window[0], v], peaks: shape.peaks })} />
+        </>}
+        <Row label="일시적 급증" hint="무작위 시각(시드가 같으면 같은 시각)에 몇 분 동안 부하가 산 모양으로 올랐다 내려와요. 1분 트래픽 곡선과 큐 소비자 계산에 들어가요">
+          <input type="checkbox" checked={!!sc.spikes} onChange={(e) => setSpikes(e.target.checked ? { count: 6, duration_min: 10, height: 1.2 } : undefined)} />
+        </Row>
+        {sc.spikes && <>
+          <NumField label="하루 횟수" hint="1~48번" value={sc.spikes.count} step={1}
+            onChange={(v) => v !== undefined && v >= 1 && v <= 48 && setSpikes({ ...sc.spikes!, count: Math.round(v) })} />
+          <NumField label="이어지는 시간(분)" hint="오르기 시작해 다시 내려올 때까지. 2~60분" value={sc.spikes.duration_min} step={1}
+            onChange={(v) => v !== undefined && v >= 2 && v <= 60 && setSpikes({ ...sc.spikes!, duration_min: Math.round(v) })} />
+          <NumField label="가장 높을 때(배)" hint="평소의 몇 배까지 오르는지. 갑자기 두 배가 되는 일은 없게 1.01~1.5배만 받아요" value={sc.spikes.height} step={0.05}
+            onChange={(v) => v !== undefined && v >= 1.01 && v <= 1.5 && setSpikes({ ...sc.spikes!, height: v })} />
         </>}
       </>}
     </Section>

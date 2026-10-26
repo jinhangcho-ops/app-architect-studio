@@ -9,10 +9,10 @@ export const SETTINGS: { id: string; title: string; fields: (p: Project) => Reco
   { id: 's-proj', title: '프로젝트', fields: (p) => ({ name: p.name }) },
   { id: 's-mode', title: '구동 방식', fields: (p) => flat(p.deploy) },
   { id: 's-scale', title: '규모', fields: (p) => {
-    const { industry: _i, day: _d, ...rest } = p.scale ?? {};
+    const { industry: _i, day: _d, spikes: _s, ...rest } = p.scale ?? {};
     return { ...flat(rest), has: !!p.scale, target_utilization: p.target_utilization };
   } },
-  { id: 's-peak', title: '하루 피크', fields: (p) => ({ industry: p.scale?.industry, day: p.scale?.day }) },
+  { id: 's-peak', title: '하루 피크', fields: (p) => ({ industry: p.scale?.industry, day: p.scale?.day, spikes: p.scale?.spikes }) },
   { id: 's-pers', title: '페르소나', fields: (p) => ({ ...each(p.personas, 'p'), n: p.personas.length, mix: p.persona_mix }) },
   { id: 's-act', title: '행동', fields: (p) => ({ ...each(p.actions, 'a'), n: p.actions.length }) },
   { id: 's-ex', title: '데이터 주고받기', fields: (p) => ({ ...flat(p.exchange), has: !!p.exchange }) },

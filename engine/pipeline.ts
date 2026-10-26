@@ -7,7 +7,8 @@
 // 자동 확장 소비자(autoscale): KEDA처럼 도는 하루를 30초 칸(KEDA 확인 주기 기본값)으로 시뮬레이션한다. 도착은 1분 단위 트래픽 곡선(페르소나·하루 피크의 기대 곡선, dayCurve).
 //     확인 주기(poll_s)마다 필요 대수 = ceil(지금 도착 × 처리 초 / (대당 동시 처리 × 목표 사용률))를 최소 대수 ~ 최대 대수(없으면 파티션 수 / 대당 동시 처리)로 자른다.
 //     늘릴 때: 새 소비자는 delay_s 뒤에 처리를 시작한다. 줄일 때: 최근 cooldown_s 동안 필요했던 가장 큰 대수 아래로는 줄이지 않는다.
-// shortcut: 고정 대수 소비자는 1시간 칸으로 돌고, 이벤트 날은 하루 내내 평소 × 이벤트 배수로 본다. 몇 분짜리 몰림이 만드는 적체는 작게(이벤트는 크게) 나온다. 분 단위가 필요해지면 고정 대수도 autoscaleDay(최소 = 최대)로 돈다
+// 고정 대수 소비자도 같은 시뮬레이션을 최소 = 최대 대수로 돌린다. 도착은 1분 곡선을 설정의 계산 단위(queue_step_min, 기본 60분) 칸마다 평균한 것.
+// shortcut: 이벤트 날은 하루 내내 평소 × 이벤트 배수로 본다 (이벤트가 몇 시간만이면 적체가 크게 나온다). 이벤트 시각이 필요해지면 하루 피크처럼 이벤트 창을 둔다
 import { edgeFlow, type NodeLoad } from './load';
 import { metric as m, type Metric } from './model';
 import type { Project, ProjectNode } from './schema';
@@ -48,29 +49,16 @@ const parallel = (n: ProjectNode, instances?: number) => (instances ?? Math.max(
 
 const sum = (xs: number[]) => xs.reduce((s, x) => s + x, 0);
 
-/** 하루(시간 칸)의 적체·지연. lambda: 시간대별 도착(건/초), mu: 처리량(건/초). 전날 남은 적체까지 넣으려 이틀을 돈다 */
-export function backlogDay(lambda: number[], mu: number, serviceS: number): { backlog: number; lag: number } {
-  if (sum(lambda) / lambda.length >= mu) return { backlog: Infinity, lag: Infinity };
-  let b = 0, max = 0;
-  for (let day = 0; day < 2; day++) {
-    for (const l of lambda) {
-      b = Math.max(0, b + (l - mu) * 3600);
-      if (day) max = Math.max(max, b);
-    }
-  }
-  return { backlog: max, lag: max / mu + serviceS };
-}
-
-/** 1분 단위 트래픽 곡선 → 1분 칸마다 (부하 / 가장 바쁜 1시간의 평균 부하). 1시간 평균은 시간 모양(shape)과 맞고, 그 안의 몰림은 1보다 커진다 */
-export function minuteShape(perMin: number[]): number[] {
-  const hours = Array.from({ length: 24 }, (_, h) => sum(perMin.slice(h * 60, h * 60 + 60)) / 60);
-  const peak = Math.max(...hours);
-  return peak > 0 ? perMin.map((x) => x / peak) : perMin.map(() => 0);
+/** 1분 단위 트래픽 곡선 → 시간 모양(shape: 0~23시 부하 ÷ 피크)과 같은 단위의 1분 칸 값. 하루 도착량이 무작위 하루(shape)와 같게 맞춘다
+ *  (곡선의 모양은 기대값, 하루 양은 트래픽 계산 결과 그대로) */
+export function minuteShape(perMin: number[], shape: number[]): number[] {
+  const total = sum(perMin);
+  return total > 0 ? perMin.map((x) => (x * sum(shape) * 60) / total) : perMin.map(() => 0);
 }
 
 export type AutoscaleOpts = { serviceMs: number; workers: number; cap: number; u: number; min: number; max: number; delayS: number; pollS: number; cooldownS: number };
 
-/** 자동 확장 소비자의 하루 (30초 칸, 전날 남은 적체·대수까지 넣으려 이틀을 돌고 둘째 날을 본다). lam: 1분 칸 도착(건/초) */
+/** 큐 소비자의 하루 (30초 칸, 전날 남은 적체·대수까지 넣으려 이틀을 돌고 둘째 날을 본다). lam: 1분 칸 도착(건/초) */
 export function autoscaleDay(lam: number[], o: AutoscaleOpts): AutoscaleDay {
   const DT = 30, perMin = 60 / DT, steps = lam.length * perMin, pollEvery = Math.max(1, Math.round(o.pollS / DT));
   const rate = (N: number) => (Math.min(N * o.workers, o.cap) * 1000) / o.serviceMs;
@@ -127,6 +115,15 @@ export function autoscaleDay(lam: number[], o: AutoscaleOpts): AutoscaleDay {
 /** 1분 곡선(같은 트래픽이면 같은 배열)마다 자동 확장 하루 결과 */
 const simCache = new WeakMap<number[], Map<string, AutoscaleDay>>();
 
+/** 1분 칸 값을 step분 칸마다 평균해 다시 1분 칸으로 편다 (고정 대수 소비자의 계산 단위) */
+function stepped(mins: number[], step: number): number[] {
+  if (step <= 1) return mins;
+  return mins.map((_, i) => {
+    const s = Math.floor(i / step) * step;
+    return sum(mins.slice(s, s + step)) / Math.min(step, mins.length - s);
+  });
+}
+
 /** 평소·이벤트 값을 처음 읽을 때 한 번만 계산한다 */
 function pair<T>(f: (s: 'normal' | 'event') => T): { normal: T; event: T } {
   const c: Partial<Record<'normal' | 'event', T>> = {};
@@ -153,23 +150,25 @@ export function pipelineFlows(p: Project, loads: Map<string, NodeLoad>, shape: n
       const perf = to.perf, cap = kind === 'queue' && from.partitions ? from.partitions : Infinity;
       const day = (s: 'normal' | 'event') => shape.map((x) => arrival[s] * x);
       const a = kind === 'queue' ? to.autoscale : undefined;
-      if (a) {
-        const opts: AutoscaleOpts = {
-          serviceMs: perf.service_ms, workers: perf.workers, cap, u: p.target_utilization, min: to.min_instances,
-          max: Math.min(a.max ?? Infinity, Math.ceil(cap / perf.workers)), delayS: a.delay_s ?? DEFAULT_SCALE_DELAY_S,
-          pollS: a.poll_s ?? DEFAULT_POLL_S, cooldownS: a.cooldown_s ?? DEFAULT_COOLDOWN_S,
-        };
+      const fixedN = (s: 'normal' | 'event') => instances(to.id, s) ?? Math.max(1, to.replicas, to.min_instances);
+      const step = a ? 1 : p.scale?.queue_step_min ?? 60;
+      const sim = kind === 'queue' ? (() => {
+        const base = { serviceMs: perf.service_ms, workers: perf.workers, cap, u: p.target_utilization };
+        const opts = (s: 'normal' | 'event'): AutoscaleOpts => (a
+          ? { ...base, min: to.min_instances, max: Math.min(a.max ?? Infinity, Math.ceil(cap / perf.workers)), delayS: a.delay_s ?? DEFAULT_SCALE_DELAY_S,
+            pollS: a.poll_s ?? DEFAULT_POLL_S, cooldownS: a.cooldown_s ?? DEFAULT_COOLDOWN_S }
+          : { ...base, min: fixedN(s), max: fixedN(s), delayS: 0, pollS: DEFAULT_POLL_S, cooldownS: 0 });
         const mins = minute ?? shape.flatMap((x) => Array<number>(60).fill(x));
         // 같은 곡선·설정·도착이면 결과가 같다: 최선 조합 찾기가 항목만 바꿔 여러 번 분석할 때 다시 돌지 않는다
-        const key = Object.values(opts).join();
         if (!simCache.has(mins)) simCache.set(mins, new Map());
         const memo = simCache.get(mins)!;
-        flow.auto = pair((s) => {
-          const k = `${key}|${arrival[s]}`;
-          if (!memo.has(k)) memo.set(k, autoscaleDay(mins.map((x) => arrival[s] * x), opts));
+        return pair((s) => {
+          const o = opts(s), k = `${Object.values(o).join()}|${arrival[s]}|${step}`;
+          if (!memo.has(k)) memo.set(k, autoscaleDay(stepped(mins, step).map((x) => arrival[s] * x), o));
           return memo.get(k)!;
         });
-      }
+      })() : undefined;
+      if (a) flow.auto = sim;
       const at = (s: 'normal' | 'event') => {
         const units = Math.min(flow.auto ? flow.auto[s].max * perf.workers : parallel(to, instances(to.id, s)), cap);
         return { units, mu: (units * 1000) / perf.service_ms };
@@ -183,10 +182,10 @@ export function pipelineFlows(p: Project, loads: Map<string, NodeLoad>, shape: n
       if (flow.auto) { let c: Metric | undefined; Object.defineProperty(flow, 'capacity', { enumerable: true, get: () => (c ??= capacity()) }); }
       else flow.capacity = capacity();
       if (kind === 'queue') {
-        const res = (s: 'normal' | 'event') => (flow.auto ? flow.auto[s] : backlogDay(day(s), at(s).mu, perf.service_ms / 1000));
+        const res = (s: 'normal' | 'event') => sim![s];
         const how = flow.auto
           ? '1분 단위 도착으로 30초마다 적체 += (도착 − 처리량) × 30, 처리량은 자동 확장 대수 (확인 주기마다 정하고, 늘린 대수는 뜨는 시간 뒤에, 줄이기는 cooldown 뒤에)'
-          : '하루 시간 칸마다 적체 += (도착 − 처리량) × 3600, 0 아래로는 안 내려감 (하루 평균 도착 ≥ 처리량이면 끝없이 늚)';
+          : `${step}분 칸 평균 도착으로 30초마다 적체 += (도착 − 처리량) × 30, 0 아래로는 안 내려감 (하루 도착 ≥ 하루 처리량이면 끝없이 늚)`;
         flow.backlog = pair((s) => m(res(s).backlog, '건', how, { 처리량: at(s).mu }));
         const lagHow = flow.auto ? '적체 / 그때 처리량 (0대일 때는 새 소비자가 뜰 때까지 기다린 시간) 중 가장 큰 것 + 1건 처리 시간' : '가장 큰 적체 / 처리량 + 1건 처리 시간';
         flow.lag = pair((s) => m(res(s).lag, '초', lagHow, { 적체: res(s).backlog }));

@@ -2,8 +2,9 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { analyze } from '../analyze';
 import { loadCatalog, loadLaws, loadPrices, loadProject } from '../io';
-import { autoscaleDay, backlogDay, type AutoscaleOpts } from '../pipeline';
-import type { Project } from '../schema';
+import { autoscaleDay, type AutoscaleOpts } from '../pipeline';
+import { Scale, type Project } from '../schema';
+import { spikeFactors } from '../traffic';
 
 const root = (p: string) => fileURLToPath(new URL(`../../${p}`, import.meta.url));
 const catalog = loadCatalog(root('data/catalog'));
@@ -17,16 +18,18 @@ const node = (p: Project, id: string, patch: Partial<Project['nodes'][number]>):
 const flow = (a: ReturnType<typeof run>, to: string) => a.pipeline.find((f) => f.to === to)!;
 const primaryOf = (a: ReturnType<typeof run>, id: string) => a.judgements.find((j) => j.nodeId === id)!.items[0];
 
-describe('하루 적체 계산', () => {
+describe('하루 적체 계산 (고정 대수)', () => {
+  // 처리 1초 · 대당 1건 · 100대 고정 → 처리량 100건/초
+  const fixed: AutoscaleOpts = { serviceMs: 1000, workers: 1, cap: Infinity, u: 0.7, min: 100, max: 100, delayS: 0, pollS: 30, cooldownS: 0 };
+  const perMin = (hourly: number[]) => hourly.flatMap((x) => Array<number>(60).fill(x));
   it('처리량보다 많이 들어오는 시간에만 쌓이고, 남는 시간에 빠짐', () => {
-    // 22시간은 50건/초, 2시간은 150건/초, 처리량 100건/초 → 2시간 동안 50 × 7200 = 36만 건 쌓임
-    const lambda = [...Array(22).fill(50), 150, 150];
-    const r = backlogDay(lambda, 100, 0);
+    // 22시간은 50건/초, 2시간은 150건/초 → 2시간 동안 50 × 7200 = 36만 건 쌓이고, 빼는 데 3600초 + 1건 처리 1초
+    const r = autoscaleDay(perMin([...Array(22).fill(50), 150, 150]), fixed);
     expect(r.backlog).toBeCloseTo(360000);
-    expect(r.lag).toBeCloseTo(3600);
+    expect(r.lag).toBeCloseTo(3601);
   });
   it('하루 평균 도착이 처리량 이상이면 끝없이 늘어남', () => {
-    expect(backlogDay(Array(24).fill(100), 100, 0).lag).toBe(Infinity);
+    expect(autoscaleDay(perMin(Array(24).fill(100)), fixed).lag).toBe(Infinity);
   });
 });
 
@@ -132,5 +135,35 @@ describe('소비자 자동 확장 (KEDA처럼)', () => {
     expect(auto.cost!.parts['N-05'].value).toBeLessThan(run(base).cost!.parts['N-05'].value);
     const calm = run({ ...gc, scale: { ...gc.scale!, event_multiplier: 1 } });
     expect(flow(calm, 'N-05').auto!.event.max).toBeLessThan(6);
+  });
+});
+
+describe('계산 단위시간과 일시적 급증', () => {
+  // 워커 2대 × 4 · 44ms → 처리량 182건/초. 평소 피크 176건/초라 급증이 피크 근처에 오면 쌓인다
+  const tight = (scale: Partial<Project['scale']>) => {
+    const p = { ...gc, nodes: gc.nodes.map((n) => (n.id === 'N-05' ? { ...n, autoscale: undefined, min_instances: 2, perf: { service_ms: 44, workers: 4 } } : n)), scale: { ...gc.scale!, ...scale } };
+    return flow(run(p as Project), 'N-05').backlog!.normal.value;
+  };
+  const many = { count: 48, duration_min: 30, height: 1.2 };
+
+  it('급증은 시드로 같은 시각, 산 모양이고 겹쳐도 높이를 넘지 않음', () => {
+    const f = spikeFactors(many, 1);
+    expect(f).toEqual(spikeFactors(many, 1));
+    expect(Math.max(...f)).toBeLessThanOrEqual(1.2);
+    expect(Math.max(...f)).toBeGreaterThan(1.15);
+    expect(Math.min(...f)).toBe(1);
+    expect(spikeFactors(many, 2)).not.toEqual(f);
+  });
+
+  it('급증 높이는 1.5배까지만 받음 (갑자기 두 배는 안 됨)', () => {
+    expect(Scale.safeParse({ users: 1, spikes: { height: 2 } }).success).toBe(false);
+    expect(Scale.safeParse({ users: 1, spikes: { height: 1.5 } }).success).toBe(true);
+  });
+
+  it('급증을 켜면 평소에 없던 적체가 생기고, 계산 단위가 짧을수록 몰림이 덜 뭉개져 적체가 큼', () => {
+    expect(tight({})).toBe(0);
+    const hour = tight({ spikes: many, queue_step_min: 60 }), minute = tight({ spikes: many, queue_step_min: 1 });
+    expect(hour).toBeGreaterThan(0);
+    expect(minute).toBeGreaterThan(hour);
   });
 });

@@ -53,6 +53,11 @@ export function ProjectPanel() {
           </Row>
           <NumField label="시드" hint="같은 값이면 같은 결과가 나와요" value={p.scale.seed} step={1} onChange={(v) => setScale({ seed: v ?? 1 })} />
           <NumField label="목표 사용률" hint="이 선을 넘으면 착수 시점으로 봐요" value={p.target_utilization} step={0.05} onChange={(v) => v && set({ target_utilization: v })} />
+          <Row label="큐 적체 계산 단위" hint="대수가 고정된 큐 소비자의 적체를 몇 분 칸 평균 도착으로 계산할지. 짧을수록 몇 분짜리 몰림이 적체에 보여요 (자동 확장 소비자는 늘 1분)">
+            <Select value={String(p.scale.queue_step_min)} onChange={(e) => setScale({ queue_step_min: Number(e.target.value) as 1 | 5 | 15 | 60 })}>
+              {[1, 5, 15, 60].map((m) => <option key={m} value={String(m)}>{m}분</option>)}
+            </Select>
+          </Row>
         </>}
       </Section>
 
