@@ -1,0 +1,67 @@
+{
+  "name": "장부 앱 — PWA + FastAPI + Supabase (인터페이스 명세 예시)",
+  "deploy": { "mode": "web" },
+  "scale": { "users": 2000, "seed": 1, "report_country": "KR", "industry": "restaurant", "event_multiplier": 2 },
+  "personas": [
+    { "name": "사장님", "pattern": "regular", "share": 1, "country": "KR" }
+  ],
+  "target_utilization": 0.7,
+  "cost": { "region": "aws:ap-northeast-2" },
+  "nodes": [
+    { "id": "U-01", "name": "장부 PWA", "layer": "ui", "primary": "react_next", "extras": ["pwa"],
+      "description": "React PWA (Vercel). 매출 입력·오늘 손익·영수증 사진" },
+    { "id": "B-01", "name": "장부 API (FastAPI)", "layer": "backend", "primary": "fastapi", "region": "aws:ap-northeast-2",
+      "description": "마진 계산, 매출 입력, POS 엑셀 파싱, OCR, 푸시 발송", "perf": { "service_ms": 30, "workers": 4 } },
+    { "id": "D-01", "name": "Supabase (PostgreSQL)", "layer": "db", "primary": "supabase", "region": "supabase:ap-northeast-2",
+      "tables": [
+        { "name": "daily_sales", "primary_key": ["id"],
+          "columns": [
+            { "name": "id", "type": "uuid" }, { "name": "store_id", "type": "uuid" }, { "name": "sale_date", "type": "date" },
+            { "name": "total", "type": "numeric" }, { "name": "created_at", "type": "timestamp" }
+          ],
+          "indexes": [{ "name": "idx_store_date", "columns": ["store_id", "sale_date"] }] }
+      ] },
+    { "id": "X-01", "name": "Google Vision OCR", "layer": "external", "primary": "sync_external_call",
+      "vars": { "normal": { "has_timeout": true, "needs_sync_response": true }, "event": { "has_timeout": true, "needs_sync_response": true } } },
+    { "id": "J-01", "name": "마감 알림 크론 (GitHub Actions)", "layer": "batch", "primary": "serverless_functions",
+      "description": "10분마다 /internal/notify 호출" }
+  ],
+  "actions": [
+    { "name": "매출 입력", "per_session": 1, "writes": [{ "node": "D-01", "table": "daily_sales" }] }
+  ],
+  "edges": [
+    { "from": "U-01", "to": "B-01",
+      "interfaces": [
+        { "name": "매출 저장", "kind": "rest", "method": "POST", "path": "/api/sales", "on": "write", "auth": "bearer",
+          "description": "하루 매출을 한 트랜잭션으로 저장",
+          "request": [
+            { "name": "sale_date", "type": "string", "avg_bytes": 12, "description": "YYYY-MM-DD" },
+            { "name": "items", "type": "array", "avg_bytes": 300, "description": "메뉴별 판매 수량 [{menu_id, qty}]" }
+          ],
+          "response": [{ "name": "daily_sales_id", "type": "uuid" }, { "name": "total", "type": "number" }],
+          "errors": [
+            { "status": 401, "code": "UNAUTHORIZED", "description": "로그인 토큰이 없거나 만료됨" },
+            { "status": 409, "code": "SALES_DUPLICATE", "description": "같은 날 매출이 이미 있음" },
+            { "status": 400, "code": "INVALID_ITEMS", "description": "없는 메뉴이거나 수량이 0 이하" }
+          ] },
+        { "name": "오늘 손익", "kind": "rest", "method": "GET", "path": "/api/today", "on": "read", "auth": "bearer",
+          "description": "메뉴별 마진과 원가율 40% 이상 경고",
+          "request": [{ "name": "date", "type": "string", "required": false, "avg_bytes": 12, "description": "없으면 오늘 (YYYY-MM-DD)" }],
+          "response": [
+            { "name": "revenue", "type": "number" }, { "name": "cost", "type": "number" }, { "name": "profit", "type": "number" },
+            { "name": "menus", "type": "array", "avg_bytes": 600, "description": "메뉴별 매출·원가·마진" },
+            { "name": "warnings", "type": "array", "required": false, "avg_bytes": 80, "description": "원가율 40% 이상 메뉴" }
+          ],
+          "errors": [{ "status": 401, "code": "UNAUTHORIZED", "description": "로그인 토큰이 없거나 만료됨" }] },
+        { "name": "영수증 올리기", "kind": "rest", "method": "POST", "path": "/api/receipts", "on": "write", "per_request": 0.1,
+          "description": "베타 이후: 영수증 사진 → OCR → 매입 초안" }
+      ] },
+    { "from": "J-01", "to": "B-01",
+      "interfaces": [
+        { "name": "마감 알림 보내기", "kind": "rest", "method": "POST", "path": "/internal/notify",
+          "request": [{ "name": "now", "type": "datetime" }], "response": [{ "name": "sent", "type": "integer", "description": "푸시를 보낸 매장 수" }] }
+      ] },
+    { "from": "B-01", "to": "D-01" },
+    { "from": "B-01", "to": "X-01", "carries": "write", "callRatio": 0.1 }
+  ]
+}

@@ -1,5 +1,6 @@
 import type { Analysis } from '../../engine/analyze';
 import { regionLines } from '../../engine/failure';
+import { GAP_EFFECT, specAdvice, specGaps } from '../../engine/interfaces';
 import type { Traffic } from '../../engine/traffic';
 import type { Metric } from '../../engine/model';
 import { catalog } from './data';
@@ -140,6 +141,23 @@ ${howMetric(a.storage.personaGb)}`}>
           </div>
         ))}
       </Section>
+
+      {project.edges.some((e) => e.interfaces.length) && <Section title="인터페이스 명세 점검" desc="보내는 쪽과 받는 쪽이 같은 계약으로 짜도록, 비어 있는 것과 기술에 맞는 공유 방법이에요.">
+        {project.edges.flatMap((e) => e.interfaces.map((i) => ({ e, i, gaps: specGaps(i) }))).map(({ e, i, gaps }) => (
+          <div key={`${e.from}>${e.to}>${i.name}`} className={`judge ${gaps.length ? 'v-conditional' : 'v-ok'}`}>
+            <b>{gaps.length ? '⚠️' : '✅'} {name(e.from)} → {name(e.to)} · {i.name}</b>
+            {gaps.length > 0 && <div>{gaps.join(' · ')}</div>}
+          </div>
+        ))}
+        {project.edges.some((e) => e.interfaces.some((i) => specGaps(i).length)) && <p className="warn">{GAP_EFFECT}</p>}
+        {specAdvice(project).map((x) => (
+          <div key={x.nodeId + x.title} className="judge">
+            <b>💡 {name(x.nodeId)} — {x.title}</b>
+            <div>{x.text}</div>
+            {x.file && <div className="muted">파일 › 인터페이스 명세 내보내기 → {x.file}</div>}
+          </div>
+        ))}
+      </Section>}
 
       <Section title="확인 필요 조문">
         {!a.regulation.length && <p className="muted">개인정보 노드가 없거나 걸린 조문이 없습니다.</p>}

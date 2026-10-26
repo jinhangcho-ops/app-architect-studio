@@ -8,7 +8,7 @@ import { lawLine } from '../../engine/regulation';
 import { dayLabel } from '../../engine/industry';
 import { LAYER_NAMES, VERDICT_NAMES } from '../../engine/model';
 import type { OptimizeResult, Plan } from '../../engine/optimize';
-import { interfaceRates, requestBytes, responseBytes } from '../../engine/interfaces';
+import { GAP_EFFECT, interfaceRates, requestBytes, responseBytes, specAdvice, specGaps } from '../../engine/interfaces';
 import { readMiss } from '../../engine/load';
 import { itemIds, nodeStorageProfile, selectedFeatures, type Project, type Screen, type SpecField } from '../../engine/schema';
 import { PATTERNS } from '../../engine/traffic';
@@ -261,15 +261,19 @@ function WireImage({ screen, frame }: { screen: Screen; frame: { w: number; h: n
   return <canvas ref={ref} className="r-wire" width={frame.w * 2} height={frame.h * 2} style={{ width: `${Math.min(100, frame.w / 12.8)}%` }} />;
 }
 
-/** 서비스 내부 인터페이스 명세: 연결선마다 호출·메시지, 필드, 피크 호출, 크기 */
+const AUTH_NAMES = { none: '인증 없음', bearer: 'Bearer 토큰', api_key: 'API 키' } as const;
+
+/** 서비스 내부 인터페이스 명세: 연결선마다 호출·메시지, 필드, 인증·에러, 피크 호출, 크기 */
 function Interfaces({ project: p, analysis: a }: { project: Project; analysis: Analysis }) {
   const name = (id: string) => p.nodes.find((n) => n.id === id)?.name ?? id;
   const edges = p.edges.filter((e) => e.interfaces.length);
   if (!edges.length) return null;
+  const gaps = edges.flatMap((e) => e.interfaces.map((i) => ({ e, i, g: specGaps(i) }))).filter((x) => x.g.length);
+  const advice = specAdvice(p);
   const fields = (fs: SpecField[]) => fs.map((f) => `${f.name}${f.required ? '' : '?'}: ${f.type}`).join(', ') || '—';
   return <>
     <h3 className="r-sub">서비스 내부 인터페이스 명세</h3>
-    <table className="r-grid"><thead><tr><th>보내는 → 받는</th><th>이름</th><th>방식 · 경로</th><th>부르는 요청 × 횟수</th><th>요청 필드</th><th>응답 필드</th><th>크기 (요청/응답)</th><th>피크 / 이벤트 호출</th></tr></thead><tbody>
+    <table className="r-grid"><thead><tr><th>보내는 → 받는</th><th>이름</th><th>방식 · 경로</th><th>부르는 요청 × 횟수</th><th>요청 필드</th><th>응답 필드</th><th>인증 · 에러</th><th>크기 (요청/응답)</th><th>피크 / 이벤트 호출</th></tr></thead><tbody>
       {edges.flatMap((e) => {
         const from = a.nodes[e.from]?.load, miss = readMiss(p, e);
         const rn = from && interfaceRates(e, from, 'normal', miss), re = from && interfaceRates(e, from, 'event', miss);
@@ -281,6 +285,7 @@ function Interfaces({ project: p, analysis: a }: { project: Project; analysis: A
             <td>{{ all: '모든 요청', read: '읽기 요청', write: '쓰기 요청' }[i.on]} × {fmt(i.per_request)}</td>
             <td>{fields(i.request)}</td>
             <td>{i.kind === 'message' ? '— (보내고 끝)' : fields(i.response)}</td>
+            <td>{i.kind === 'message' ? '—' : <>{i.auth ? AUTH_NAMES[i.auth] : '인증 미정'}{i.errors.map((x) => <div key={`${x.status}${x.code}`}>{x.status}{x.code && ` ${x.code}`}: {x.description}</div>)}</>}</td>
             <td>{fmt(requestBytes(i))}B{i.kind !== 'message' && ` / ${fmt(responseBytes(i))}B`}</td>
             <td>{rn && re ? `${fmt(rn[k].rps)} / ${fmt(re[k].rps)} RPS` : '—'}</td>
           </tr>
@@ -288,6 +293,15 @@ function Interfaces({ project: p, analysis: a }: { project: Project; analysis: A
       })}
     </tbody></table>
     <p className="muted">크기는 필드 형식별 예시 크기로 어림한 값입니다(실측을 넣으면 그 값). 같은 명세를 파일 › 인터페이스 명세 내보내기로 OpenAPI·AsyncAPI·proto 파일로 받을 수 있습니다.</p>
+    {gaps.length > 0 && <>
+      <h3 className="r-sub">명세 점검: 비어 있는 것</h3>
+      <ul>{gaps.map(({ e, i, g }) => <li key={`${e.from}>${e.to}>${i.name}`}>{name(e.from)} → {name(e.to)} · {i.name}: {g.join(', ')}</li>)}</ul>
+      <p>{GAP_EFFECT}</p>
+    </>}
+    {advice.length > 0 && <>
+      <h3 className="r-sub">계약 공유 방법</h3>
+      <ul>{advice.map((x) => <li key={x.nodeId + x.title}><b>{name(x.nodeId)} — {x.title}</b>: {x.text}{x.file && ` (${x.file})`}</li>)}</ul>
+    </>}
   </>;
 }
 

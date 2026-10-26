@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { analyze } from '../analyze';
 import { parseProject } from '../data';
-import { asyncApiDoc, bodyBytes, interfaceFiles, openApiDocs, protoFiles, requestBytes } from '../interfaces';
+import { asyncApiDoc, bodyBytes, fastApiFiles, interfaceFiles, openApiDocs, protoFiles, requestBytes, specAdvice, specGaps } from '../interfaces';
 import { loadCatalog, loadLaws, loadPrices, loadProject } from '../io';
 import type { Interface, Project } from '../schema';
 
@@ -12,7 +12,7 @@ const d = { catalog: catalog.byId, rules: catalog.rules, prices: loadPrices(root
 // global-commerce: 주문 API(N-03) → 세금 엔진(N-09) gRPC "QuoteTax", 주문 API → Kafka(N-04) 메시지 "orders.created"(쓰기 요청에서만)
 const gc = loadProject(root('examples/global-commerce.json'), catalog.items);
 const run = (p: Project) => analyze(p, d, '2026-10-25');
-const iface = (x: Partial<Interface> & Pick<Interface, 'name' | 'kind' | 'path'>): Interface => ({ per_request: 1, on: 'all', request: [], response: [], ...x });
+const iface = (x: Partial<Interface> & Pick<Interface, 'name' | 'kind' | 'path'>): Interface => ({ per_request: 1, on: 'all', request: [], response: [], errors: [], ...x });
 const withEdge = (p: Project, from: string, to: string, interfaces: Interface[]): Project =>
   ({ ...p, edges: p.edges.map((e) => (e.from === from && e.to === to ? { ...e, interfaces } : e)) });
 // 게이트웨이 → 주문 API에 REST 두 개: 읽기 요청마다 주문 조회, 쓰기 요청마다 주문 만들기
@@ -98,5 +98,68 @@ describe('표준 파일로 내보내기', () => {
   it('내보낼 파일 이름', () => {
     // REST는 주문 API로(openapi-N_03), gRPC는 세금 엔진으로(N_09.proto), 메시지는 한 파일
     expect(interfaceFiles(rest).map((f) => f.name)).toEqual(['openapi-N_03.json', 'N_09.proto', 'asyncapi.json']);
+  });
+});
+
+// 장부 앱: PWA → FastAPI(매출 저장·오늘 손익은 다 적음, 영수증 올리기는 비어 있음), 크론 → FastAPI(인증·에러 없음)
+const ledger = loadProject(root('examples/ledger-fastapi.json'), catalog.items);
+const ifcOf = (name: string) => ledger.edges.flatMap((e) => e.interfaces).find((i) => i.name === name)!;
+
+describe('명세 점검', () => {
+  it('요청 본문·응답·에러·인증이 비면 알림, 다 적으면 없음', () => {
+    expect(specGaps(ifcOf('매출 저장'))).toEqual([]);
+    expect(specGaps(ifcOf('영수증 올리기'))).toEqual(['요청 본문 필드가 없음', '응답 형식이 없음', '에러 응답이 없음 (실패할 때 무엇을 돌려줄지)', '인증 방식이 정해지지 않음']);
+    expect(specGaps(ifcOf('마감 알림 보내기'))).toEqual(['에러 응답이 없음 (실패할 때 무엇을 돌려줄지)', '인증 방식이 정해지지 않음']);
+  });
+  it('경로 변수의 형식이 없으면 알림, DELETE는 응답이 없어도 됨, 메시지는 필드만 봄', () => {
+    expect(specGaps(iface({ name: 'x', kind: 'rest', method: 'DELETE', path: '/a/{id}', auth: 'none', errors: [{ status: 404, description: '없음' }] }))).toEqual(['경로 변수 {id}의 형식이 없음 (문자열로 가정)']);
+    expect(specGaps(iface({ name: 'm', kind: 'message', path: 't' }))).toEqual(['메시지 필드가 없음']);
+  });
+  it('받는 쪽 기술에 맞는 공유 방법: FastAPI는 뼈대와 자동 문서(/docs), 그 밖은 명세 먼저', () => {
+    const fast = specAdvice(ledger).find((x) => x.nodeId === 'B-01')!;
+    expect(fast.text).toContain('pydantic');
+    expect(fast.text).toContain('/docs');
+    expect(fast.file).toBe('B_01_fastapi.py');
+    const go = specAdvice({ ...ledger, nodes: ledger.nodes.map((n) => (n.id === 'B-01' ? { ...n, primary: 'go_service' } : n)) }).find((x) => x.nodeId === 'B-01')!;
+    expect(go.title).toContain('명세 먼저');
+    expect(go.file).toBeUndefined();
+  });
+});
+
+describe('OpenAPI 인증·에러', () => {
+  const [{ doc }] = openApiDocs(ledger) as unknown as { doc: { paths: Record<string, Record<string, { security?: unknown; responses: Record<string, { content?: Record<string, unknown> }> }>>; components: { schemas: Record<string, unknown>; securitySchemes: Record<string, { scheme?: string }> } } }[];
+  it('Bearer 인증은 securitySchemes와 작업의 security, 미정이면 security 없음', () => {
+    expect(doc.components.securitySchemes.bearer.scheme).toBe('bearer');
+    expect(doc.paths['/api/sales'].post.security).toEqual([{ bearer: [] }]);
+    expect(doc.paths['/internal/notify'].post.security).toBeUndefined();
+  });
+  it('에러는 상태 코드마다 problem+json(공통 Problem 스키마)', () => {
+    const r = doc.paths['/api/sales'].post.responses;
+    expect(Object.keys(r)).toEqual(['200', '400', '401', '409']);
+    expect(r['409'].content!['application/problem+json']).toEqual({ schema: { $ref: '#/components/schemas/Problem' } });
+    expect(doc.components.schemas.Problem).toBeDefined();
+  });
+});
+
+describe('FastAPI 뼈대', () => {
+  const [f] = fastApiFiles(ledger);
+  it('받는 노드가 FastAPI일 때만, pydantic 모델·엔드포인트·인증·에러 안내, 함수는 501', () => {
+    expect(f.name).toBe('B_01_fastapi.py');
+    expect(f.text).toContain('class PostApiSalesRequest(BaseModel):');
+    expect(f.text).toContain('@app.post("/api/sales", response_model=PostApiSalesResponse');
+    expect(f.text).toContain('_token: HTTPAuthorizationCredentials = Depends(bearer)');
+    expect(f.text).toContain('date: Optional[str] = Query(None');
+    expect(f.text).toContain('raise ApiError(409, "같은 날 매출이 이미 있음", "SALES_DUPLICATE")');
+    expect(f.text).toContain('# TODO: 인증 방식이 정해지지 않았습니다');
+    expect(f.text.match(/status_code=501/g)!.length).toBe(4);
+    expect(fastApiFiles(gc)).toEqual([]);
+    expect(interfaceFiles(ledger).map((x) => x.name)).toEqual(['openapi-B_01.json', 'B_01_fastapi.py']);
+  });
+  it('파이썬 예약어 필드는 이름 뒤에 _를 붙이고 원래 이름을 alias로', () => {
+    const p = withEdge(ledger, 'U-01', 'B-01', [iface({ name: 'k', kind: 'rest', method: 'POST', path: '/k', request: [{ name: 'from', type: 'string', required: true }] })]);
+    const text = fastApiFiles(p)[0].text;
+    expect(text).toContain('from_: str = Field(..., alias="from")');
+    expect(text).toContain('model_config = ConfigDict(populate_by_name=True)');
+    expect(text).toContain('from pydantic import BaseModel, ConfigDict, Field');
   });
 });

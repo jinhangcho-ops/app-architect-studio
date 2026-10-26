@@ -4,6 +4,7 @@ import { analyze } from './analyze';
 import { loadCatalog, loadLaws, loadPrices, loadProject } from './io';
 import { VERDICT_NAMES, type Metric } from './model';
 import { failureLines } from './failure';
+import { GAP_EFFECT, specAdvice, specGaps } from './interfaces';
 import { flowLine } from './pipeline';
 import { lawLine } from './regulation';
 import { STALE_DAYS } from './cost';
@@ -67,6 +68,14 @@ try {
 
   if (a.pipeline.length) console.log('\n## 데이터 파이프라인 (평소 / 이벤트)');
   for (const f of a.pipeline) console.log(`  ${flowLine(f, nameOf)}`);
+
+  const specs = project.edges.flatMap((e) => e.interfaces.map((i) => ({ e, i, gaps: specGaps(i) })));
+  if (specs.length) {
+    console.log('\n## 인터페이스 명세 점검');
+    for (const { e, i, gaps } of specs) console.log(`  ${gaps.length ? '⚠️' : '✅'} ${nameOf(e.from)} → ${nameOf(e.to)} · ${i.name}${gaps.length ? `: ${gaps.join(', ')}` : ''}`);
+    if (specs.some((x) => x.gaps.length)) console.log(`  → ${GAP_EFFECT}`);
+    for (const x of specAdvice(project)) console.log(`  💡 ${nameOf(x.nodeId)} — ${x.title}: ${x.text}${x.file ? ` (${x.file})` : ''}`);
+  }
 
   if (a.failure) console.log('\n## 장애 시나리오 (사용률: 평소 / 이벤트)');
   for (const l of a.failure ? failureLines(a.failure, nameOf) : []) console.log(`  ${l}`);

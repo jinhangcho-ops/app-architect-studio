@@ -1,6 +1,6 @@
 // 연결선의 인터페이스 명세: 보내는 노드가 받는 노드에 부르는 REST·gRPC 호출과 큐 메시지. 호출 수는 부하 계산에, 크기는 리전 간 전송량에 쓰인다
 import type { Analysis } from '../../engine/analyze';
-import { interfaceRates, requestBytes, responseBytes } from '../../engine/interfaces';
+import { GAP_EFFECT, interfaceRates, requestBytes, responseBytes, specGaps } from '../../engine/interfaces';
 import { readMiss } from '../../engine/load';
 import { FIELD_TYPES, HTTP_METHODS, IDENT, type Interface, type ProjectEdge, type SpecField } from '../../engine/schema';
 import { updateEdge } from './edit';
@@ -24,7 +24,7 @@ export function InterfacesSection({ e, analysis }: { e: ProjectEdge; analysis?: 
   const add = () => {
     let n = e.interfaces.length + 1;
     while (e.interfaces.some((x) => x.name === `인터페이스 ${n}`)) n++;
-    const base = { name: `인터페이스 ${n}`, per_request: 1, on: 'all' as const, request: [], response: [] };
+    const base = { name: `인터페이스 ${n}`, per_request: 1, on: 'all' as const, request: [], response: [], errors: [] };
     set([...e.interfaces, toLayer === 'queue' ? { ...base, kind: 'message', path: 'topic.name' } : { ...base, kind: 'rest', method: 'GET', path: '/path' }]);
   };
   // 이 연결로 가는 인터페이스별 초당 호출 (평소 / 이벤트)
@@ -38,6 +38,7 @@ export function InterfacesSection({ e, analysis }: { e: ProjectEdge; analysis?: 
           <summary>
             <b>{x.name}</b> <span className="muted">{x.kind === 'rest' ? `${x.method ?? 'GET'} ${x.path}` : `${KIND_NAMES[x.kind]} ${x.path}`}
               {rates && ` · ${fmt(rates.normal[k].rps)} / ${fmt(rates.event[k].rps)} RPS`} · 요청 {fmt(requestBytes(x))}B{x.kind !== 'message' && ` / 응답 ${fmt(responseBytes(x))}B`}</span>
+            {specGaps(x).length > 0 && <span className="warn"> ⚠️ 빠진 것 {specGaps(x).length}</span>}
           </summary>
           <TextField label="이름" value={x.name} onChange={(v) => upd(k, { name: v })} />
           <Row label="방식">
@@ -65,10 +66,18 @@ export function InterfacesSection({ e, analysis }: { e: ProjectEdge; analysis?: 
               <option value="">자동</option><option value="read">읽기</option><option value="write">쓰기</option>
             </Select>
           </Row>
+          {specGaps(x).length > 0 && <div className="warn">{specGaps(x).map((g) => <div key={g}>⚠️ {g}</div>)}<div className="muted">{GAP_EFFECT}</div></div>}
+          {x.kind !== 'message' && <Row label="인증" hint="받는 쪽이 누가 부르는지 확인하는 방법. 정하지 않으면 명세 점검이 알려요">
+            <Select value={x.auth ?? ''} onChange={(ev) => upd(k, { auth: (ev.target.value || undefined) as Interface['auth'] })}>
+              <option value="">(미정)</option><option value="none">없음</option>
+              <option value="bearer">Bearer 토큰 (Authorization 헤더, JWT 등)</option><option value="api_key">API 키 (X-API-Key 헤더)</option>
+            </Select>
+          </Row>}
           <TextField label="설명" value={x.description} onChange={(v) => upd(k, { description: v || undefined })} />
           <Fields title="요청 필드" fields={x.request} onChange={(request) => upd(k, { request })} />
           {x.kind !== 'message' && <Fields title="응답 필드" fields={x.response} onChange={(response) => upd(k, { response })} />}
           <NumField label="요청 크기(B, 실측)" value={x.request_bytes} hint="비우면 필드 형식별 예시 크기로 어림해요" onChange={(v) => upd(k, { request_bytes: v === undefined || v < 0 ? undefined : v })} />
+          {x.kind !== 'message' && <Errors errors={x.errors} onChange={(errors) => upd(k, { errors })} />}
           {x.kind !== 'message' && <NumField label="응답 크기(B, 실측)" value={x.response_bytes} hint="비우면 필드 형식별 예시 크기로 어림해요" onChange={(v) => upd(k, { response_bytes: v === undefined || v < 0 ? undefined : v })} />}
           <button className="danger" onClick={() => set(e.interfaces.filter((_, j) => j !== k))}>이 인터페이스 삭제</button>
         </details>
@@ -105,6 +114,30 @@ function Fields({ title, fields, onChange }: { title: string; fields: SpecField[
         while (fields.some((f) => f.name === `field${n}`)) n++;
         onChange([...fields, { name: `field${n}`, type: 'string', required: true }]);
       }}>+ 필드</button>
+    </div>
+  );
+}
+
+/** 실패할 때 돌려주는 응답: 상태 코드, 앱 에러 코드, 설명. 본문은 모두 problem+json(type·title·status·detail·code) */
+function Errors({ errors, onChange }: { errors: Interface['errors']; onChange: (e: Interface['errors']) => void }) {
+  const upd = (k: number, patch: Partial<Interface['errors'][number]>) => onChange(errors.map((x, j) => (j === k ? { ...x, ...patch } : x)));
+  return (
+    <div>
+      <p className="muted">에러 응답 — 본문은 모두 같은 형식(problem+json: title·status·detail·code)이라 프론트가 한 곳에서 처리해요</p>
+      {errors.length > 0 && <div className="plans"><table className="grid">
+        <thead><tr><th>상태</th><th>에러 코드</th><th>언제</th><th /></tr></thead>
+        <tbody>
+          {errors.map((x, k) => (
+            <tr key={k}>
+              <td><input type="number" value={x.status} min={400} max={599} onChange={(ev) => upd(k, { status: Number(ev.target.value) || 400 })} /></td>
+              <td><input value={x.code ?? ''} placeholder="예: SALES_DUPLICATE" onChange={(ev) => upd(k, { code: ev.target.value || undefined })} /></td>
+              <td><input value={x.description} onChange={(ev) => upd(k, { description: ev.target.value })} /></td>
+              <td><button aria-label="에러 빼기" onClick={() => onChange(errors.filter((_, j) => j !== k))}>✕</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table></div>}
+      <button onClick={() => onChange([...errors, { status: 400, description: '요청 값이 올바르지 않음' }])}>+ 에러 응답</button>
     </div>
   );
 }

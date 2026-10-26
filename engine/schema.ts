@@ -228,6 +228,15 @@ export const Interface = z.object({
   /** 실측한 요청·응답 크기(바이트). 있으면 필드로 어림한 값보다 우선 */
   request_bytes: z.number().nonnegative().optional(),
   response_bytes: z.number().nonnegative().optional(),
+  /** 인증: none = 없음, bearer = Authorization: Bearer 토큰(JWT 등), api_key = X-API-Key 헤더. 없으면 미정 (명세 점검이 알린다) */
+  auth: z.enum(['none', 'bearer', 'api_key']).optional(),
+  /** 실패할 때 돌려주는 응답. 본문은 모두 같은 형식(RFC 9457 problem details: type·title·status·detail·code) */
+  errors: z.array(z.object({
+    status: z.number().int().min(400).max(599),
+    /** 앱이 정한 에러 코드 (예: SALES_DUPLICATE) */
+    code: z.string().regex(/^[A-Za-z0-9_.-]+$/, '에러 코드는 영문·숫자·_.-').optional(),
+    description: z.string().min(1),
+  })).default([]),
 });
 export type Interface = z.infer<typeof Interface>;
 
@@ -578,6 +587,7 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
       if (i.kind === 'rest' && !i.path.startsWith('/')) errors.push(`${at} ${i.name}: REST 경로는 /로 시작함`);
       if (i.kind === 'grpc' && !IDENT.test(i.path)) errors.push(`${at} ${i.name}: gRPC 메서드 이름은 영문 식별자 (예: CreateOrder)`);
       if (i.kind === 'message' && i.response.length) errors.push(`${at} ${i.name}: 메시지는 응답이 없음 (보내고 끝)`);
+      for (const d of dupes(i.errors.map((x) => `${x.status}${x.code ? ` ${x.code}` : ''}`))) errors.push(`${at} ${i.name}: 에러 응답 중복 ${d}`);
       for (const side of ['request', 'response'] as const) for (const d of dupes(i[side].map((f) => f.name))) errors.push(`${at} ${i.name}: ${side === 'request' ? '요청' : '응답'} 필드 이름 중복 ${d}`);
     }
   }
