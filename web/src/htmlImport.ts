@@ -155,7 +155,5 @@ export function htmlToScreen(text: string, frame: { w: number; h: number }, name
     // main 자신의 컨트롤은 안쪽 영역 아래로 옮긴다
     for (const it of items.slice(before, -1)) it.y += y - (top + G + 32);
   }
-  // 영역이 링크를 줄줄이 쌓아 틀보다 길어지면 틀 안에 시작하는 것만 남기고 높이를 자른다
-  const inside = items.filter((it) => it.y < frame.h).map((it) => ({ ...it, h: Math.min(it.h, frame.h - it.y) }));
-  return { name: doc.title || name, items: inside.map((it, i) => ({ ...it, id: `w${i + 1}` })) };
+  return { name: doc.title || name, items: items.map((it, i) => ({ ...it, id: `w${i + 1}` })) };
 }

@@ -240,9 +240,10 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
           const css = Object.fromEntries(await Promise.all(files.filter((x) => /\.css$/i.test(x.name)).map(async (x) => [x.name, await x.text()] as const)));
           const text = await html.text();
           const base = html.name.replace(/\.html?$/i, '');
-          // 실제로 그려 자리를 읽고(긴 페이지는 여러 장), 그릴 수 없으면 영역 규칙으로 배치한다
+          // 실제로 그려 자리를 읽고, 그릴 수 없으면 영역 규칙으로 배치한다. 둘 다 틀보다 길면 여러 장으로 (틀 밖 요소와 그 API를 버리지 않게)
           const entries = await renderHtml(text, frame, css);
-          const pages = entries ? paginate(entries, frame, base) : [htmlToScreen(text, frame, base)];
+          const fallback = entries ? undefined : htmlToScreen(text, frame, base);
+          const pages = paginate(entries ?? fallback!.items, frame, fallback?.name ?? base);
           // 빈 화면 한 장뿐이면 그 자리를 바꾸고, 아니면 지금 기기로 이어 붙인다 (이름은 겹치지 않게)
           const replace = screens.length === 1 && !screen.items.length;
           edit((x) => pages.reduce((acc, sc) => addScreen(acc, nodeId, device, sc), replace ? mapScreens(x, nodeId, () => []) : x));
