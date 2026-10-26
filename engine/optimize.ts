@@ -72,7 +72,8 @@ export function optimize(p: Project, d: Data, today: string, opts: { beam?: numb
   const beam = opts.beam ?? 30;
   const perNode = opts.perNode ?? 3;
   const t = opts.traffic ?? traffic(p);
-  const run = (as: Record<string, string>) => analyze(withAssignment(p, as), d, today, { traffic: t });
+  // 조합 비교는 비용·한계·p99·가용성만 쓰므로 성장(달마다 비용을 다시 계산)은 빼고 분석한다
+  const run = (as: Record<string, string>) => analyze(withAssignment({ ...p, growth: undefined }, as), d, today, { traffic: t });
   const base = run({});
   const items = [...d.catalog.values()];
   const w = weightsFrom(p.optimize.priorities, [...new Set(items.flatMap((i) => Object.keys(i.goals)))]);

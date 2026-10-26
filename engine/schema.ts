@@ -603,6 +603,8 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
   const nodeIds = new Set(p.nodes.map((n) => n.id));
   // 노드 id가 겹치면 연결선이 어느 노드인지 몰라 순환처럼 보이므로 맨 먼저 알린다
   const errors: string[] = dupes(p.nodes.map((n) => n.id)).map((d) => `노드 id 중복 ${d}`);
+  // 같은 출발·도착 연결선이 둘이면 화면에서 하나만 고르거나 지울 수 없다 (화면은 from->to를 연결선 id로 쓴다)
+  for (const d of dupes(p.edges.map((e) => `${e.from}->${e.to}`))) errors.push(`연결선 중복 ${d}`);
   // 정한 몫만의 합이 1을 넘으면 사용자 수보다 많은 요청이 들어온다 (비운 칸은 load.ts가 남은 몫을 나눠 주므로 오류를 만들지 않음)
   const shareSum = entryNodes(p).reduce((s, n) => s + (n.entry_share ?? 0), 0);
   if (shareSum > 1 + 1e-9) errors.push(`화면 노드 진입 몫(entry_share) 합이 1을 넘음 (${+shareSum.toFixed(4)})`);

@@ -7,7 +7,8 @@ import { readProject } from '../data';
 import { schemaWarnings, tableDdl } from '../ddl';
 import { loadCatalog, loadLaws, loadPrices } from '../io';
 import { erlangC } from '../latency';
-import { Project } from '../schema';
+import { optimize } from '../optimize';
+import { Project, checkProject } from '../schema';
 import { dayCurve, traffic } from '../traffic';
 
 const root = (p: string) => fileURLToPath(new URL(`../../${p}`, import.meta.url));
@@ -79,6 +80,33 @@ describe('감사 9: 하루 접속이 잦은 페르소나도 트래픽 계산이 
     const t = traffic(q)!;
     expect(Date.now() - t0).toBeLessThan(5000);
     expect(t.peakRps.value).toBeGreaterThan(0);
+  });
+});
+
+describe('감사 10: 큰 값에서도 계산이 바로 끝남', () => {
+  it('큐 소비자 "줄이기 전 기다림" 하루(86400초)도 분석 1초 안', () => {
+    const p = readProject(raw('global-commerce'), catalog.items);
+    const q = { ...p, nodes: p.nodes.map((n) => (n.id === 'N-05' ? { ...n, autoscale: { ...n.autoscale, cooldown_s: 86400 } } : n)) };
+    analyze(q, d, '2026-10-27');
+    const t0 = Date.now();
+    analyze(q, d, '2026-10-27');
+    expect(Date.now() - t0).toBeLessThan(1000);
+  });
+  it('최선 조합은 성장 기간과 관계없이 같은 지표 (달마다 비용을 다시 계산하지 않음)', () => {
+    const p = readProject(raw('global-commerce'), catalog.items);
+    const long = { ...p, growth: { ...(p.growth ?? { monthly_rate: 0.05 }), months: 240 } } as Project;
+    const metrics = (x: Project) => optimize(x, d, '2026-10-27').evaluated.map((e) => e.metrics);
+    const timed = (x: Project) => { const t0 = performance.now(); const r = metrics(x); return { r, ms: performance.now() - t0 }; };
+    timed(p);
+    const a = timed({ ...p, growth: undefined }), b = timed(long);
+    expect(b.r).toEqual(a.r);
+    // 예전에는 240개월이면 조합마다 달별 비용을 다시 계산해 몇 배 느렸다
+    expect(b.ms).toBeLessThan(2 * a.ms + 50);
+  });
+  it('같은 출발·도착 연결선이 둘이면 checkProject 오류', () => {
+    const p = readProject(raw('phase3'), catalog.items);
+    const q = { ...p, edges: [...p.edges, { ...p.edges[0], sync: !p.edges[0].sync }] };
+    expect(checkProject(q, catalog.items).join()).toContain(`연결선 중복 ${p.edges[0].from}->${p.edges[0].to}`);
   });
 });
 

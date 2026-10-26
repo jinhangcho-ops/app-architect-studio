@@ -296,7 +296,7 @@ export function App() {
           <button role="menuitem" title="DB 노드의 테이블 명세 → 노드별 schema-….sql(CREATE TABLE·INDEX, 주석)과 data-dictionary.csv" onClick={() => { close(); void exportTexts(schemaFiles(project, catalog.byId), 'DB 노드에 테이블 명세가 없습니다. DB 노드를 고르고 "테이블 명세"에서 추가하세요'); }}>스키마(DDL)·데이터 사전 내보내기</button>
           <button role="menuitem" onClick={() => { close(); setHistory(!history); }}>저장 기록</button>
         </>}</Menu>
-        <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => e.target.files?.[0] && open(e.target.files[0])} />
+        <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) open(f); }} />
         <input ref={codeRef} type="file" accept="application/json" hidden onChange={async (e) => {
           const f = e.target.files?.[0];
           if (!f) return;

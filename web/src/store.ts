@@ -151,21 +151,24 @@ export function importProject(data: unknown, name: string): { project: Project; 
   // 위치도 바뀐 id로 (readProject는 노드 순서를 그대로 둔다)
   const positions = Object.fromEntries(raw.flatMap((n, k) => (n.pos && nodes[k] ? [[nodes[k].id, n.pos]] : [])));
   const acts = new Set(p.actions.map((a) => a.name));
+  const seenEdge = new Set<string>();
   const edges = p.edges.filter((e) => ids.has(e.from) && ids.has(e.to));
+  // 같은 출발·도착 연결선은 첫 줄만 (화면은 from->to를 연결선 id로 써서 둘을 따로 고르거나 지울 수 없다)
+  const uniq = edges.filter((e) => !seenEdge.has(`${e.from}->${e.to}`) && !!seenEdge.add(`${e.from}->${e.to}`));
   let rates = 0;
   const personas = p.personas.map((ps) => {
     const keep = Object.entries(ps.action_rates).filter(([k]) => acts.has(k));
     rates += Object.keys(ps.action_rates).length - keep.length;
     return keep.length < Object.keys(ps.action_rates).length ? { ...ps, action_rates: Object.fromEntries(keep) } : ps;
   });
-  const lost = [p.edges.length > edges.length && `없는 노드에 닿은 연결선 ${p.edges.length - edges.length}개`, rates && `페르소나의 없는 행동 비율 ${rates}개`].filter(Boolean);
+  const lost = [p.edges.length > edges.length && `없는 노드에 닿은 연결선 ${p.edges.length - edges.length}개`, edges.length > uniq.length && `같은 노드 사이에 겹친 연결선 ${edges.length - uniq.length}개`, rates && `페르소나의 없는 행동 비율 ${rates}개`].filter(Boolean);
   const said = [
     lost.length && `파일에서 고칠 수 없는 항목을 뺐습니다: ${lost.join(', ')}`,
     renamed && `노드 id가 겹친 ${renamed}개는 뒤에 -2, -3…을 붙였습니다 (연결선은 첫 노드에만 남음)`,
     // readProject가 범위 밖 선택 숫자 칸을 빼고 연 내용 (한 줄씩)
     ...notes,
   ].filter(Boolean);
-  return { project: lost.length ? { ...p, edges, personas } : p, positions, ...(said.length && { dropped: said.join(' · ') }) };
+  return { project: lost.length ? { ...p, edges: uniq, personas } : p, positions, ...(said.length && { dropped: said.join(' · ') }) };
 }
 
 /** 필요한 값만 구독한다. 노드를 끄는 동안 위치(positions)만 바뀌면 이것을 쓰는 패널은 다시 그리지 않는다 */

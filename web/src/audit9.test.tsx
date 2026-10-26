@@ -6,9 +6,10 @@ import { describe, expect, it } from 'vitest';
 import { parseProject } from '../../engine/data';
 import { catalog, examples } from './data';
 import { DEVICES } from './wireDraw';
+import { htmlToScreen } from './htmlImport';
 import { paginate } from './htmlRender';
 import { TableLab } from './ResultsPanel';
-import { useStore } from './store';
+import { importProject, useStore } from './store';
 
 describe('결과 패널: 지운 노드의 테이블', () => {
   it('노드가 없으면 실험 칸을 그리지 않고 오류도 없음', () => {
@@ -19,6 +20,24 @@ describe('결과 패널: 지운 노드의 테이블', () => {
     flushSync(() => createRoot(el, { onUncaughtError: (e) => errors.push(e) }).render(<TableLab nodeId="없는-노드" table="orders" />));
     expect(errors).toEqual([]);
     expect(el.innerHTML).toBe('');
+  });
+});
+
+describe('감사 10: 파일 열기·HTML 대체 배치', () => {
+  it('같은 출발·도착 연결선이 둘인 파일은 첫 줄만 남기고 알림', () => {
+    const ex = examples.find((e) => e.name === 'phase3.json')!;
+    const raw = JSON.parse(JSON.stringify(ex.data));
+    raw.edges.push({ ...raw.edges[0], sync: !raw.edges[0].sync });
+    const r = importProject(raw, 'x.json');
+    expect(r.project.edges).toHaveLength(raw.edges.length - 1);
+    expect(r.dropped).toContain('같은 노드 사이에 겹친 연결선 1개');
+  });
+  it('헤더에 링크가 많아도 대체 배치는 틀 안에만 둠', () => {
+    const f = DEVICES.desktop;
+    const html = `<header>${Array.from({ length: 200 }, (_, k) => `<a href="/m${k}">메뉴${k}</a>`).join('')}</header><main><p>본문</p></main>`;
+    const s = htmlToScreen(html, f);
+    expect(s.items.length).toBeGreaterThan(0);
+    for (const it of s.items) expect(it.y + it.h).toBeLessThanOrEqual(f.h);
   });
 });
 

@@ -67,6 +67,7 @@ export function autoscaleDay(lam: number[], o: AutoscaleOpts): AutoscaleDay {
   if (sum(lam) >= lam.length * rate(o.max)) return { backlog: Infinity, lag: Infinity, hourly: hourly.map(() => o.max), min: o.max, max: o.max };
   let b = 0, active = need(lam[lam.length - 1]), waiting = 0, waitFrom = -1, maxB = 0, lag = 0, lo = Infinity, hi = 0;
   // 뜨는 중인 소비자(뜨는 시각 순)와 최근 cooldown 동안의 필요 대수. 30초마다 도니 배열을 새로 만들지 않는다
+  // recent는 필요 대수가 줄어드는 순서로만 남긴다(뒤에 더 큰 값이 오면 앞의 작은 값은 다시 최대가 될 일이 없음) → 맨 앞이 최근 최대
   const pending: { at: number; n: number }[] = [], recent: { t: number; d: number }[] = [];
   const ends: number[] = [];
   for (let day = 0; day < 2; day++) {
@@ -76,13 +77,12 @@ export function autoscaleDay(lam: number[], o: AutoscaleOpts): AutoscaleDay {
       if (k % pollEvery === 0) {
         const d = need(l), target = active + waiting;
         while (recent.length && recent[0].t <= t - o.cooldownS) recent.shift();
+        while (recent.length && recent[recent.length - 1].d <= d) recent.pop();
         recent.push({ t, d });
         if (d > target) { pending.push({ at: t + o.delayS, n: d - target }); waiting += d - target; }
         else {
           // 줄이기: 최근 cooldown 동안 필요했던 가장 큰 대수까지만. 아직 안 뜬 것부터 거둔다
-          let keep = 0;
-          for (const x of recent) keep = Math.max(keep, x.d);
-          let cut = target - keep;
+          let cut = target - recent[0].d;
           while (cut > 0 && pending.length) {
             const x = pending[pending.length - 1], c = Math.min(cut, x.n);
             x.n -= c; cut -= c; waiting -= c;
