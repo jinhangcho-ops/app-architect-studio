@@ -16,6 +16,8 @@ export type PyProfile = {
   annotatedFromExtensions: boolean;
   /** 실행 안내: fastapi 0.112+ "fastapi[standard]" + fastapi dev, 0.111은 fastapi + fastapi dev, 그 전은 uvicorn */
   run: 'standard' | 'cli' | 'uvicorn';
+  /** requirements.txt로 설치한 뒤 실행 명령에 더 필요한 패키지 (목록에 uvicorn이 없을 때) */
+  extraPip?: string;
   /** 뼈대 머리 주석에 적을 기준 (버전 목록이 없으면 빈 배열) */
   basis: string[];
   /** 조합 오류·확인 범위 밖 (명세 점검과 뼈대 머리 주석에 나온다) */
@@ -56,6 +58,12 @@ export function pyProfile(node: { requirements?: string; python?: string }): PyP
   if (node.requirements?.trim() && listed('fastapi') && fa === undefined) warnings.push('fastapi 하한 버전이 없어 최신 규칙으로 만들었습니다');
   for (const s of r.skipped) warnings.push(`requirements.txt ${s}`);
 
+  // requirements.txt가 있으면 그 목록으로 설치하므로, 실행 명령도 목록에 든 것으로 (2026-10-27 실제 설치: fastapi 0.146.0만 적으면 fastapi dev도 uvicorn도 없음)
+  // fastapi dev: [standard]나 fastapi-cli를 적었거나, fastapi-cli를 기본으로 딸려 오던 0.111.x
+  const fr = r.reqs.find((x) => x.name === 'fastapi');
+  const cli = !!fa && cmpVersion(fa, '0.111') >= 0 && (!!fr?.extras.includes('standard') || listed('fastapi-cli') || cmpVersion(fa, '0.112') < 0);
+  const fromList = !!node.requirements?.trim();
+  const run: PyProfile['run'] = fromList ? (cli ? 'cli' : 'uvicorn') : atLeast(fa, '0.112') ? 'standard' : atLeast(fa, '0.111') ? 'cli' : 'uvicorn';
   return {
     pydantic,
     // pydantic 문서: validate_by_name·validate_by_alias는 v2.11에 새로 생김, populate_by_name은 2.11+에서 권하지 않음
@@ -65,7 +73,8 @@ export function pyProfile(node: { requirements?: string; python?: string }): PyP
     builtinGenerics: atLeast(py, '3.9'),
     annotatedFromExtensions: py !== undefined && cmpVersion(py, '3.9') < 0,
     // fastapi 0.112.0 "fastapi[standard]", 0.111.0 fastapi-cli(fastapi dev)
-    run: atLeast(fa, '0.112') ? 'standard' : atLeast(fa, '0.111') ? 'cli' : 'uvicorn',
+    run,
+    ...(fromList && run === 'uvicorn' && !listed('uvicorn') && { extraPip: 'uvicorn' }),
     basis: [...(fa ? [`fastapi ${fa}`] : []), ...(pd ? [`pydantic ${pd}`] : []), ...(py ? [`Python ${py}`] : [])],
     warnings,
   };

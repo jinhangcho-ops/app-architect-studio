@@ -103,7 +103,7 @@ flowchart LR
 | pydantic 2.11+ | `ConfigDict(validate_by_name=True, validate_by_alias=True)` (2.0~2.10은 `populate_by_name`) |
 | fastapi 0.95 전 | 경로 인자 `= Path(...)`, 본문 `= Body(...)` (`Annotated` 대신) |
 | Python 3.8 | `Dict`·`List`, `typing_extensions`의 `Annotated` |
-| fastapi 0.111 / 0.112+ | 실행 안내: `uvicorn` → `fastapi dev` → `fastapi[standard]` |
+| fastapi 0.111 / 0.112+ | 실행 안내: `uvicorn` → `fastapi dev` → `fastapi[standard]`. requirements.txt가 있으면 거기 든 것으로: `fastapi[standard]`·`fastapi-cli`가 있으면 `fastapi dev`, 없으면 `uvicorn`(목록에 없으면 설치 명령에 더함) |
 
 함께 쓸 수 없는 조합(fastapi 0.126+와 pydantic 1, 0.135.2+와 pydantic 2.9 미만, 0.129+와 Python 3.9 이하 등)과 규칙표를 확인한 범위(fastapi 0.162.0, pydantic 2.12, Python 3.14)보다 새 버전은 패널·명세 점검·뼈대 머리 주석에 ⚠️로 알립니다.
 

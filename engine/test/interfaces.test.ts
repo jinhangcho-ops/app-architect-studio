@@ -459,6 +459,10 @@ describe('FastAPI 뼈대를 requirements.txt·Python 버전에 맞춤', () => {
     expect(text).toContain('# 버전 기준: fastapi 0.146.0, pydantic 2.14.1');
     expect(text).toContain('validate_by_name=True');
     expect(text).toContain('# ⚠️ pydantic 2.14.1는 규칙표를 확인한 범위(2.12) 밖이라 그 최신 규칙으로 만들었습니다');
+    // fastapi만 적으면 fastapi dev(fastapi-cli)도 uvicorn도 깔리지 않음 → uvicorn을 더해 실행 (실제 설치로 확인)
+    expect(text).toContain('# 실행: pip install -r B_01_requirements.txt uvicorn  →  uvicorn B_01_fastapi:app --reload');
+    expect(gen('fastapi[standard]==0.146.0').text).toContain('# 실행: pip install -r B_01_requirements.txt  →  fastapi dev B_01_fastapi.py');
+    expect(gen('fastapi==0.146.0\nuvicorn==0.54.0').text).toContain('# 실행: pip install -r B_01_requirements.txt  →  uvicorn B_01_fastapi:app --reload');
     expect(text).not.toContain('# ⚠️ fastapi');
   });
 });

@@ -442,7 +442,7 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
       '# App Architect Studio의 인터페이스 명세에서 만들었습니다. 모델과 엔드포인트만 있고, 각 함수는 501(구현 필요)을 돌려줍니다.',
       ...(prof.basis.length ? [`# 버전 기준: ${prof.basis.join(', ')} (노드의 requirements.txt·Python 버전)`] : []),
       ...prof.warnings.map((w) => `# ⚠️ ${oneLine(w)}`),
-      `# 실행: ${node.requirements?.trim() ? `pip install -r ${safe(nodeId)}_requirements.txt  →  ${run.split('  →  ').slice(1).join('  →  ')}` : run}  →  http://127.0.0.1:8000/docs 를 프론트와 공유`,
+      `# 실행: ${node.requirements?.trim() ? `pip install -r ${safe(nodeId)}_requirements.txt${prof.extraPip ? ` ${prof.extraPip}` : ''}  →  ${run.split('  →  ').slice(1).join('  →  ')}` : run}  →  http://127.0.0.1:8000/docs 를 프론트와 공유`,
       '# 에러는 모두 problem+json(Problem)입니다: 앱 에러는 ApiError로 내고, 요청 검증 실패(422)·인증 실패(401)·그 밖의 HTTP 에러도 같은 형식으로 바꿉니다.',
       'from datetime import datetime',
       `from typing import ${typingNames.join(', ')}`,
