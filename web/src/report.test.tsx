@@ -49,7 +49,7 @@ describe('설계서 노드 카드 (설계서 7절 형식)', () => {
 });
 
 describe('설계서 전체', () => {
-  it('설계서 목차 14개 절이 순서대로 나오고, 노드마다 카드가 한 장', () => {
+  it('설계서 목차 15개 절이 순서대로 나오고, 노드마다 카드가 한 장', () => {
     const p = load('global-commerce.json');
     const html = renderToStaticMarkup(
       <Report project={p} analysis={run(p, today).analysis} positions={autoLayout(p)} plans={findPlans(p, today).result} today={today} onClose={() => {}} />,
@@ -57,7 +57,7 @@ describe('설계서 전체', () => {
     const titles = [...html.matchAll(/<h2 class="r-h">(\d+)\. (.*?)<\/h2>/g)].map((m) => `${m[1]}. ${m[2].replace(/<!-- -->/g, '')}`);
     expect(titles).toEqual([
       '1. 요약', '2. 구동 방식', '3. 규모 가정', '4. 구조도', '5. 화면 설계 · API 호출 · 인터페이스 명세', '6. 데이터 명세 · 기능별 테이블 · 데이터 사전', '7. 노드별 선택과 판정 근거', '8. 확장 한계 · 지연시간 · 월 비용',
-      '9. 최선 조합과 선택 조건', '10. 가용성 · 성장 타임라인', '11. 확인 필요 조문', '12. 미해결 ❌·⚠️ 목록', '13. 적용한 설정', '14. 카탈로그 출처',
+      '9. 최선 조합과 선택 조건', '10. 가용성 · 성장 타임라인', '11. 네트워크 · 보안', '12. 확인 필요 조문', '13. 미해결 ❌·⚠️ 목록', '14. 적용한 설정', '15. 카탈로그 출처',
     ]);
     expect(html.match(/class="r-card /g)).toHaveLength(p.nodes.length);
     // 5절: 연결선의 인터페이스 명세 (주문 API → 세금 엔진 gRPC, → Kafka 메시지)
@@ -89,5 +89,27 @@ describe('설계서: 설계 메모 장과 노드 메모', () => {
     expect(html).toMatch(/<div class="r-memo"><b>메모<\/b><div class="note"><div class="note-list">.*주문 접수.*결제 호출/);
     // 날것의 설명 줄은 카드 표에 다시 나오지 않음 (메모로 한 번만)
     expect(html.match(/주문 접수/g)).toHaveLength(1);
+  });
+});
+
+describe('설계서: 네트워크·보안 장', () => {
+  it('노드별 보안 값 표(정할 칸이 아니면 —, 비면 미정), 연결선 암호화·짐작한 망, ❌ 먼저인 점검 결과, 공개 노드의 STRIDE 점검표', () => {
+    const p0 = load('ledger-fastapi.json');
+    const p = {
+      ...p0,
+      nodes: p0.nodes.map((n) => (n.id === 'B-01' ? { ...n, security: { exposure: 'public' as const, tls: true, waf: false } } : n)),
+      edges: p0.edges.map((e) => (e.from === 'U-01' && e.to === 'B-01' ? { ...e, security: { tls: 'none' as const } } : e)),
+    };
+    const html = renderToStaticMarkup(
+      <Report project={p} analysis={run(p, today).analysis} positions={autoLayout(p)} today={today} onClose={() => {}} />,
+    ).replace(/<!-- -->/g, '');
+    const sec = html.slice(html.indexOf('네트워크 · 보안</h2>'), html.indexOf('확인 필요 조문</h2>'));
+    // B-01 행: 공개 범위·TLS·저장 암호화(—)·비밀 보관(미정)·WAF(끔)·속도 제한(미정)
+    expect(sec).toContain('<tr><td>장부 API (FastAPI)</td><td>인터넷 공개</td><td>켬</td><td>—</td><td>미정</td><td>끔</td><td>미정</td>');
+    expect(sec).not.toContain('<td>Google Vision OCR</td>');
+    expect(sec).toContain('<td>장부 PWA → 장부 API (FastAPI)</td><td>암호화 없음</td><td>인터넷 (짐작)</td>');
+    expect(sec.indexOf('❌')).toBeLessThan(sec.indexOf('⚠️'));
+    expect(sec).toContain('<th colSpan="2">장부 API (FastAPI)</th>');
+    expect(sec).toContain('대량 요청을 막는지 (WAF 끔 · 속도 제한 미정)');
   });
 });

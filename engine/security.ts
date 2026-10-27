@@ -39,6 +39,31 @@ const RATE_LIMITERS = new Set(['token_bucket', 'kong']);
 
 const hasTenantKey = (n: ProjectNode) => n.tables.some((t) => t.columns.some((c) => TENANT_KEY.test(c.name)));
 
+export const SECURITY_FIELDS = Object.keys(SECURITY_FIELD_NAMES) as Field[];
+/** 노드 보안 칸 하나를 글자로: 이 노드에서 정할 칸이 아니면 —, 비면 미정 */
+export function fieldText(n: ProjectNode, f: Field): string {
+  if (!relevant(n).includes(f)) return '—';
+  const v = n.security?.[f];
+  if (v === undefined) return f === 'rate_limit' && itemIds(n).some((id) => RATE_LIMITERS.has(id)) ? '켬 (항목)' : '미정';
+  if (typeof v === 'boolean') return v ? '켬' : '끔';
+  return ({ exposure: EXPOSURE_NAMES, secrets: SECRET_NAMES, tenant_isolation: TENANT_NAMES } as Record<string, Record<string, string>>)[f][v];
+}
+
+/** 인터넷 공개 노드의 위협 점검표 (STRIDE: 위장·변조·부인·정보 노출·서비스 거부·권한 상승). 값으로 알 수 있는 것은 그 상태를 붙인다 */
+export function stride(p: Project, n: ProjectNode): [string, string][] {
+  const s = n.security ?? {};
+  const open = p.edges.filter((e) => e.to === n.id).flatMap((e) => e.interfaces).filter((i) => i.auth === 'none');
+  const state = (v?: boolean) => (v === undefined ? '미정' : v ? '켬' : '끔');
+  return [
+    ['위장', open.length ? `인증 없이 부를 수 있는 인터페이스 ${open.length}개 (${open.map((i) => i.name).join(', ')}): 정말 공개해도 되는지` : '요청마다 로그인 토큰·서비스 키를 확인하는지'],
+    ['변조', `입력을 검증하고, 받는 연결을 TLS로 받는지 (TLS ${state(s.tls)})`],
+    ['부인', `누가 언제 무엇을 했는지 남기는지 (감사 로그 ${state(s.audit_log)})`],
+    ['정보 노출', `오류 메시지·로그에 내부 주소·키·개인정보가 새지 않는지 (비밀 보관 ${s.secrets ? SECRET_NAMES[s.secrets] : '미정'})`],
+    ['서비스 거부', `대량 요청을 막는지 (WAF ${state(s.waf)} · 속도 제한 ${fieldText(n, 'rate_limit') === '—' ? state(s.rate_limit) : fieldText(n, 'rate_limit')})`],
+    ['권한 상승', '관리자 기능과 다른 고객(매장·회사) 데이터에 권한 검사를 하는지'],
+  ];
+}
+
 /** 이 노드에서 정해야 하는 보안 칸 (레이어·공개 범위·개인정보·테이블에 따라) */
 export function relevant(n: ProjectNode): Field[] {
   const s = n.security ?? {};

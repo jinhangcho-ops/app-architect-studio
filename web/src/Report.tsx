@@ -1,5 +1,5 @@
 // 설계서 화면(7·17절): A4 인쇄용으로 그리고, 브라우저 인쇄 창의 "PDF로 저장"으로만 내보낸다.
-// 목차: (설계 메모 장들) → 요약 → 구동 방식 → 규모 가정 → 구조도 → 화면 설계·API → 데이터 명세 → 노드별 판정 근거 → 확장 한계·지연·비용 → 최선 조합 → 가용성·성장 → 조문 → 미해결 → 적용한 설정 → 출처
+// 목차: (설계 메모 장들) → 요약 → 구동 방식 → 규모 가정 → 구조도 → 화면 설계·API → 데이터 명세 → 노드별 판정 근거 → 확장 한계·지연·비용 → 최선 조합 → 가용성·성장 → 네트워크·보안 → 조문 → 미해결 → 적용한 설정 → 출처
 import { PATHS_CUT_TEXT } from '../../engine/latency';
 import { useEffect, useRef, type ReactNode } from 'react';
 import type { Analysis } from '../../engine/analyze';
@@ -23,11 +23,44 @@ import { FeatureTablesTable } from './ResultsPanel';
 import { dialectOf, keyCols, sqlType } from '../../engine/ddl';
 import { NoteView } from './NoteView';
 import { chapterTitle } from './notes';
+import { EDGE_NET_NAMES, EDGE_TLS_NAMES, fieldText, hasExposure, LEVEL_MARK, SECURITY_FIELD_NAMES, SECURITY_FIELDS, edgeNet, stride } from '../../engine/security';
 
 const H = ({ n, children }: { n: number; children: ReactNode }) => <h2 className="r-h">{n}. {children}</h2>;
 const KV = ({ rows }: { rows: [string, ReactNode][] }) => (
   <table className="r-kv"><tbody>{rows.map(([k, v]) => <tr key={k}><th>{k}</th><td>{v}</td></tr>)}</tbody></table>
 );
+
+/** 네트워크·보안 장: 노드별 보안 값, 연결선별 암호화·지나는 망, 점검 결과, 인터넷 공개 노드의 위협 점검표(STRIDE) */
+function NetSecChapter({ n, p, a, name }: { n: number; p: Project; a: Analysis; name: (id: string) => string }) {
+  const order = { fail: 0, conditional: 1, info: 2 };
+  const hits = [...a.security].sort((x, y) => order[x.level] - order[y.level]);
+  const pub = p.nodes.filter((x) => hasExposure(x) && x.security?.exposure === 'public');
+  return (
+    <section>
+      <H n={n}>네트워크 · 보안</H>
+      <table className="r-grid">
+        <thead><tr><th>노드</th>{SECURITY_FIELDS.map((f) => <th key={f}>{SECURITY_FIELD_NAMES[f]}</th>)}</tr></thead>
+        <tbody>{p.nodes.filter((x) => x.layer !== 'external').map((x) => <tr key={x.id}><td>{x.name}</td>{SECURITY_FIELDS.map((f) => <td key={f}>{fieldText(x, f)}</td>)}</tr>)}</tbody>
+      </table>
+      {p.edges.length > 0 && <table className="r-grid">
+        <thead><tr><th>연결</th><th>암호화</th><th>지나는 망</th></tr></thead>
+        <tbody>{p.edges.map((e) => {
+          const net = edgeNet(p, e);
+          return <tr key={e.from + '>' + e.to}><td>{name(e.from)} → {name(e.to)}</td><td>{e.security?.tls ? EDGE_TLS_NAMES[e.security.tls] : '미정'}</td><td>{net ? EDGE_NET_NAMES[net] + (e.security?.crosses ? '' : ' (짐작)') : '미정'}</td></tr>;
+        })}</tbody>
+      </table>}
+      <h3>점검 결과</h3>
+      {hits.length ? <ul>{hits.map((h, k) => <li key={k}>{LEVEL_MARK[h.level]} {h.target}: {h.why} → {h.instead}</li>)}</ul> : <p className="muted">걸린 것이 없습니다.</p>}
+      <h3>인터넷 공개 노드 위협 점검표 (STRIDE)</h3>
+      {pub.length ? pub.map((x) => (
+        <table key={x.id} className="r-grid"><thead><tr><th colSpan={2}>{x.name}</th></tr></thead>
+          <tbody>{stride(p, x).map(([k, v]) => <tr key={k}><th>{k}</th><td>{v}</td></tr>)}</tbody>
+        </table>
+      )) : <p className="muted">인터넷 공개로 정한 노드가 없습니다. 노드 패널 › 네트워크·보안에서 공개 범위를 정하면 여기에 점검표가 나옵니다.</p>}
+      <p className="muted">설계 값으로 하는 점검입니다. 실제 보안 그룹·인증서·침투 시험을 대신하지 않습니다.</p>
+    </section>
+  );
+}
 
 export function Report({ project: p, analysis: a, positions, plans, today, onClose }: {
   project: Project; analysis?: Analysis; positions: Record<string, XY>; plans?: OptimizeResult; today: string; onClose: () => void;
@@ -190,8 +223,10 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
             </ul>}
           </section>
 
+          <NetSecChapter n={N + 11} p={p} a={a} name={name} />
+
           <section>
-            <H n={N + 11}>확인 필요 조문</H>
+            <H n={N + 12}>확인 필요 조문</H>
             {!a.regulation.length ? <p className="muted">개인정보 노드가 없거나 걸린 조문이 없습니다.</p> : <ul>
               {a.regulation.map((h) => <li key={h.nodeId + h.law + h.article}>{name(h.nodeId)} · {lawLine(h)}</li>)}
             </ul>}
@@ -199,12 +234,12 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={N + 12}>미해결 ❌·⚠️ 목록</H>
+            <H n={N + 13}>미해결 ❌·⚠️ 목록</H>
             {(() => { const xs = openIssues(p, a, catalog.byId); return xs.length ? <ul>{xs.map((x, k) => <li key={k}>{x}</li>)}</ul> : <p className="muted">없습니다.</p>; })()}
           </section>
 
           <section>
-            <H n={N + 13}>적용한 설정</H>
+            <H n={N + 14}>적용한 설정</H>
             <ul>{p.nodes.flatMap((n) => {
               const sp = nodeStorageProfile(n, catalog.byId);
               const feats = sp ? selectedFeatures(sp, n).map((f) => f.label) : [];
@@ -214,7 +249,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={N + 14}>카탈로그 출처</H>
+            <H n={N + 15}>카탈로그 출처</H>
             <ul className="r-src">
               {sourcesOf(p, catalog.byId).map((s) => <li key={s.item}>{s.item}: {s.urls.join(' · ')}</li>)}
               {usedPrices.map((r) => <li key={r.id}>가격 {r.id} ({r.as_of}): {r.source}</li>)}
