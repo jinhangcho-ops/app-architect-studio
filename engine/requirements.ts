@@ -72,15 +72,15 @@ export function parseRequirements(text: string): RequirementsResult {
   return { reqs, skipped };
 }
 
-/** 패키지의 조건들: 환경 표시 없는 줄은 pip가 함께(그리고) 적용하므로 한 조건으로 합치고, 환경 표시별 줄은 따로(어느 하나) */
+const highest = (vs: (string | undefined)[]) => vs.filter((v): v is string => !!v).reduce<string | undefined>((a, b) => (!a || cmpVersion(b, a) > 0 ? b : a), undefined);
+
+/** 환경마다 pip가 적용하는 조건들. 환경 표시 없는 줄은 어디서나 함께(그리고) 적용되고, 환경 표시 줄은 그 환경에서 그 위에 더해진다.
+ *  그래서 [표시 없는 줄만(표시가 맞지 않는 환경), 표시 줄마다 표시 없는 줄 + 그 줄] — 판단은 이 중 어느 환경에서도 맞아야 한다 */
 function specsOf(r: RequirementsResult, name: string): { spec: string; min?: string }[] {
   const lines = r.reqs.filter((x) => x.name === normName(name));
   const plain = lines.filter((x) => !x.marker);
-  const mins = plain.map((x) => x.min).filter((v): v is string => !!v);
-  return [
-    ...(plain.length ? [{ spec: plain.map((x) => x.spec).filter(Boolean).join(','), min: mins.length ? mins.reduce((a, b) => (cmpVersion(a, b) >= 0 ? a : b)) : undefined }] : []),
-    ...lines.filter((x) => x.marker),
-  ];
+  const join = (xs: Requirement[]) => ({ spec: xs.map((x) => x.spec).filter(Boolean).join(','), min: highest(xs.map((x) => x.min)) });
+  return [...(plain.length ? [join(plain)] : []), ...lines.filter((x) => x.marker).map((m) => join([...plain, m]))];
 }
 
 /** 패키지의 모든 조건이 bound보다 낮은 버전만 허용하는지 (pydantic<2, fastapi<=0.99). 하한 없이 상한만 적으면 pip가 그 아래 버전을 깔므로 */

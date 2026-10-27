@@ -53,3 +53,16 @@ describe('리뷰 da1bc83', () => {
     expect(w('fastapi<0.100\npydantic<2')).not.toContain('pydantic 2를 쓰지 못합니다');
   });
 });
+
+describe('리뷰 3d0bb10', () => {
+  it('환경 표시 줄은 표시 없는 줄에 더해짐 (pydantic<2 + >=1.8 ; py>=3.8 → 1)', () => {
+    expect(pyProfile({ requirements: 'pydantic<2\npydantic>=1.8 ; python_version>="3.8"\nfastapi' }).pydantic).toBe(1);
+    expect(pyProfile({ requirements: 'fastapi<0.95\nfastapi>=0.90 ; python_version>="3.8"' })).toMatchObject({ annotated: false });
+    expect(pyProfile({ requirements: 'fastapi<0.95\nfastapi>=0.90 ; python_version>="3.8"' }).warnings.join()).not.toContain('최신 규칙');
+  });
+  it('[standard]를 어느 줄에 적어도 실행 안내가 같음', () => {
+    const a = pyProfile({ requirements: 'fastapi[standard]\nfastapi>=0.115' });
+    const b = pyProfile({ requirements: 'fastapi>=0.115\nfastapi[standard]' });
+    expect([a.run, a.extraPip, b.run, b.extraPip]).toEqual(['cli', undefined, 'cli', undefined]);
+  });
+});

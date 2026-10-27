@@ -65,8 +65,9 @@ export function pyProfile(node: { requirements?: string; python?: string }): PyP
 
   // requirements.txt가 있으면 그 목록으로 설치하므로, 실행 명령도 목록에 든 것으로 (2026-10-27 실제 설치: fastapi 0.146.0만 적으면 fastapi dev도 uvicorn도 없음)
   // fastapi dev: [standard]나 fastapi-cli를 적었거나, fastapi-cli를 기본으로 딸려 오던 0.111.x
-  const fr = r.reqs.find((x) => x.name === 'fastapi');
-  const cli = !!fa && cmpVersion(fa, '0.111') >= 0 && (!!fr?.extras.includes('standard') || listed('fastapi-cli') || cmpVersion(fa, '0.112') < 0);
+  // [standard]는 fastapi 줄 어디에 적어도 같은 것을 깐다 (줄 순서와 상관없게)
+  const standard = r.reqs.some((x) => x.name === 'fastapi' && x.extras.includes('standard'));
+  const cli = !!fa && cmpVersion(fa, '0.111') >= 0 && (standard || listed('fastapi-cli') || cmpVersion(fa, '0.112') < 0);
   const fromList = !!node.requirements?.trim();
   const run: PyProfile['run'] = fromList ? (cli ? 'cli' : 'uvicorn') : atLeast(fa, '0.112') ? 'standard' : atLeast(fa, '0.111') ? 'cli' : 'uvicorn';
   return {
