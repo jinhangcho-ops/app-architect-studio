@@ -412,6 +412,8 @@ export type Exchange = z.infer<typeof Exchange>;
 
 export const Project = z.object({
   name: z.string(),
+  /** 설계 메모: 장 제목과 본문(가벼운 마크다운). 순서대로 설계서 맨 앞 장들이 된다. 계산에는 쓰지 않는다 */
+  notes: z.array(z.object({ title: z.string(), body: z.string() })).default([]),
   deploy: Deploy.default({ mode: 'web', offline_required: false, scope: 'public', targets: [] }),
   scale: Scale.optional(),
   // 비율 합이 1인지는 checkProject가 본다 (화면에서 비율을 하나씩 고치는 중에도 저장 파일이 열리게)

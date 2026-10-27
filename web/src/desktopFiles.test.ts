@@ -201,7 +201,7 @@ describe('형식 3: 노드의 requirements·python', () => {
     const req = 'fastapi==0.110.0\npydantic==2.5.0\n';
     const withReq = { ...p, nodes: p.nodes.map((n, i) => (i === 0 ? { ...n, requirements: req, python: '3.11' } : n)) };
     const saved = JSON.parse(JSON.stringify(exportProject(withReq, {})));
-    expect(saved.format_version).toBe(3);
+    expect(saved.format_version).toBe(FORMAT_VERSION);
     const back = importProject(saved, 'x').project.nodes[0];
     expect([back.requirements, back.python]).toEqual([req, '3.11']);
     expect(() => importProject({ ...saved, format_version: 2 }, 'x')).not.toThrow();
@@ -221,5 +221,17 @@ describe('형식 3: 노드의 requirements·python', () => {
     // 이름만 python인 다른 칸(실측값 measured.python)은 이 규칙으로 지우지 않는다 (리뷰 da1bc83)
     saved.nodes[0].measured = { python: 'x' };
     expect(() => readProject(saved, catalog.items, 'x', [])).toThrow();
+  });
+});
+
+describe('형식 4: 프로젝트 설계 메모', () => {
+  it('저장했다 열어도 장 순서·본문이 그대로, 형식 3 파일도 열리고 메모는 빈 목록', () => {
+    const p = parseProject(examples.find((e) => e.name === 'ledger-fastapi.json')!.data, catalog.items);
+    const notes = [{ title: '1. 개요', body: '**목적**: 거래명세서 자동 입력\n\n| 영역 | 선택 |\n| --- | --- |\n| 앱 | React |' }, { title: '2. 범위', body: '- 사진 촬영' }];
+    const saved = JSON.parse(JSON.stringify(exportProject({ ...p, notes }, {})));
+    expect(saved.format_version).toBe(4);
+    expect(importProject(saved, 'x').project.notes).toEqual(notes);
+    const { notes: _n, ...old } = saved;
+    expect(importProject({ ...old, format_version: 3 }, 'x').project.notes).toEqual([]);
   });
 });

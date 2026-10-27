@@ -36,7 +36,7 @@ export function buildPrices(files: JsonFile[]): PriceRow[] {
 
 /** 저장 파일 형식 버전. 저장 파일의 모양이 바뀌면(필드 이름·뜻이 바뀜) 올리고 MIGRATIONS에 옛 모양을 새 모양으로 바꾸는 함수를 더한다.
  *  format_version이 없는 파일은 1 (버전을 넣기 전에 만든 파일) */
-export const FORMAT_VERSION = 3;
+export const FORMAT_VERSION = 4;
 type Raw = Record<string, unknown>;
 /** MIGRATIONS[v]: 형식 v인 파일을 v + 1로 바꾼다 */
 export const MIGRATIONS: Record<number, (d: Raw) => Raw> = {
@@ -44,6 +44,8 @@ export const MIGRATIONS: Record<number, (d: Raw) => Raw> = {
   1: (d) => d,
   // 3: 노드의 requirements·python(FastAPI 뼈대를 버전에 맞춤)이 새로 생김. 바꿀 것 없이 버전만 올림 (2와 같은 이유)
   2: (d) => d,
+  // 4: 프로젝트 설계 메모(notes)가 새로 생김 (v1.3.0). 바꿀 것 없이 버전만 올림
+  3: (d) => d,
 };
 
 /** 저장 파일을 지금 형식으로 바꾼다. 이 앱보다 새 버전에서 만든 파일은 모르는 값이 버려져 다시 저장할 때 사라지므로 열지 않는다 */
