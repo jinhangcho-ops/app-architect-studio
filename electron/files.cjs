@@ -51,9 +51,12 @@ function writeSnapshot(projectFile, kind, name, text, max) {
 }
 
 function listSnapshots(projectFile, kind) {
-  const dir = dirOf(projectFile, kind);
-  if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort().reverse()
+  let dir = dirOf(projectFile, kind);
+  const has = (d) => fs.existsSync(d) && fs.readdirSync(d).some((f) => f.endsWith('.json'));
+  // v1.2.0까지는 .saves/에 바로 두었다. 새 폴더에 아직 아무것도 없으면 그 기록을 보여 준다
+  if (!has(dir)) dir = path.dirname(dir);
+  if (!has(dir)) return [];
+  return fs.readdirSync(dir).filter((f) => f.endsWith('.json') && fs.statSync(path.join(dir, f)).isFile()).sort().reverse()
     .map((f) => ({ name: f.slice(0, -5), text: readText(path.join(dir, f)) }));
 }
 

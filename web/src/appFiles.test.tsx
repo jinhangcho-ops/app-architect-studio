@@ -139,6 +139,17 @@ it('리뷰 13: 세부 구성 중 Ctrl+V는 캔버스로 나와 붙인 노드를 
   await done();
 });
 
+it('리뷰 14: 복구 안내만 띄우고 손대지 않으면 시점을 새로 만들지 않음', async () => {
+  await wait(1000); // 앞 시험이 걸어 둔 자동 저장 타이머가 먼저 끝나게
+  localStorage.clear();
+  const { writeAutosave } = await import('./autosave');
+  writeAutosave({ ...useStore.getState().project, name: '한 시간 고친 작업' }, {});
+  const { done } = await mount();
+  await wait(1500);
+  expect(readAutosaves().map((s) => s.project.name)).toEqual(['한 시간 고친 작업']);
+  await done();
+});
+
 it('감사 13: 복구 안내가 떠 있어도 이번 작업은 새 시점으로 자동 저장, 남아 있던 시점은 그대로', async () => {
   localStorage.clear();
   const { writeAutosave } = await import('./autosave');

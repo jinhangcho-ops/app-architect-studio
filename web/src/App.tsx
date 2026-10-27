@@ -85,6 +85,8 @@ export function App() {
   // 앱을 열 때 남아 있던 임시 저장. 이번 작업은 새 시점으로 남겨(안내를 닫지 않아도 자동 저장은 계속) 그 시점을 덮어쓰지 않는다
   const [recovery, setRecovery] = useState<Snapshot | undefined>(() => readAutosaves()[0]);
   useEffect(() => { if (recovery) startNewSnapshot(); }, []);
+  // 복구 안내 중 손대지 않은 시작 프로젝트는 저장하지 않는다 (켤 때마다 빈 시점이 쌓여 복구할 시점을 밀어냄)
+  const startProject = useRef(project);
   const [history, setHistory] = useState(false);
   const [notice, setNotice] = useState<string>();
   // 새 버전 알림 (데스크톱 앱에서 켤 때 한 번 확인)
@@ -147,9 +149,10 @@ export function App() {
       warnedSave.current = true;
       say(`${where} 자동 저장을 하지 못했어요. 강제로 닫히면 복구할 수 없으니 "저장"(Ctrl+S)이나 "파일로 내보내기"로 저장하세요`, 10000);
     };
+    if (recovery && project === startProject.current) return;
     scheduleAutosave(project, positions, fail('브라우저 저장소에'));
     if (filePath) scheduleFolderAutosave(filePath, project, positions, fail('프로젝트 폴더에'));
-  }, [project, positions, filePath]);
+  }, [project, positions, filePath, recovery]);
 
   const hits = find ? searchProject(project, catalog.byId, find.q) : [];
   const go = (h: Hit) => {

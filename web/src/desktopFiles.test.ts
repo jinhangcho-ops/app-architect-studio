@@ -52,6 +52,18 @@ describe('데스크톱 앱 폴더 저장 (electron/files.cjs)', () => {
     expect(files.listSnapshots(b, 'manual')).toHaveLength(20);
   });
 
+  it('예전(v1.2.0) 위치 .saves/*.json 기록도 보임 (리뷰 14)', () => {
+    const d = mkdtempSync(join(tmpdir(), 'aas-old-'));
+    const f = join(d, 'old.aas.json');
+    writeFileSync(f, '{}'); files.allow(f);
+    mkdirSync(join(d, '.saves'));
+    writeFileSync(join(d, '.saves', '2026-01-01_00-00-00.json'), '{"p":"old"}');
+    expect(files.listSnapshots(f, 'manual').map((x) => x.name)).toEqual(['2026-01-01_00-00-00']);
+    files.writeSnapshot(f, 'manual', '2026-10-27_00-00-00', '{}', 20);
+    expect(files.listSnapshots(f, 'manual').map((x) => x.name)).toEqual(['2026-10-27_00-00-00']);
+    rmSync(d, { recursive: true, force: true });
+  });
+
   it('같은 이름이면 덮어씀 (자동 저장이 간격 안에서 같은 시점을 고칠 때)', () => {
     files.writeSnapshot(project, 'auto', '2026-10-24_04-00-00', 'a', 10);
     files.writeSnapshot(project, 'auto', '2026-10-24_04-00-00', 'b', 10);
