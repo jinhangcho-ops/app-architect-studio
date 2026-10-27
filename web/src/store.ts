@@ -112,15 +112,19 @@ export const useStore = create<State>((set, get) => ({
     const s = get();
     if (!s.past.length) return false;
     lastEdit = 0;
-    set({ project: s.past.at(-1)!, past: s.past.slice(0, -1), future: [s.project, ...s.future] });
-    return loaded.has(s.project);
+    // 불러오기 경계를 넘어 앞 파일로 돌아가면 설정 비교 기준(baseline)도 그 파일을 연 시점으로
+    const crossed = loaded.has(s.project);
+    const base = crossed ? s.past.findLast((x) => loaded.has(x)) ?? s.baseline : s.baseline;
+    set({ project: s.past.at(-1)!, past: s.past.slice(0, -1), future: [s.project, ...s.future], baseline: base });
+    return crossed;
   },
   redo: () => {
     const s = get();
     if (!s.future.length) return false;
     lastEdit = 0;
-    set({ project: s.future[0], future: s.future.slice(1), past: [...s.past, s.project] });
-    return loaded.has(s.future[0]);
+    const crossed = loaded.has(s.future[0]);
+    set({ project: s.future[0], future: s.future.slice(1), past: [...s.past, s.project], ...(crossed && { baseline: s.future[0] }) });
+    return crossed;
   },
 }));
 

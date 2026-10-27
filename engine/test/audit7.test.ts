@@ -1,11 +1,13 @@
 // 감사 6 (audit7): 큰 숫자 하나로 계산이 멈추지 않는지, 설계서·DDL 경고
 import { fileURLToPath } from 'node:url';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { analyze, sizeAt } from '../analyze';
 import { readProject } from '../data';
 import { schemaWarnings, tableDdl } from '../ddl';
-import { loadCatalog, loadLaws, loadPrices } from '../io';
+import { loadCatalog, loadLaws, loadPrices, loadProject } from '../io';
 import { erlangC } from '../latency';
 import { optimize } from '../optimize';
 import { Project, checkProject } from '../schema';
@@ -80,6 +82,17 @@ describe('감사 9: 하루 접속이 잦은 페르소나도 트래픽 계산이 
     const t = traffic(q)!;
     expect(Date.now() - t0).toBeLessThan(5000);
     expect(t.peakRps.value).toBeGreaterThan(0);
+  });
+});
+
+describe('감사 12: BOM이 붙은 프로젝트 파일도 명령줄에서 열림', () => {
+  it('loadProject', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'aas-bom-'));
+    try {
+      const f = join(dir, 'p.json');
+      writeFileSync(f, '\uFEFF' + readFileSync(root('examples/phase1.json'), 'utf8'));
+      expect(loadProject(f, catalog.items).nodes.length).toBeGreaterThan(0);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
 

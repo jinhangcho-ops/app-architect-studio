@@ -52,25 +52,39 @@ function listSnapshots(projectFile, kind) {
   const dir = dirOf(projectFile, kind);
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort().reverse()
-    .map((f) => ({ name: f.slice(0, -5), text: fs.readFileSync(path.join(dir, f), 'utf8') }));
+    .map((f) => ({ name: f.slice(0, -5), text: readText(path.join(dir, f)) }));
 }
 
 /** PNG 파일 이름: 경로·예약 문자를 빼고, 비면 '화면' */
 const pngName = (name) => `${String(name).replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/^\.+/, '').slice(0, 120) || '화면'}.png`;
 
-/** 와이어프레임 PNG 쓰기: 고른 폴더에 이름이 겹치지 않게 (base64 PNG만 받는다) */
-function writePngs(dir, files) {
+/** 겹치지 않는 PNG 이름들. Windows는 대소문자를 가리지 않아 소문자로 견주고,
+ *  번호는 자른 이름 뒤에 붙인다 (긴 이름 뒤에 붙이면 120자에서 잘려 같은 이름이 되풀이되어 끝나지 않음) */
+function pngNames(files) {
   const used = new Set();
-  return files.map(({ name, base64 }) => {
+  return files.map(({ name }) => {
+    let file = pngName(name);
+    for (let k = 2; used.has(file.toLowerCase()); k++) file = pngName(`${String(name).slice(0, 110)} ${k}`);
+    used.add(file.toLowerCase());
+    return file;
+  });
+}
+
+/** 와이어프레임 PNG 쓰기: 고른 폴더에 이름이 겹치지 않게 (base64 PNG만 받는다). 하나라도 PNG가 아니면 아무것도 쓰지 않는다 */
+function writePngs(dir, files) {
+  const bufs = files.map(({ base64 }) => {
     const buf = Buffer.from(String(base64), 'base64');
     if (buf.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') throw new Error('PNG가 아닙니다');
-    let file = pngName(name);
-    for (let k = 2; used.has(file); k++) file = pngName(`${name} ${k}`);
-    used.add(file);
-    writeAtomic(path.join(dir, file), buf);
+    return buf;
+  });
+  return pngNames(files).map((file, k) => {
+    writeAtomic(path.join(dir, file), bufs[k]);
     return path.join(dir, file);
   });
 }
+
+/** 메모장(UTF-8 BOM)·PowerShell 5.1로 고친 파일도 열리게 맨 앞 BOM을 뺀다 (브라우저 File.text()와 같게) */
+const readText = (file) => fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
 
 /** 명세 파일 쓰기: 이름은 영문·숫자·_.- 와 .json·.proto·.py·.csv·.sql만 (경로 문자가 섞이지 않게) */
 function writeTexts(dir, files) {
@@ -90,11 +104,21 @@ function registerFileApi() {
   const { BrowserWindow, dialog, ipcMain } = require('electron');
   const filters = [{ name: 'App Architect Studio 프로젝트', extensions: ['json'] }];
   const win = () => BrowserWindow.getFocusedWindow() ?? undefined;
+  /** 이미 있는 파일을 덮어쓸지 한 번 묻는다 (없으면 바로 true) */
+  const confirmOverwrite = async (dup) => {
+    if (!dup.length) return true;
+    const list = dup.slice(0, 10).join('\n') + (dup.length > 10 ? `\n… 외 ${dup.length - 10}개` : '');
+    const ok = await dialog.showMessageBox(win(), {
+      type: 'question', buttons: ['덮어쓰기', '취소'], defaultId: 1, cancelId: 1,
+      message: `이미 있는 파일 ${dup.length}개를 덮어쓸까요?`, detail: list,
+    });
+    return ok.response === 0;
+  };
   ipcMain.handle('file:open', async () => {
     const r = await dialog.showOpenDialog(win(), { properties: ['openFile'], filters });
     if (r.canceled || !r.filePaths[0]) return null;
     const file = allow(r.filePaths[0]);
-    return { path: file, text: fs.readFileSync(file, 'utf8') };
+    return { path: file, text: readText(file) };
   });
   ipcMain.handle('file:save', async (_e, file, text, suggested) => {
     let target = file ? check(file) : undefined;
@@ -117,25 +141,18 @@ function registerFileApi() {
     }
     const r = await dialog.showOpenDialog(win(), { title: 'PNG를 저장할 폴더', properties: ['openDirectory', 'createDirectory'] });
     if (r.canceled || !r.filePaths[0]) return null;
+    if (!(await confirmOverwrite(existingTexts(r.filePaths[0], pngNames(files).map((name) => ({ name })))))) return null;
     return writePngs(r.filePaths[0], files);
   });
   ipcMain.handle('text:save', async (_e, files) => {
     if (!Array.isArray(files) || !files.length) return null;
     const r = await dialog.showOpenDialog(win(), { title: '명세 파일을 저장할 폴더', properties: ['openDirectory', 'createDirectory'] });
     if (r.canceled || !r.filePaths[0]) return null;
-    const dup = existingTexts(r.filePaths[0], files);
-    if (dup.length) {
-      const list = dup.slice(0, 10).join('\n') + (dup.length > 10 ? `\n… 외 ${dup.length - 10}개` : '');
-      const ok = await dialog.showMessageBox(win(), {
-        type: 'question', buttons: ['덮어쓰기', '취소'], defaultId: 1, cancelId: 1,
-        message: `이미 있는 파일 ${dup.length}개를 덮어쓸까요?`, detail: list,
-      });
-      if (ok.response !== 0) return null;
-    }
+    if (!(await confirmOverwrite(existingTexts(r.filePaths[0], files)))) return null;
     return writeTexts(r.filePaths[0], files);
   });
   ipcMain.handle('snap:write', (_e, file, kind, name, text, max) => writeSnapshot(file, kind, name, text, max));
   ipcMain.handle('snap:list', (_e, file, kind) => listSnapshots(file, kind));
 }
 
-module.exports = { registerFileApi, writeSnapshot, listSnapshots, allow, writePngs, pngName, writeAtomic, writeTexts, existingTexts };
+module.exports = { registerFileApi, writeSnapshot, listSnapshots, allow, writePngs, pngName, pngNames, writeAtomic, writeTexts, existingTexts };

@@ -24,6 +24,12 @@ describe('SQLite 실험: 큰 행 (감사 11)', () => {
     expect(r.rows).toBeLessThan(10_000);
     expect(r.rowBytes).toBeGreaterThan(400_000);
   });
+  it('행 하나가 아주 크면(LONGBLOB 길이) 멈추지 않고 바로 한국어로 알림 (리뷰 12)', () => {
+    const huge = table({ name: 'files', columns: [{ name: 'id', type: 'bigint' }, { name: 'data', type: 'bytes', max_length: 4294967295 }], primary_key: ['id'] });
+    const t0 = performance.now();
+    expect(() => runSqliteLab(SQL, huge)).toThrow('행 하나가 너무 커서');
+    expect(performance.now() - t0).toBeLessThan(1000);
+  });
   it('컬럼이 SQLite 한도(2000)를 넘으면 한국어로 알림', () => {
     const wide = table({ name: 'w', columns: Array.from({ length: 2001 }, (_, k) => ({ name: `c${k}`, type: 'bigint' })) });
     expect(() => runSqliteLab(SQL, wide)).toThrow('SQLite는 컬럼을 2000개까지만');

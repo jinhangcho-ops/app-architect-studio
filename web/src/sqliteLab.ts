@@ -87,6 +87,8 @@ export function runSqliteLab(SQL: SqlJsStatic, t: Table, opts: { rows?: number; 
   if (t.columns.length > MAX_COLUMNS) throw new Error(`SQLite는 컬럼을 ${MAX_COLUMNS}개까지만 받아 실험할 수 없어요 (지금 ${t.columns.length}개)`);
   const rowEstimate = t.columns.reduce((s, c) => s + Math.max(1, valueBytes(c)), 0);
   const rows = opts.rows ?? Math.max(20, Math.min(10_000, Math.floor(DATA_BUDGET / rowEstimate)));
+  // 최소 20행이라 행 하나가 아주 크면(LONGBLOB 길이 등) 총량이 한도를 크게 넘는다 → 화면이 멈추거나 메모리가 넘치기 전에 알린다
+  if (rows * rowEstimate > 10 * DATA_BUDGET) throw new Error(`행 하나가 너무 커서(약 ${Math.round(rowEstimate / 1e6)}MB) 실험할 수 없어요. 큰 컬럼의 평균 길이(avg_bytes)를 넣으면 그 값으로 잽니다`);
   const { table, indexes } = ddlFor(t, opts.withoutRowid);
   const a = new SQL.Database();
   const b = new SQL.Database();

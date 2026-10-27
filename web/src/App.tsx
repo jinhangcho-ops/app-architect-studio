@@ -61,7 +61,7 @@ class Guard extends Component<{ children: ReactNode }, { error?: Error }> {
 }
 
 export function App() {
-  const { project, baseline, positions, selected, load, edit, relayout, select, focus, setFocus, undo, redo, past, future, clipboard, set, move, rejected } = useStore();
+  const { project, baseline, positions, selected, load, edit, relayout, select, focus, focusTab, setFocus, undo, redo, past, future, clipboard, set, move, rejected } = useStore();
   // 위치를 끌어도 다시 계산하지 않도록 프로젝트가 바뀔 때만 분석한다.
   // 계산은 입력 뒤로 미룬다(사용자가 많으면 한 번에 0.5초 넘게 걸려 칸에 글자를 칠 때마다 멈추므로). 그동안은 바로 전 결과를 보인다
   const computed = useDeferredValue(project);
@@ -101,7 +101,10 @@ export function App() {
     setRecovery(undefined);
     setHistory(false);
   };
-  const say = (msg: string, ms = 2500) => { setNotice(msg); setTimeout(() => setNotice(undefined), ms); };
+  // 앞 알림의 타이머가 뒤에 뜬 긴 알림(자동 저장 실패 경고 등)을 일찍 지우지 않게 하나만 둔다
+  const noticeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const say = (msg: string, ms = 2500) => { clearTimeout(noticeTimer.current); setNotice(msg); noticeTimer.current = setTimeout(() => setNotice(undefined), ms); };
+  const openError = (e: Error) => (e instanceof SyntaxError ? `JSON 파일을 읽지 못했습니다: ${e.message}` : e.message);
   // 적용하지 않은 편집 알림: 6초 보이되, 그 전에 편집이 성공하면 store가 지워 바로 사라진다
   useEffect(() => {
     if (!rejected) return;
@@ -217,11 +220,13 @@ export function App() {
       if (k === 'f') { e.preventDefault(); setFind({ q: find?.q ?? '', at: 0 }); return; }
       if (k === 'o') { e.preventDefault(); openProject(); return; }
       if (typing) return;
-      // 세부 구성에서는 노드 복사·붙여넣기를 하지 않는다 (와이어프레임 상자를 복사하려다 노드가 복제되지 않게)
-      if (focus && (k === 'c' || k === 'v')) return;
+      // 와이어프레임 탭에서는 노드 복사·붙여넣기를 하지 않는다 (상자를 복사하려다 노드가 복제되지 않게)
+      if (focus && focusTab === 'wireframe' && (k === 'c' || k === 'v')) return;
+      // 카드를 누르면 세부 구성으로 들어가 선택이 비므로, 세부 구성 중이면 그 노드를 복사한다
+      const copyId = selected?.kind === 'node' ? selected.id : focus;
       // 페이지 글자를 드래그해 골라 둔 경우에는 브라우저의 복사를 그대로 둔다
-      if (k === 'c' && selected?.kind === 'node' && !window.getSelection()?.toString()) {
-        set({ clipboard: project.nodes.find((n) => n.id === selected.id) });
+      if (k === 'c' && copyId && !window.getSelection()?.toString()) {
+        set({ clipboard: project.nodes.find((n) => n.id === copyId) });
         return;
       }
       if (k === 'v' && clipboard) { e.preventDefault(); paste(); return; }
@@ -241,7 +246,7 @@ export function App() {
       loadNew(project, positions);
       setFilePath(r.path);
       if (dropped) say(dropped, 8000);
-    }).catch((err: Error) => say(err.message, 8000));
+    }).catch((err: Error) => say(openError(err), 8000));
   };
 
   const open = async (file: File) => {
@@ -250,7 +255,7 @@ export function App() {
       loadNew(project, positions);
       if (dropped) say(dropped, 8000);
     } catch (e) {
-      say((e as Error).message, 8000);
+      say(openError(e as Error), 8000);
     }
   };
 
@@ -394,7 +399,7 @@ export function App() {
           {find.q && <div className="find-results">
             {!hits.length && <div className="muted">찾은 것이 없습니다</div>}
             {hits.map((h, i) => (
-              <button key={`${h.kind}:${h.label}`} className={i === (find.at - 1 + hits.length) % hits.length ? 'on' : ''} onClick={() => go(h)}>
+              <button key={i} className={i === (find.at - 1 + hits.length) % hits.length ? 'on' : ''} onClick={() => go(h)}>
                 <b>{h.label}</b> <span className="muted">{h.detail}</span>
               </button>
             ))}

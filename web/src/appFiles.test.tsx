@@ -71,3 +71,42 @@ it('없는 카탈로그 항목·없는 노드 연결선이 있어도 부품 구�
   expect(el.textContent).toContain('이 화면을 그리지 못했습니다');
   await done();
 });
+
+it('감사 12: 세부 구성 중 Ctrl+C는 그 노드를 복사, 와이어프레임 탭에서는 복사하지 않음', async () => {
+  const ex = examples.find((e) => e.name === 'phase3.json')!;
+  useStore.getState().load(parseProject(ex.data, catalog.items, ex.name));
+  useStore.setState({ clipboard: undefined });
+  const { done } = await mount();
+  const id = useStore.getState().project.nodes[1].id;
+  await act(async () => useStore.getState().setFocus(id, 'wireframe'));
+  await key('c');
+  expect(useStore.getState().clipboard).toBeUndefined();
+  await act(async () => useStore.getState().setFocus(id, 'servers'));
+  await key('c');
+  expect(useStore.getState().clipboard?.id).toBe(id);
+  await done();
+});
+
+it('감사 12: 다른 파일을 연 뒤 되돌리면 설정 비교 기준도 앞 파일로', async () => {
+  const ex = (n: string) => { const e = examples.find((x) => x.name === n)!; return parseProject(e.data, catalog.items, e.name); };
+  const a = ex('phase2.json'), b = ex('global-commerce.json');
+  useStore.getState().load(a);
+  useStore.getState().load(b);
+  expect(useStore.getState().baseline).toBe(b);
+  useStore.getState().undo();
+  expect(useStore.getState().baseline).toBe(a);
+  useStore.getState().redo();
+  expect(useStore.getState().baseline).toBe(b);
+});
+
+it('감사 12: 앞 알림의 타이머가 뒤에 뜬 긴 알림을 일찍 지우지 않음, JSON 오류는 한국어 앞말', async () => {
+  fake.files['bad.json'] = '{ bad';
+  const { el, done } = await mount();
+  await key('s');
+  await wait(2000);
+  fake.next = 'bad.json'; await key('o'); await wait(100);
+  expect(el.textContent).toContain('JSON 파일을 읽지 못했습니다');
+  await wait(1000);
+  expect(el.textContent).toContain('JSON 파일을 읽지 못했습니다');
+  await done();
+});

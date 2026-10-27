@@ -147,7 +147,9 @@ function FrameView({ nodeId, s, screen, frame, k, left, top, caption, active, se
 const GAP = 24, CAP = 22;
 
 export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis?: Analysis }) {
-  const { project: p, edit } = usePick('project', 'edit');
+  const { project: p, edit, set } = usePick('project', 'edit', 'set');
+  // 저장·가져오기 실패를 화면 알림으로 (명세 내보내기와 같게)
+  const fail = (what: string) => (e: unknown) => set({ rejected: `${what}: ${(e as Error).message}` });
   const n = p.nodes.find((x) => x.id === nodeId)!;
   const screens = screensOf(n);
   const [cur, setCur] = useState(0);
@@ -237,6 +239,7 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
           e.target.value = '';
           const html = files.find((x) => /\.html?$/i.test(x.name));
           if (!html) return;
+          try {
           const css = Object.fromEntries(await Promise.all(files.filter((x) => /\.css$/i.test(x.name)).map(async (x) => [x.name, await x.text()] as const)));
           const text = await html.text();
           const base = html.name.replace(/\.html?$/i, '');
@@ -249,9 +252,10 @@ export function WireframeInside({ nodeId, analysis }: { nodeId: string; analysis
           edit((x) => pages.reduce((acc, sc) => addScreen(acc, nodeId, device, sc), replace ? mapScreens(x, nodeId, () => []) : x));
           setPair(undefined);
           setCur(replace ? 0 : screens.length);
+          } catch (err) { fail('HTML을 가져오지 못했습니다')(err); }
         }} />
-        <button onClick={() => savePngs([{ screen, name: `${n.name}-${screen.name}` }], p.deploy.mode)}>PNG 저장</button>
-        {screens.length > 1 && <button onClick={() => savePngs(screens.map((s) => ({ screen: s, name: `${n.name}-${s.name}` })), p.deploy.mode)}>모든 화면 PNG</button>}
+        <button onClick={() => savePngs([{ screen, name: `${n.name}-${screen.name}` }], p.deploy.mode).catch(fail('PNG를 저장하지 못했습니다'))}>PNG 저장</button>
+        {screens.length > 1 && <button onClick={() => savePngs(screens.map((s) => ({ screen: s, name: `${n.name}-${s.name}` })), p.deploy.mode).catch(fail('PNG를 저장하지 못했습니다'))}>모든 화면 PNG</button>}
       </div>
       <div className="wwrap" ref={wrap} tabIndex={0}
         onKeyDown={(e) => { if (picked && !editing && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); edit((x) => dropRemove(x, nodeId, { kind: 'remove', what: 'wire', screen: ps, id: picked.id })); setSel(undefined); } }}

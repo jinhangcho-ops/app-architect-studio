@@ -16,6 +16,7 @@ const files = require('../../electron/files.cjs') as {
   listSnapshots: (f: string, kind: string) => { name: string; text: string }[];
   writePngs: (dir: string, files: { name: string; base64: string }[]) => string[];
   pngName: (name: string) => string;
+  pngNames: (files: { name: string }[]) => string[];
   writeAtomic: (target: string, data: string | Buffer) => void;
   writeTexts: (dir: string, files: { name: string; text: string }[]) => string[];
   existingTexts: (dir: string, files: { name: string; text: string }[]) => string[];
@@ -88,6 +89,19 @@ describe('와이어프레임 PNG 쓰기', () => {
     const out = files.writePngs(dir, [{ name: '웹 화면-화면 1', base64: png }, { name: '웹 화면-화면 1', base64: png }]);
     expect(out.map((p) => basename(p))).toEqual(['웹 화면-화면 1.png', '웹 화면-화면 1 2.png']);
     expect(readdirSync(dir)).toEqual(expect.arrayContaining(['웹 화면-화면 1.png', '웹 화면-화면 1 2.png']));
+  });
+  it('120자 넘는 같은 이름·대소문자만 다른 이름도 끝나고 겹치지 않음 (감사 12)', () => {
+    const long = '가'.repeat(150);
+    const names = files.pngNames([{ name: long }, { name: long }, { name: long }, { name: 'web-Home' }, { name: 'web-home' }]);
+    expect(new Set(names.map((n) => n.toLowerCase())).size).toBe(5);
+    expect(names[4]).toBe('web-home 2.png');
+  });
+  it('BOM이 붙은 시점 파일도 열림 (감사 12)', () => {
+    const p = join(dir, 'bom.aas.json');
+    writeFileSync(p, '{}');
+    files.allow(p);
+    files.writeSnapshot(p, 'auto', '2026-10-27_10-00-00', '\uFEFF{"a":1}', 5);
+    expect(JSON.parse(files.listSnapshots(p, 'auto')[0].text)).toEqual({ a: 1 });
   });
   it('PNG가 아닌 내용은 쓰지 않음', () => {
     expect(() => files.writePngs(dir, [{ name: 'x', base64: Buffer.from('hello').toString('base64') }])).toThrow('PNG');
