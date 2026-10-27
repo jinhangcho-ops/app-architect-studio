@@ -188,6 +188,7 @@ ${howMetric(a.storage.personaGb)}`}>
             <b>💡 {name(x.nodeId)} — {x.title}</b>
             <div>{x.text}</div>
             {x.file && <div className="muted">파일 › 인터페이스 명세 내보내기 → {x.file}</div>}
+            {x.warnings?.map((w) => <div key={w} className="warn">⚠️ {w}</div>)}
           </div>
         ))}
       </Section>}

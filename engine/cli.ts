@@ -86,7 +86,10 @@ try {
     console.log('\n## 인터페이스 명세 점검');
     for (const { e, i, gaps } of specs) console.log(`  ${gaps.length ? '⚠️' : '✅'} ${nameOf(e.from)} → ${nameOf(e.to)} · ${i.name} (${way(i)})${gaps.length ? `: ${gaps.join(', ')}` : ''}`);
     if (specs.some((x) => x.gaps.length)) console.log(`  → ${GAP_EFFECT}`);
-    for (const x of specAdvice(project)) console.log(`  💡 ${nameOf(x.nodeId)} — ${x.title}: ${x.text}${x.file ? ` (${x.file})` : ''}`);
+    for (const x of specAdvice(project)) {
+      console.log(`  💡 ${nameOf(x.nodeId)} — ${x.title}: ${x.text}${x.file ? ` (${x.file})` : ''}`);
+      for (const w of x.warnings ?? []) console.log(`     ⚠️ ${w}`);
+    }
   }
 
   const feats = featureTables(project), unused = new Set(unusedTables(project)), warns = schemaWarnings(project, catalog.byId);

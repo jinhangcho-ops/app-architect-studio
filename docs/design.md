@@ -95,6 +95,18 @@ flowchart LR
 | gRPC · 메시지 | .proto · AsyncAPI가 곧 계약 |
 | 파일·전문 | 내보낸 레이아웃 표(CSV: 필드 순서·바이트 길이·시작·끝·채움 규칙·인코딩)가 계약. 필드는 맨 뒤에 더하고 레코드 길이를 같이 알림 |
 
+**FastAPI 뼈대를 버전에 맞추기:** FastAPI 노드의 **선택한 것 › Python 버전·requirements.txt**에 `pip freeze` 결과나 requirements.txt를 붙여 넣으면(또는 파일로 불러오면), 내보내는 `노드_fastapi.py`가 그 버전에서 돌아가는 문법으로 나오고 `노드_requirements.txt`도 함께 나옵니다. 범위(`>=0.95,<1`)는 허용되는 가장 낮은 버전으로 봅니다. 비우면 최신 방식으로 만듭니다.
+
+| 버전 | 바뀌는 문법 |
+|---|---|
+| pydantic 1 | `class Config: allow_population_by_field_name`, `.dict()`, `.schema()` |
+| pydantic 2.11+ | `ConfigDict(validate_by_name=True, validate_by_alias=True)` (2.0~2.10은 `populate_by_name`) |
+| fastapi 0.95 전 | 경로 인자 `= Path(...)`, 본문 `= Body(...)` (`Annotated` 대신) |
+| Python 3.8 | `Dict`·`List`, `typing_extensions`의 `Annotated` |
+| fastapi 0.111 / 0.112+ | 실행 안내: `uvicorn` → `fastapi dev` → `fastapi[standard]` |
+
+함께 쓸 수 없는 조합(fastapi 0.126+와 pydantic 1, 0.135.2+와 pydantic 2.9 미만, 0.129+와 Python 3.9 이하 등)과 규칙표를 확인한 범위(fastapi 0.162.0, pydantic 2.12, Python 3.14)보다 새 버전은 패널·명세 점검·뼈대 머리 주석에 ⚠️로 알립니다.
+
 ```mermaid
 flowchart LR
   A["주문 API"] -- "gRPC QuoteTax<br/>모든 요청 × 1" --> T["세금 엔진"]

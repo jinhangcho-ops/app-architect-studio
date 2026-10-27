@@ -337,7 +337,7 @@ function Interfaces({ project: p, analysis: a }: { project: Project; analysis: A
     </>}
     {advice.length > 0 && <>
       <h3 className="r-sub">계약 공유 방법</h3>
-      <ul>{advice.map((x) => <li key={x.nodeId + x.title}><b>{name(x.nodeId)} — {x.title}</b>: {x.text}{x.file && ` (${x.file})`}</li>)}</ul>
+      <ul>{advice.map((x) => <li key={x.nodeId + x.title}><b>{name(x.nodeId)} — {x.title}</b>: {x.text}{x.file && ` (${x.file})`}{x.warnings?.map((w) => <div key={w}>⚠️ {w}</div>)}</li>)}</ul>
     </>}
   </>;
 }

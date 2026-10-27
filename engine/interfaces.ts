@@ -294,15 +294,19 @@ export function specGaps(i: Interface): string[] {
 export const GAP_EFFECT = '이 상태로는 보내는 쪽과 받는 쪽이 각자 다르게 짤 수 있어요.';
 
 /** 받는 노드의 기술에 맞춘 계약 공유 방법. 코드에서 명세를 만들어 주는 프레임워크면 뼈대를 먼저 만들고 자동 문서를 공유한다 */
-export function specAdvice(p: Project): { nodeId: string; title: string; text: string; file?: string }[] {
-  const out: { nodeId: string; title: string; text: string; file?: string }[] = [];
+/** 기술별 명세 공유 방법. warnings: FastAPI 노드의 requirements.txt·Python 버전 조합 오류·확인 범위 밖 (뼈대 머리 주석과 같은 말) */
+export function specAdvice(p: Project): { nodeId: string; title: string; text: string; file?: string; warnings?: string[] }[] {
+  const out: { nodeId: string; title: string; text: string; file?: string; warnings?: string[] }[] = [];
   const kinds = new Map<string, Set<Interface['kind']>>();
   for (const e of p.edges) for (const i of e.interfaces) kinds.set(e.to, (kinds.get(e.to) ?? new Set()).add(i.kind));
   for (const [nodeId, ks] of kinds) {
     const n = p.nodes.find((x) => x.id === nodeId)!;
     if (ks.has('rest')) {
       const file = n.primary === 'fastapi' ? fastApiName(nodeId) : undefined;
-      out.push({ nodeId, file, ...(REST_ADVICE[n.primary ?? ''] ?? REST_DEFAULT) });
+      const advice = REST_ADVICE[n.primary ?? ''] ?? REST_DEFAULT;
+      // 버전 목록을 적었으면 무엇을 기준으로 만들었는지와 조합 경고
+      const prof = file ? pyProfile(n) : undefined;
+      out.push({ nodeId, file, ...advice, ...(!!prof?.basis.length && { text: `${advice.text} 버전 기준: ${prof.basis.join(', ')}.` }), ...(!!prof?.warnings.length && { warnings: prof.warnings }) });
     }
     if (ks.has('grpc')) out.push({ nodeId, title: 'gRPC: .proto가 곧 계약', text: `내보낸 ${safe(nodeId)}.proto를 양쪽이 그대로 쓰고, 각 언어의 protoc 플러그인으로 코드를 만드세요. 필드를 바꿀 때는 번호를 재사용하지 않습니다.` });
     if (ks.has('file')) out.push({ nodeId, title: '파일·전문: 레이아웃 표가 계약', text: '내보낸 layout-….csv(필드 순서·바이트 길이·시작·끝 위치·채움 규칙·인코딩)를 보내는 쪽·받는 쪽이 같이 봅니다. 고정장은 한 바이트만 어긋나도 뒤 필드가 모두 밀리므로, 필드를 더할 때는 맨 뒤에 붙이고 레코드 길이를 같이 알립니다. EUC-KR이면 한글 한 글자가 2바이트, UTF-8이면 3바이트입니다.' });

@@ -17,6 +17,7 @@ import { usePick } from './store';
 import { StorageSection, TablesSection } from './TablesPanel';
 import { NodeSummary } from './NodeSummary';
 import { InterfacesSection } from './InterfacesPanel';
+import { pyProfile } from '../../engine/pyCompat';
 
 const itemName = (id: string) => catalog.byId.get(id)?.name ?? id;
 
@@ -79,6 +80,8 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
           ))}
         </div>
       </Section>
+
+      {n.primary === 'fastapi' && <FastApiVersions requirements={n.requirements} python={n.python} upd={upd} />}
 
       <Section title="★ 판정 근거">
         {!j?.items.length && <p className="muted">항목을 고르면 판정합니다.</p>}
@@ -329,5 +332,30 @@ export function EdgePanel({ from, to, analysis }: { from: string; to: string; an
       <InterfacesSection e={e} analysis={analysis} />
       <button className="danger" onClick={() => { edit((p) => removeEdge(p, from, to)); select(null); }}>연결선 삭제</button>
     </div>
+  );
+}
+
+/** FastAPI 노드: requirements.txt·Python 버전 → 내보내는 뼈대의 문법이 그 버전을 따른다 */
+function FastApiVersions({ requirements, python, upd }: { requirements?: string; python?: string; upd: (patch: { requirements?: string; python?: string }) => void }) {
+  const prof = pyProfile({ requirements, python });
+  return (
+    <Section title="Python 버전·requirements.txt" desc="적으면 인터페이스 명세 내보내기의 FastAPI 뼈대가 이 버전에서 돌아가는 문법으로 나오고, requirements.txt도 같이 나와요. 비우면 최신 방식으로 만들어요.">
+      <Row label="Python 버전" hint="3.12처럼. 비우면 3.9 이상으로 봐요">
+        {/* 치는 중(3.)에는 저장하지 않고 칸을 떠날 때 (형식이 틀리면 바꾸지 않고 알림) */}
+        <input key={python ?? ''} aria-label="Python 버전" placeholder="3.12" defaultValue={python ?? ''}
+          onBlur={(e) => { const v = e.target.value.trim() || undefined; if (v !== python) upd({ python: v }); }} />
+      </Row>
+      <Row label="requirements.txt">
+        <textarea aria-label="requirements.txt" rows={6} placeholder={'fastapi==0.115.0\npydantic==2.9.2'} value={requirements ?? ''}
+          onChange={(e) => upd({ requirements: e.target.value || undefined })} />
+      </Row>
+      <input type="file" accept=".txt" aria-label="requirements.txt 불러오기" onChange={async (e) => {
+        const f = e.target.files?.[0];
+        e.target.value = '';
+        if (f) upd({ requirements: (await f.text()).replace(/^\uFEFF/, '') || undefined });
+      }} />
+      {prof.basis.length > 0 && <p className="muted">버전 기준: {prof.basis.join(', ')}</p>}
+      {prof.warnings.map((w) => <p key={w} className="warn">⚠️ {w}</p>)}
+    </Section>
   );
 }
