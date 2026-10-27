@@ -101,3 +101,36 @@ it('python_version 표시 판단 (주.부 버전만, 그 밖의 표시는 모름
   expect(markerHolds("python_version>='3.8'", '3.10')).toBe(true);
   expect(markerHolds('sys_platform == "win32"', '3.12')).toBeUndefined();
 });
+
+describe('PyPI 밖에서 받는 줄 (보안 감사 B1-2)', () => {
+  it('다른 저장소·주소·경로·편집 설치 줄만 찾고, 주석·해시·#egg는 헷갈리지 않음', async () => {
+    const { installSources } = await import('../requirements');
+    const text = [
+      'fastapi==0.110.0 --hash=sha256:abc', '# --index-url https://evil.example/simple', '--index-url https://evil.example/simple',
+      '--extra-index-url=https://x.example', '-e git+https://github.com/a/b.git#egg=b', 'mypkg @ https://x.example/mypkg.whl',
+      './libs/local.whl', 'pydantic>=2  # https://docs.pydantic.dev', '-r base.txt',
+    ].join('\n');
+    expect(installSources(text)).toEqual([
+      '--index-url https://evil.example/simple', '--extra-index-url=https://x.example', '-e git+https://github.com/a/b.git#egg=b',
+      'mypkg @ https://x.example/mypkg.whl', './libs/local.whl',
+    ]);
+  });
+
+  it('뼈대 머리 주석과 내보낸 requirements.txt 맨 위에 ⚠️', async () => {
+    const { pyProfile } = await import('../pyCompat');
+    const { interfaceFiles } = await import('../interfaces');
+    const { loadCatalog, loadProject } = await import('../io');
+    const { fileURLToPath } = await import('node:url');
+    const root = (rel: string) => fileURLToPath(new URL(`../../${rel}`, import.meta.url));
+    const p0 = loadProject(root('examples/ledger-fastapi.json'), loadCatalog(root('data/catalog')).items);
+    const req = 'fastapi==0.110.0\n--extra-index-url https://evil.example/simple';
+    const p = { ...p0, nodes: p0.nodes.map((n) => (n.id === 'B-01' ? { ...n, requirements: req } : n)) };
+    expect(pyProfile(p.nodes.find((n) => n.id === 'B-01')!).warnings.some((w) => w.includes('PyPI 밖') && w.includes('evil.example'))).toBe(true);
+    const files = interfaceFiles(p);
+    expect(files.find((f) => f.name === 'B_01_requirements.txt')!.text.startsWith('# ⚠️ App Architect Studio')).toBe(true);
+    expect(files.find((f) => f.name === 'B_01_fastapi.py')!.text).toContain('# ⚠️ requirements.txt에 PyPI 밖');
+    // 평범한 목록은 그대로
+    const q = { ...p0, nodes: p0.nodes.map((n) => (n.id === 'B-01' ? { ...n, requirements: 'fastapi==0.110.0' } : n)) };
+    expect(interfaceFiles(q).find((f) => f.name === 'B_01_requirements.txt')!.text).toBe('fastapi==0.110.0\n');
+  });
+});

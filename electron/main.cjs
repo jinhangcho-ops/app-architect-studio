@@ -1,6 +1,6 @@
 // 설치형 데스크톱 앱(Electron): 빌드한 화면(dist/)을 app:// 주소로 띄운다.
 // file:// 대신 자체 주소를 쓰는 이유: sql.js가 WebAssembly 파일을 fetch로 받는데, file://에서는 fetch가 막힌다.
-const { app, BrowserWindow, Menu, net, protocol, shell } = require('electron');
+const { app, BrowserWindow, Menu, net, protocol, session, shell } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { registerFileApi } = require('./files.cjs');
@@ -55,6 +55,9 @@ app.whenReady().then(() => {
       return new Response(res.body, { status: res.status, headers });
     });
   });
+  // 카메라·마이크·위치·알림 같은 권한은 쓰지 않으므로 모두 거절한다
+  session.defaultSession.setPermissionRequestHandler((_wc, _perm, done) => done(false));
+  session.defaultSession.setPermissionCheckHandler(() => false);
   registerFileApi();
   registerUpdateApi();
   // 기본 메뉴의 단축키(Ctrl+Z 등)가 앱의 단축키를 가로채지 않게 메뉴를 없앤다

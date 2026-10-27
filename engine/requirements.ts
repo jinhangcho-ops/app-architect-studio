@@ -47,6 +47,14 @@ function lowest(spec: string): string | undefined | null {
   return min;
 }
 
+// pip이 PyPI 말고 다른 저장소·주소·경로에서 받게 하는 옵션
+const SOURCE_OPT = /^(-i|--index-url|--extra-index-url|-f|--find-links|-e|--editable|--trusted-host)(\s|=|$)/;
+/** PyPI 밖에서 받는 줄들 (남이 만든 requirements.txt를 그대로 설치하기 전에 알린다). 주석은 빼고 줄 글자 그대로 */
+export function installSources(text: string): string[] {
+  return text.replace(/\\\r?\n/g, ' ').split(/\r?\n/).map((l) => l.replace(/(^|\s)#.*$/, '').trim())
+    .filter((s) => SOURCE_OPT.test(s) || /:\/\/|^git\+|^\.{0,2}[\\/]/i.test(s));
+}
+
 export function parseRequirements(text: string): RequirementsResult {
   const reqs: Requirement[] = [], skipped: string[] = [];
   // 줄 끝 \ 는 다음 줄과 이어진다

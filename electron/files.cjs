@@ -41,6 +41,8 @@ const dirOf = (projectFile, kind) => {
 };
 
 function writeSnapshot(projectFile, kind, name, text, max) {
+  // 0·음수·숫자 아님이면 방금 쓴 것까지 기록을 모두 지우게 되므로 받지 않는다
+  if (!Number.isInteger(max) || max < 1) throw new Error('남길 시점 수가 올바르지 않습니다');
   const dir = dirOf(projectFile, kind);
   fs.mkdirSync(dir, { recursive: true });
   writeAtomic(path.join(dir, safeName(name)), text);

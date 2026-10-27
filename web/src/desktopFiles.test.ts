@@ -40,6 +40,9 @@ describe('데스크톱 앱 폴더 저장 (electron/files.cjs)', () => {
     expect(list.map((x) => x.name).slice(0, 2)).toEqual(['2026-10-24_03-00-22', '2026-10-24_03-00-21']);
     expect(list.at(-1)!.name).toBe('2026-10-24_03-00-03');
     expect(files.listSnapshots(project, 'auto')).toEqual([]);
+    // 남길 수가 0·음수·숫자 아님이면 쓰지도 지우지도 않음 (보안 감사 B1-3)
+    for (const max of [0, -1, NaN, '5' as unknown as number]) expect(() => files.writeSnapshot(project, 'manual', '2026-10-24_04-00-00', '{}', max)).toThrow('남길 시점 수');
+    expect(readdirSync(join(dir, '.saves', basename(project)))).toHaveLength(20);
   });
 
   it('같은 폴더의 다른 프로젝트는 저장 기록을 따로 씀 (감사 13)', () => {

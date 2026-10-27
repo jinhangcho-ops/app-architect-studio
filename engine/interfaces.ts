@@ -5,6 +5,7 @@
 // shortcut: 크기는 필드 형식별 예시 크기로 어림한다(JSON은 키 이름 포함, protobuf는 태그 1바이트). 실측 크기가 있으면 request_bytes·response_bytes에 넣는다
 import { FIELD_TYPES, IDENT, type Interface, type Project, type ProjectEdge, type SpecField } from './schema';
 import { pyProfile, type PyProfile } from './pyCompat';
+import { installSources } from './requirements';
 
 type FieldType = (typeof FIELD_TYPES)[number];
 /** 값 하나의 예시 크기(바이트): JSON 글자 수(따옴표 포함)와 protobuf 이진 크기 */
@@ -583,7 +584,9 @@ export function interfaceFiles(p: Project): { name: string; text: string }[] {
     ...(a ? [{ name: 'asyncapi.json', text: JSON.stringify(a, null, 2) }] : []),
     ...fastApiFiles(p).flatMap(({ nodeId, name, text }) => {
       const req = p.nodes.find((n) => n.id === nodeId)?.requirements?.trim();
-      return [{ name, text }, ...(req ? [{ name: `${safe(nodeId)}_requirements.txt`, text: `${req}\n` }] : [])];
+      // PyPI 밖에서 받는 줄이 있으면 파일 맨 위에 알림 (pip은 # 줄을 건너뜀)
+      const warn = req && installSources(req).length ? '# ⚠️ App Architect Studio: 이 파일에는 PyPI 밖(다른 저장소·주소·경로)에서 받는 줄이 있습니다. 출처를 확인한 뒤 설치하세요\n' : '';
+      return [{ name, text }, ...(req ? [{ name: `${safe(nodeId)}_requirements.txt`, text: `${warn}${req}\n` }] : [])];
     }),
     ...p.edges.flatMap((e) => e.interfaces.filter((i) => i.kind === 'file').map((i) => ({
       name: `layout-${safe(e.from)}-${safe(e.to)}-${safe(i.path)}.csv`,

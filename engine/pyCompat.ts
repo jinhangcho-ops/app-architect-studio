@@ -1,6 +1,6 @@
 // FastAPI 뼈대를 노드의 requirements.txt·Python 버전에 맞추는 규칙표.
 // 버전 목록이 없으면 지금 기본(최신 방식)과 똑같이 만든다. 경계 버전의 근거는 각 줄 주석 (2026-10-27 확인).
-import { allBelow, cmpVersion, markerHolds, parseRequirements, versionOf } from './requirements';
+import { allBelow, cmpVersion, installSources, markerHolds, parseRequirements, versionOf } from './requirements';
 
 /** 뼈대에서 버전에 따라 고르는 문법 */
 export type PyProfile = {
@@ -64,6 +64,8 @@ export function pyProfile(node: { requirements?: string; python?: string }): PyP
   // 상한이 경계 아래면 그 아래 규칙으로 만들었으므로 "최신 규칙" 경고는 아니다
   if (node.requirements?.trim() && listed('fastapi') && fa === undefined && !faBelow('0.100')) warnings.push('fastapi 하한 버전이 없어 최신 규칙으로 만들었습니다');
   for (const s of r.skipped) warnings.push(`requirements.txt ${s}`);
+  const src = installSources(node.requirements ?? '');
+  if (src.length) warnings.push(`requirements.txt에 PyPI 밖(다른 저장소·주소·경로)에서 받는 줄이 있습니다: ${src.map((x) => x.slice(0, 80)).join(' / ')}. 남이 만든 파일이면 출처를 확인한 뒤 설치하세요`);
 
   // requirements.txt가 있으면 그 목록으로 설치하므로, 실행 명령도 목록에 든 것으로 (2026-10-27 실제 설치: fastapi 0.146.0만 적으면 fastapi dev도 uvicorn도 없음)
   // fastapi dev: [standard]나 fastapi-cli를 적었거나, fastapi-cli를 기본으로 딸려 오던 0.111.x
