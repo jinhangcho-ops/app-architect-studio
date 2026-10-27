@@ -400,3 +400,65 @@ describe('내보낸 명세의 구조 규칙 (예시 전체 + 까다로운 이름
     }
   });
 });
+
+describe('FastAPI 뼈대를 requirements.txt·Python 버전에 맞춤', () => {
+  // 예약어 경로 변수(class → alias), alias 필드(from), 본문이 있는 POST, 객체 필드(dict)를 한 번에
+  const base = withEdge(ledger, 'U-01', 'B-01', [iface({ name: 'k', kind: 'rest', method: 'POST', path: '/k/{class}', auth: 'none',
+    request: [{ name: 'from', type: 'string', required: true }, { name: 'meta', type: 'object', required: false }], response: [{ name: 'ok', type: 'boolean', required: true }] })]);
+  const gen = (requirements?: string, python?: string) => {
+    const p = { ...base, nodes: base.nodes.map((n) => (n.id === 'B-01' ? { ...n, requirements, python } : n)) };
+    return { text: fastApiFiles(p)[0].text, files: interfaceFiles(p) };
+  };
+
+  it('버전 목록이 없으면 전과 같음 (최신 방식, requirements 파일 없음)', () => {
+    const { text, files } = gen();
+    expect(text).toContain('class_: Annotated[str, Path(alias="class")]');
+    expect(text).toContain('model_config = ConfigDict(populate_by_name=True)');
+    expect(text).not.toContain('# 버전 기준');
+    expect(files.map((f) => f.name)).toEqual(['openapi-B_01.json', 'B_01_fastapi.py']);
+  });
+
+  it('pydantic 1 + fastapi 0.94 + Python 3.8: class Config, .dict(), = Path(...), = Body(...), Dict, uvicorn', () => {
+    const req = 'fastapi==0.94.1\npydantic==1.10.13\nuvicorn==0.21.1';
+    const { text, files } = gen(req, '3.8');
+    // 경로 인자가 = Path(...) 꼴이면 모두 그 꼴 (기본값 없는 인자가 뒤에 오면 문법 오류)
+    const two = withEdge(ledger, 'U-01', 'B-01', [iface({ name: 'k', kind: 'rest', method: 'GET', path: '/k/{class}/{id}', auth: 'none' })]);
+    expect(fastApiFiles({ ...two, nodes: two.nodes.map((n) => (n.id === 'B-01' ? { ...n, requirements: req } : n)) })[0].text)
+      .toContain('def get_k_class_id(class_: str = Path(..., alias="class"), id: str = Path(...)) -> None:');
+    expect(text).toContain('# 버전 기준: fastapi 0.94.1, pydantic 1.10.13, Python 3.8');
+    expect(text).toContain('    class Config:\n        allow_population_by_field_name = True');
+    expect(text).not.toContain('ConfigDict');
+    expect(text).toContain('content=problem.dict(exclude_none=True)');
+    expect(text).toContain('schemas["Problem"] = Problem.schema()');
+    expect(text).toContain('class_: str = Path(..., alias="class")');
+    expect(text).toContain('def post_k_class(class_: str = Path(..., alias="class"), body: PostKClassRequest = Body(...)) -> PostKClassResponse:');
+    expect(text).not.toContain('Annotated');
+    expect(text).toContain('meta: Optional[Dict[str, Any]] = Field(None)');
+    expect(text).toContain('def custom_openapi() -> Dict[str, Any]:');
+    expect(text).toContain('from typing import Any, Dict, List, Optional');
+    expect(text).toContain('from fastapi import Body, Depends, FastAPI, Path, Query, Request');
+    expect(text).toContain('# 실행: pip install -r B_01_requirements.txt  →  uvicorn B_01_fastapi:app --reload');
+    expect(files.find((f) => f.name === 'B_01_requirements.txt')?.text).toBe(`${req}\n`);
+  });
+
+  it('pydantic 2.11 이상은 validate_by_name, fastapi 0.111은 fastapi dev (fastapi[standard] 전)', () => {
+    const { text } = gen('fastapi==0.111.0\npydantic==2.11.3');
+    expect(text).toContain('model_config = ConfigDict(validate_by_name=True, validate_by_alias=True)');
+    expect(text).toContain('# 실행: pip install -r B_01_requirements.txt  →  fastapi dev B_01_fastapi.py');
+    expect(gen('fastapi>=0.100,<0.111\npydantic==2.5.0').text).toContain('model_config = ConfigDict(populate_by_name=True)');
+  });
+
+  it('Python 3.8에서 Annotated는 typing_extensions에서', () => {
+    const { text } = gen('fastapi==0.110.0\npydantic==2.5.0', '3.8');
+    expect(text).toContain('from typing_extensions import Annotated');
+    expect(text).toContain('from typing import Any, Dict, List, Optional');
+  });
+
+  it('붙여 준 목록(fastapi 0.146, pydantic 2.14): 최신 방식, 확인 범위 밖 pydantic은 머리 주석에 알림', () => {
+    const { text } = gen('fastapi==0.146.0\npydantic==2.14.1\nstarlette==1.7.0\nsupabase==2.33.0');
+    expect(text).toContain('# 버전 기준: fastapi 0.146.0, pydantic 2.14.1');
+    expect(text).toContain('validate_by_name=True');
+    expect(text).toContain('# ⚠️ pydantic 2.14.1는 규칙표를 확인한 범위(2.12) 밖이라 그 최신 규칙으로 만들었습니다');
+    expect(text).not.toContain('# ⚠️ fastapi');
+  });
+});

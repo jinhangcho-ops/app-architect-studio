@@ -4,6 +4,7 @@
 // 파일·전문 → 레이아웃 CSV, 받는 노드가 FastAPI면 엔드포인트 뼈대(.py).
 // shortcut: 크기는 필드 형식별 예시 크기로 어림한다(JSON은 키 이름 포함, protobuf는 태그 1바이트). 실측 크기가 있으면 request_bytes·response_bytes에 넣는다
 import { FIELD_TYPES, IDENT, type Interface, type Project, type ProjectEdge, type SpecField } from './schema';
+import { pyProfile, type PyProfile } from './pyCompat';
 
 type FieldType = (typeof FIELD_TYPES)[number];
 /** 값 하나의 예시 크기(바이트): JSON 글자 수(따옴표 포함)와 protobuf 이진 크기 */
@@ -331,6 +332,7 @@ const REST_ADVICE: Record<string, { title: string; text: string }> = {
 // ---------- FastAPI 뼈대 ----------
 const fastApiName = (nodeId: string) => `${safe(nodeId)}_fastapi.py`;
 const PY_TYPE: Record<FieldType, string> = { string: 'str', integer: 'int', number: 'float', boolean: 'bool', datetime: 'datetime', uuid: 'UUID', object: 'dict[str, Any]', array: 'list[Any]' };
+const pyType = (t: FieldType, prof: PyProfile) => (prof.builtinGenerics ? PY_TYPE[t] : PY_TYPE[t].replace('dict[', 'Dict[').replace('list[', 'List['));
 const PY_KEYWORDS = new Set(['False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue', 'def', 'del', 'elif', 'else', 'except', 'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield']);
 /** 파이썬 문자열 (JSON 문자열 표기는 파이썬에서도 같은 뜻) */
 const py = (s: string) => JSON.stringify(s);
@@ -343,18 +345,23 @@ const needsAlias = (n: string) => PY_KEYWORDS.has(n) || PY_SHADOW.has(n) || !/^[
 const pyName = (n: string) => (!needsAlias(n) ? n : PY_KEYWORDS.has(n) || PY_SHADOW.has(n) ? `${n}_` : `f_${safe(n)}`);
 const pascal = (s: string) => s.split('_').filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join('');
 
-function pyModel(name: string, fs: SpecField[]): string[] {
+/** 원래 이름(alias)과 파이썬 이름 둘 다로 값을 받게 하는 설정: pydantic 1은 class Config, 2.11+은 validate_by_name */
+const aliasConfig = (prof: PyProfile) => prof.pydantic === 1
+  ? ['    class Config:', '        allow_population_by_field_name = True', '']
+  : [prof.validateByName ? '    model_config = ConfigDict(validate_by_name=True, validate_by_alias=True)' : '    model_config = ConfigDict(populate_by_name=True)'];
+
+function pyModel(name: string, fs: SpecField[], prof: PyProfile): string[] {
   if (!fs.length) return [];
   const used = new Set<string>();
   return [
     `class ${name}(BaseModel):`,
-    ...(fs.some((f) => needsAlias(f.name)) ? ['    model_config = ConfigDict(populate_by_name=True)'] : []),
+    ...(fs.some((f) => needsAlias(f.name)) ? aliasConfig(prof) : []),
     ...fs.map((f) => {
       // class와 class_처럼 파이썬 이름이 겹치면 _2 (앞 필드가 조용히 사라지지 않게)
       let n = pyName(f.name);
       for (let k = 2; used.has(n); k++) n = `${pyName(f.name)}_${k}`;
       used.add(n);
-      const t = PY_TYPE[f.type], args = [f.required ? '...' : 'None', ...(n !== f.name ? [`alias=${py(f.name)}`] : []), ...(f.description ? [`description=${py(f.description)}`] : [])];
+      const t = pyType(f.type, prof), args = [f.required ? '...' : 'None', ...(n !== f.name ? [`alias=${py(f.name)}`] : []), ...(f.description ? [`description=${py(f.description)}`] : [])];
       return `    ${n}: ${f.required ? t : `Optional[${t}]`} = Field(${args.join(', ')})`;
     }),
     '', '',
@@ -365,8 +372,9 @@ function pyModel(name: string, fs: SpecField[]): string[] {
 export function fastApiFiles(p: Project): { nodeId: string; name: string; text: string }[] {
   const nameOf = (id: string) => p.nodes.find((n) => n.id === id)?.name ?? id;
   return [...restOps(p)].filter(([id]) => p.nodes.find((n) => n.id === id)?.primary === 'fastapi').map(([nodeId, ops]) => {
+    const node = p.nodes.find((n) => n.id === nodeId)!, prof = pyProfile(node);
     const auth = new Set(ops.map((o) => o.i.auth));
-    const models = ops.flatMap((o) => [...pyModel(`${pascal(o.opId)}Request`, o.body), ...pyModel(`${pascal(o.opId)}Response`, o.i.response)]);
+    const models = ops.flatMap((o) => [...pyModel(`${pascal(o.opId)}Request`, o.body, prof), ...pyModel(`${pascal(o.opId)}Response`, o.i.response, prof)]);
     const routes = ops.flatMap((o) => {
       const { i } = o, P = pascal(o.opId);
       // 함수 인자 이름은 겹치면 안 된다 (한글 경로 변수 둘이 같은 이름이 되거나, {body}와 본문 인자). 겹치면 _2, _3에 alias
@@ -379,25 +387,27 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
       const pathArgs: string[] = [], seen = new Set<string>();
       const route = i.path.replace(PATH_VAR, (m, v: string) => {
         // 객체·배열은 경로로 받을 수 없어(FastAPI가 거부) 질의처럼 문자열로 받는다
-        const ft = o.inPath.find((f) => f.name === v)!.type, t = ft === 'object' || ft === 'array' ? 'str' : PY_TYPE[ft], again = seen.has(v);
+        const ft = o.inPath.find((f) => f.name === v)!.type, t = ft === 'object' || ft === 'array' ? 'str' : pyType(ft, prof), again = seen.has(v);
         seen.add(v);
         if (!again && IDENT.test(v) && !pyReserved(v)) { pathArgs.push(`${v}: ${t}`); return m; }
         // 예약어·가려지는 이름은 경로 이름을 두고 alias로 받는다 (OpenAPI와 같은 이름)
-        if (!again && pyReserved(v)) { pathArgs.push(`${arg(`${v}_`)}: Annotated[${t}, Path(alias=${py(v)})]`); return m; }
+        // fastapi 0.95 전에는 Annotated를 몰라 = Path(...) 기본값 꼴 (그래서 뒤의 본문 인자도 = Body(...))
+        if (!again && pyReserved(v)) { pathArgs.push(prof.annotated ? `${arg(`${v}_`)}: Annotated[${t}, Path(alias=${py(v)})]` : `${arg(`${v}_`)}: ${t} = Path(..., alias=${py(v)})`); return m; }
         // 영문 식별자가 아니거나 두 번째로 나온 변수(Starlette가 받지 못함, 명세 점검이 알림)는 경로에서도 새 이름
         const n = arg(pyReserved(v) ? `${v}_` : IDENT.test(v) ? v : `f_${safe(v)}`);
         pathArgs.push(`${n}: ${t}`);
         return `{${n}}`;
       });
       const params = [
-        ...pathArgs,
+        // = Path(...) 꼴이면 기본값 있는 인자 뒤에 기본값 없는 인자가 올 수 없어(문법 오류) 경로 인자 모두에 붙인다
+        ...(prof.annotated ? pathArgs : pathArgs.map((a) => (a.includes(' = ') ? a : `${a} = Path(...)`))),
         ...o.query.map((f) => {
           // 객체·배열은 질의 문자열로 못 받아 JSON 문자열로 받는다
-          const t = f.type === 'object' || f.type === 'array' ? 'str' : PY_TYPE[f.type], n = arg(pyName(f.name));
+          const t = f.type === 'object' || f.type === 'array' ? 'str' : pyType(f.type, prof), n = arg(pyName(f.name));
           const args = [f.required ? '...' : 'None', ...(n !== f.name ? [`alias=${py(f.name)}`] : []), ...(f.description ? [`description=${py(f.description)}`] : [])];
           return `${n}: ${f.required ? t : `Optional[${t}]`} = Query(${args.join(', ')})`;
         }),
-        ...(o.body.length ? [`${arg('body')}: ${P}Request`] : []),
+        ...(o.body.length ? [`${arg('body')}: ${P}Request${prof.annotated ? '' : ' = Body(...)'}`] : []),
         ...(i.auth === 'bearer' ? [`${arg('_token')}: HTTPAuthorizationCredentials = Depends(require_bearer)`] : i.auth === 'api_key' ? [`${arg('_key')}: str = Depends(require_api_key)`] : []),
       ];
       const ret = i.response.length ? `${P}Response` : 'None';
@@ -417,24 +427,32 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
         '', '',
       ];
     });
-    const pathAlias = routes.some((l) => l.includes('Path(alias='));
+    const pathAlias = routes.some((l) => l.includes('Path('));
+    const annotatedUsed = pathAlias && prof.annotated;
+    const typingNames = [...(annotatedUsed && !prof.annotatedFromExtensions ? ['Annotated'] : []), 'Any', ...(prof.builtinGenerics ? [] : ['Dict', 'List']), 'Optional'];
+    const file = fastApiName(nodeId), mod = file.replace(/\.py$/, '');
+    const run = prof.run === 'standard' ? `pip install "fastapi[standard]"  →  fastapi dev ${file}`
+      : prof.run === 'cli' ? `pip install fastapi  →  fastapi dev ${file}` : `pip install fastapi uvicorn  →  uvicorn ${mod}:app --reload`;
     const text = [
       `# ${oneLine(`${nameOf(nodeId)} — FastAPI 엔드포인트 뼈대 (${p.name})`)}`,
       '# App Architect Studio의 인터페이스 명세에서 만들었습니다. 모델과 엔드포인트만 있고, 각 함수는 501(구현 필요)을 돌려줍니다.',
-      `# 실행: pip install "fastapi[standard]"  →  fastapi dev ${fastApiName(nodeId)}  →  http://127.0.0.1:8000/docs 를 프론트와 공유`,
+      ...(prof.basis.length ? [`# 버전 기준: ${prof.basis.join(', ')} (노드의 requirements.txt·Python 버전)`] : []),
+      ...prof.warnings.map((w) => `# ⚠️ ${oneLine(w)}`),
+      `# 실행: ${node.requirements?.trim() ? `pip install -r ${safe(nodeId)}_requirements.txt  →  ${run.split('  →  ').slice(1).join('  →  ')}` : run}  →  http://127.0.0.1:8000/docs 를 프론트와 공유`,
       '# 에러는 모두 problem+json(Problem)입니다: 앱 에러는 ApiError로 내고, 요청 검증 실패(422)·인증 실패(401)·그 밖의 HTTP 에러도 같은 형식으로 바꿉니다.',
       'from datetime import datetime',
-      `from typing import ${pathAlias ? 'Annotated, ' : ''}Any, Optional`,
+      `from typing import ${typingNames.join(', ')}`,
       'from uuid import UUID',
       '',
-      `from fastapi import Depends, FastAPI, ${pathAlias ? 'Path, ' : ''}Query, Request${ops.some((o) => !o.i.response.length) ? ', Response' : ''}`,
+      ...(annotatedUsed && prof.annotatedFromExtensions ? ['from typing_extensions import Annotated', ''] : []),
+      `from fastapi import ${!prof.annotated && ops.some((o) => o.body.length) ? 'Body, ' : ''}Depends, FastAPI, ${pathAlias ? 'Path, ' : ''}Query, Request${ops.some((o) => !o.i.response.length) ? ', Response' : ''}`,
       'from fastapi.exceptions import RequestValidationError',
       // GET /openapi의 함수 이름 get_openapi가 가리지 않게
       'from fastapi.openapi.utils import get_openapi as _get_openapi',
       'from fastapi.responses import JSONResponse',
       ...(auth.has('bearer') || auth.has('api_key')
         ? [`from fastapi.security import ${[...(auth.has('api_key') ? ['APIKeyHeader'] : []), ...(auth.has('bearer') ? ['HTTPAuthorizationCredentials', 'HTTPBearer'] : [])].join(', ')}`] : []),
-      `from pydantic import BaseModel, ${ops.some((o) => [...o.body, ...o.i.response].some((f) => needsAlias(f.name))) ? 'ConfigDict, ' : ''}Field`,
+      `from pydantic import BaseModel, ${prof.pydantic === 2 && ops.some((o) => [...o.body, ...o.i.response].some((f) => needsAlias(f.name))) ? 'ConfigDict, ' : ''}Field`,
       '',
       'from starlette.exceptions import HTTPException as StarletteHTTPException',
       '',
@@ -454,7 +472,7 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
       '        self.problem = Problem(title=title, status=status, code=code, detail=detail)',
       '', '',
       'def problem_response(problem: Problem) -> JSONResponse:',
-      '    return JSONResponse(status_code=problem.status, content=problem.model_dump(exclude_none=True), media_type="application/problem+json")',
+      `    return JSONResponse(status_code=problem.status, content=problem.${prof.pydantic === 1 ? 'dict' : 'model_dump'}(exclude_none=True), media_type="application/problem+json")`,
       '', '',
       '@app.exception_handler(ApiError)',
       'async def api_error(_request: Request, e: ApiError) -> JSONResponse:',
@@ -489,13 +507,13 @@ export function fastApiFiles(p: Project): { nodeId: string; name: string; text: 
       ] : []),
       ...models,
       ...routes,
-      'def custom_openapi() -> dict[str, Any]:',
+      `def custom_openapi() -> ${prof.builtinGenerics ? 'dict' : 'Dict'}[str, Any]:`,
       '    \"\"\"/docs 명세: 에러 응답은 모두 problem+json(Problem). FastAPI가 붙이는 요청 검증(422)도 같은 형식으로 적는다\"\"\"',
       '    if app.openapi_schema:',
       '        return app.openapi_schema',
       '    schema = _get_openapi(title=app.title, version=app.version, routes=app.routes)',
       '    schemas = schema.setdefault("components", {}).setdefault("schemas", {})',
-      '    schemas["Problem"] = Problem.model_json_schema()',
+      `    schemas["Problem"] = Problem.${prof.pydantic === 1 ? 'schema' : 'model_json_schema'}()`,
       '    for name in ("HTTPValidationError", "ValidationError"):',
       '        schemas.pop(name, None)',
       '    for item in schema.get("paths", {}).values():',
@@ -559,7 +577,10 @@ export function interfaceFiles(p: Project): { name: string; text: string }[] {
     ...openApiDocs(p).map(({ nodeId, doc }) => ({ name: `openapi-${safe(nodeId)}.json`, text: JSON.stringify(doc, null, 2) })),
     ...protoFiles(p).map(({ nodeId, text }) => ({ name: `${safe(nodeId)}.proto`, text })),
     ...(a ? [{ name: 'asyncapi.json', text: JSON.stringify(a, null, 2) }] : []),
-    ...fastApiFiles(p).map(({ name, text }) => ({ name, text })),
+    ...fastApiFiles(p).flatMap(({ nodeId, name, text }) => {
+      const req = p.nodes.find((n) => n.id === nodeId)?.requirements?.trim();
+      return [{ name, text }, ...(req ? [{ name: `${safe(nodeId)}_requirements.txt`, text: `${req}\n` }] : [])];
+    }),
     ...p.edges.flatMap((e) => e.interfaces.filter((i) => i.kind === 'file').map((i) => ({
       name: `layout-${safe(e.from)}-${safe(e.to)}-${safe(i.path)}.csv`,
       text: layoutCsv(i, p.nodes.find((n) => n.id === e.from)?.name ?? e.from, p.nodes.find((n) => n.id === e.to)?.name ?? e.to),
