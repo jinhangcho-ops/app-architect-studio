@@ -158,6 +158,13 @@ export function App() {
 
   const hits = find ? searchProject(project, catalog.byId, find.q) : [];
   const go = (h: Hit) => {
+    // 설계 메모는 설정 화면의 그 장으로
+    if (h.kind === 'note') {
+      setScreen('settings');
+      requestAnimationFrame(() => document.getElementById(`note-${h.index}`)?.scrollIntoView({ block: 'start' }));
+      return;
+    }
+    setScreen('design');
     setTab('selected');
     if (h.kind === 'node') { setFocus(undefined); select({ kind: 'node', id: h.node }); set({ flyTo: h.node }); }
     else { setFocus(h.node, 'tables'); select({ kind: 'table', node: h.node, table: h.table }); }

@@ -87,5 +87,7 @@ describe('설계서: 설계 메모 장과 노드 메모', () => {
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
     expect(html).not.toContain('<script>');
     expect(html).toMatch(/<div class="r-memo"><b>메모<\/b><div class="note"><div class="note-list">.*주문 접수.*결제 호출/);
+    // 날것의 설명 줄은 카드 표에 다시 나오지 않음 (메모로 한 번만)
+    expect(html.match(/주문 접수/g)).toHaveLength(1);
   });
 });

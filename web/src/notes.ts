@@ -117,8 +117,7 @@ export function parseInline(text: string): Span[] {
   return out;
 }
 
-/** 설계서가 장 번호를 매기므로 제목 앞의 번호(1. · 2) · 5.3)는 뗀다 ("1. 1. 개요"가 되지 않게). 비면 (제목 없음) */
-export const chapterTitle = (t: string) => t.trim().replace(/^\d+(\.\d+)*[.)]?\s+/, '') || '(제목 없음)';
+export { chapterTitle } from '../../engine/schema';
 
 /** 마크다운 문서 한 덩이 → 장 목록. `## 제목` 줄마다 새 장 (코드 블록 안의 ##는 제외).
  *  첫 ## 앞의 글은 맨 앞 `# 제목`을 장 제목으로(없으면 "머리말") 한 장이 된다. 앞뒤 빈 줄은 뗀다 */

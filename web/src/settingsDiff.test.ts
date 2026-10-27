@@ -35,3 +35,17 @@ describe('설정 화면: 불러온 값에서 바뀐 항목', () => {
     expect(gone.personas.every((ps) => Object.keys(ps.action_rates).every((k) => names.has(k)))).toBe(true);
   });
 });
+
+describe('설계 메모와 설정 되돌리기 (v1.3.0)', () => {
+  it('메모를 바꿔도 바뀐 설정으로 세지 않고, 불러온 값으로 되돌려도 메모는 남음', async () => {
+    const { changedCounts, resetSettings } = await import('./settingsDiff');
+    const { parseProject } = await import('../../engine/data');
+    const { catalog, examples } = await import('./data');
+    const base = parseProject(examples.find((e) => e.name === 'phase1.json')!.data, catalog.items);
+    const now = { ...base, name: '바꾼 이름', notes: [{ title: '개요', body: '글' }] };
+    const c = changedCounts(now, base);
+    expect(c['s-notes']).toBe(0);
+    expect(Object.values(c).reduce((s, x) => s + x, 0)).toBe(1);
+    expect(resetSettings(now, base)).toMatchObject({ name: base.name, notes: [{ title: '개요', body: '글' }] });
+  });
+});

@@ -110,3 +110,13 @@ describe('복사·붙여넣기 (Ctrl+C / Ctrl+V)', () => {
     expect(run(twice.project, '2026-10-24').error).toBeUndefined();
   });
 });
+
+describe('찾기: 설계 메모·노드 설명 (v1.3.0)', () => {
+  it('메모 장 제목·본문과 노드 설명에서도 찾고, 어디가 맞았는지 보임', () => {
+    const q = { ...p, notes: [{ title: '1. 개요', body: '거래명세서 사진을 OCR로 읽는다' }, { title: '보안', body: 'service key는 백엔드에만' }],
+      nodes: p.nodes.map((n) => (n.id === 'N-05' ? { ...n, description: '매일 새벽 정산 파일을 받아 원장에 넣음' } : n)) };
+    expect(searchProject(q, catalog.byId, 'ocr')).toEqual([{ kind: 'note', index: 0, label: '설계 메모 1. 개요', detail: '거래명세서 사진을 OCR로 읽는다…' }]);
+    expect(searchProject(q, catalog.byId, '보안')).toEqual([{ kind: 'note', index: 1, label: '설계 메모 2. 보안', detail: '장 제목' }]);
+    expect(searchProject(q, catalog.byId, '원장에')).toEqual([expect.objectContaining({ kind: 'node', node: 'N-05', detail: expect.stringContaining('설명') })]);
+  });
+});

@@ -87,14 +87,14 @@ export function nodeCard(p: Project, a: Analysis, byId: Map<string, CatalogItem>
         ...unknown,
       ]),
     },
-    { label: '설명', lines: n.description ? [n.description] : [] },
+    // 노드 설명은 카드 아래 "메모"로 서식을 살려 그린다 (Report.tsx)
   ];
   return {
     id: nodeId,
     title: `[${nodeId}] ${n.name} · ${LAYER_NAMES[n.layer]}`,
     verdict,
-    // 설계서 7절: 행 순서는 카드마다 같게 두고 빈 행은 '없음'으로 보인다. 설명만 있을 때 싣는다
-    rows: rows.filter((r) => r.lines.length || r.label !== '설명'),
+    // 설계서 7절: 행 순서는 카드마다 같게 두고 빈 행은 '없음'으로 보인다
+    rows,
   };
 }
 

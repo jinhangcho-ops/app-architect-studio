@@ -8,6 +8,8 @@ const each = (xs: unknown[], pre: string): Record<string, unknown> => Object.fro
 
 export const SETTINGS: { id: string; title: string; fields: (p: Project) => Record<string, unknown> }[] = [
   { id: 's-proj', title: '프로젝트', fields: (p) => ({ name: p.name }) },
+  // 설계 메모는 설정 값이 아니라 글이라 "불러온 값으로 되돌리기"가 지우지 않게 세지 않는다
+  { id: 's-notes', title: '설계 메모', fields: () => ({}) },
   { id: 's-mode', title: '구동 방식', fields: (p) => flat(p.deploy) },
   { id: 's-scale', title: '규모', fields: (p) => {
     const { industry: _i, day: _d, spikes: _s, ...rest } = p.scale ?? {};

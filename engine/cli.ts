@@ -6,7 +6,7 @@ import { loadCatalog, loadLaws, loadPrices, loadProject } from './io';
 import { VERDICT_NAMES, type Metric } from './model';
 import { failureLines } from './failure';
 import { GAP_EFFECT, recordBytes, specAdvice, specGaps } from './interfaces';
-import type { Interface } from './schema';
+import { chapterTitle, type Interface } from './schema';
 import { featureTables, unusedTables } from './tables';
 import { schemaWarnings } from './ddl';
 import { flowLine } from './pipeline';
@@ -38,6 +38,8 @@ try {
   const a = analyze(project, { catalog: catalog.byId, rules: catalog.rules, prices: loadPrices(pricesDir), laws: loadLaws(fileURLToPath(new URL('../data/laws', import.meta.url))) }, today);
   const nameOf = (id: string) => project.nodes.find((n) => n.id === id)!.name;
   console.log(`# ${project.name}\n`);
+  // 설계 메모는 길어서 장 제목만 (본문은 설계서에)
+  if (project.notes.length) console.log(`## 설계 메모\n${project.notes.map((n, i) => `  ${i + 1}. ${chapterTitle(n.title)}`).join('\n')}\n`);
 
   const t = a.traffic;
   if (t) {

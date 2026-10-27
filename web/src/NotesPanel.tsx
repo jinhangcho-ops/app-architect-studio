@@ -20,7 +20,7 @@ export function NotesSection() {
   return (
     <Section id="s-notes" title="설계 메모" desc="개요·범위·화면 구성·보안처럼 글로 적는 장이에요. 순서대로 설계서 맨 앞에 들어가요. ### 소제목, - 목록, 1. 번호, | 표 |, ``` 코드 ```, **굵게**, `코드`를 쓸 수 있어요. 지운 장은 Ctrl+Z로 되돌려요.">
       {p.notes.map((n, i) => (
-        <div key={i} className="note-edit">
+        <div key={i} id={`note-${i}`} className="note-edit">
           <div className="note-edit-head">
             <b>{i + 1}.</b>
             <input aria-label={`${i + 1}장 제목`} placeholder="장 제목" value={n.title} onChange={(e) => patch(i, { title: e.target.value })} />
