@@ -18,6 +18,9 @@ const FIELD_NAMES: Record<(typeof FIELD_TYPES)[number], string> = {
   string: '문자열', integer: '정수', number: '실수', boolean: '참·거짓', datetime: '날짜·시각', uuid: 'UUID', object: '객체', array: '배열',
 };
 
+/** "+ 에러 응답"이 차례로 넣는 상태 코드와 설명 */
+const NEW_ERRORS: Record<number, string> = { 400: '요청 값이 올바르지 않음', 401: '인증이 필요함', 403: '권한이 없음', 404: '찾을 수 없음', 409: '이미 있거나 충돌함', 422: '처리할 수 없는 요청', 500: '서버 오류' };
+
 export function InterfacesSection({ e, analysis }: { e: ProjectEdge; analysis?: Analysis }) {
   const { project, edit } = usePick('project', 'edit');
   const toLayer = project.nodes.find((n) => n.id === e.to)?.layer;
@@ -222,7 +225,11 @@ function Errors({ errors, onChange }: { errors: Interface['errors']; onChange: (
           ))}
         </tbody>
       </table></div>}
-      <button onClick={() => onChange([...errors, { status: 400, description: '요청 값이 올바르지 않음' }])}>+ 에러 응답</button>
+      {/* 아직 안 쓴 상태 코드를 고른다 (같은 상태·코드가 둘이면 명세 오류로 계산이 멈춤) */}
+      <button onClick={() => {
+        const status = (Object.keys(NEW_ERRORS).map(Number)).find((s) => !errors.some((x) => x.status === s && !x.code)) ?? 400;
+        onChange([...errors, { status, description: NEW_ERRORS[status] ?? '요청 값이 올바르지 않음' }]);
+      }}>+ 에러 응답</button>
     </div>
   );
 }

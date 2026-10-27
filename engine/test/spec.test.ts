@@ -97,3 +97,20 @@ describe('행동·테이블 참조 검사', () => {
     expect(Project.parse(base).actions[0].writes[0].rows).toBe(1);
   });
 });
+
+describe('감사 13: 명세서 붙여넣기', () => {
+  it('JSON에 같은 이름 테이블이 둘이면 둘째는 오류로 넘김', () => {
+    const t = { name: 'dup', columns: [{ name: 'id', type: 'bigint' }], primary_key: ['id'] };
+    const r = parseSpec(JSON.stringify([t, t]));
+    expect(r.tables).toHaveLength(1);
+    expect(r.errors.join()).toContain('dup: 같은 이름 테이블이 또 있음');
+  });
+  it('크기 칸: 지수·쉼표는 바르게, 음수·무한은 숫자가 아님', () => {
+    const head = '테이블\t컬럼\t타입\t크기';
+    const sizeOf = (v: string) => parseSpec(`${head}\nt\tc\tVARCHAR\t${v}`);
+    expect(sizeOf('1E+03').tables[0].columns[0].max_length).toBe(1000);
+    expect(sizeOf('1,000').tables[0].columns[0].max_length).toBe(1000);
+    expect(sizeOf('-5').errors.join()).toContain('숫자가 아님');
+    expect(sizeOf('1e400').errors.join()).toContain('숫자가 아님');
+  });
+});

@@ -245,6 +245,8 @@ export function addAction(p: Project): Project {
 
 /** 행동 고치기. 이름이 바뀌면 페르소나별 빈도의 이름도 바꾼다 */
 export function updateAction(p: Project, name: string, patch: Partial<Action>): Project {
+  // 다른 행동의 이름으로는 바꾸지 않는다 (두 행동이 한 이름이 되면 빈도가 섞이고 따로 고치거나 지울 수 없음)
+  if (patch.name !== undefined && patch.name !== name && p.actions.some((a) => a.name === patch.name)) return p;
   const next = { ...p, actions: p.actions.map((a) => (a.name === name ? { ...a, ...patch } : a)) };
   if (patch.name === undefined || patch.name === name) return next;
   return {

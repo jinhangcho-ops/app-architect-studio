@@ -112,7 +112,9 @@ function parseJson(text: string): SpecResult {
   list.forEach((raw, i) => {
     const r = Table.safeParse(raw);
     const name = (raw as { name?: string })?.name ?? `${i + 1}번째 테이블`;
-    if (!r.success) errors.push(...r.error.issues.map((x) => `${name}: ${x.path.join('.')} ${x.message}`));
+    // 표 붙여넣기는 이름으로 묶이지만 JSON은 하나씩이라, 같은 이름이 또 오면 받지 않는다 (테이블 이름 중복은 계산을 멈춤)
+    if (r.success && tables.some((t) => t.name === r.data.name)) errors.push(`${name}: 같은 이름 테이블이 또 있음`);
+    else if (!r.success) errors.push(...r.error.issues.map((x) => `${name}: ${x.path.join('.')} ${x.message}`));
     else {
       const bad = checkTable(r.data);
       if (bad.length) errors.push(...bad.map((e) => `${name}: ${e}`));
@@ -146,8 +148,9 @@ function parseDelimited(text: string, sep: string): SpecResult {
     if (!t) return errors.push(`${line}번째 줄: 모르는 타입 ${rawType}`);
     const size = get('size'), avg = get('avg'), storage = get('storage'), nullable = get('nullable'), keys = get('keys');
     const num = (s: string, what: string) => {
-      const v = Number(s.replace(/[^\d.]/g, ''));
-      if (!(v > 0)) { errors.push(`${line}번째 줄: ${what}가 숫자가 아님 (${s})`); return undefined; }
+      // 쉼표만 지우고 앞 숫자를 읽는다: "10KB" → 10, "1E+03" → 1000, "-5"·"1e400"은 숫자가 아님으로
+      const v = parseFloat(s.replace(/,/g, ''));
+      if (!(v > 0 && Number.isFinite(v))) { errors.push(`${line}번째 줄: ${what}가 숫자가 아님 (${s})`); return undefined; }
       return v;
     };
     const length = t.length ?? (size && (t.type === 'text' || t.type === 'bytes') ? num(size, '크기') : undefined);

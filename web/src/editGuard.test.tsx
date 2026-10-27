@@ -6,7 +6,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { parseProject } from '../../engine/data';
 import type { Project } from '../../engine/schema';
 import { catalog, examples } from './data';
-import { removeColumn, updatePersona } from './edit';
+import { removeColumn, updateAction, updatePersona } from './edit';
 import { NumField } from './fields';
 import { InterfacesSection } from './InterfacesPanel';
 import { NodePanel } from './NodePanel';
@@ -191,5 +191,36 @@ describe('인터페이스 방식을 바꾸면 경로를 새 방식 모양으로 
     expect(path()).toBe('topic.name');
     await pick('grpc');
     expect(path()).toBe('Method1');
+  });
+});
+
+describe('감사 13: 숫자 칸 비우기·행동 이름·에러 응답 버튼', () => {
+  it('처리 시간을 지우고 다시 쳐도 동시 처리 수·p99는 그대로', async () => {
+    const p = load();
+    const n = p.nodes.find((x) => x.id === 'N-05')!;
+    useStore.setState({ project: { ...p, nodes: p.nodes.map((x) => (x === n ? { ...x, perf: { service_ms: 40, workers: 4, service_p99_ms: 120 } } : x)) }, rejected: undefined });
+    function H() { useStore((st) => st.project); return <NodePanel id={n.id} />; }
+    const el = await mount(<H />);
+    const inp = [...el.querySelectorAll('label.row')].find((l) => l.textContent?.startsWith('평균 처리(ms)'))!.querySelector('input')!;
+    await typeChars(inp, '60');
+    expect(s().project.nodes.find((x) => x.id === n.id)!.perf).toEqual({ service_ms: 60, workers: 4, service_p99_ms: 120 });
+  });
+  it('"+ 에러 응답"을 두 번 눌러도 상태 코드가 겹치지 않음', async () => {
+    const p = restIf(load());
+    const e = p.edges[0];
+    useStore.setState({ project: { ...p, edges: p.edges.map((x, i) => (i ? x : { ...x, interfaces: x.interfaces.map((f, k) => (k ? f : { ...f, errors: [] })) })) }, rejected: undefined });
+    const edge = () => s().project.edges.find((x) => x.from === e.from && x.to === e.to)!;
+    function H() { useStore((st) => st.project); return <InterfacesSection e={edge()} />; }
+    const el = await mount(<H />);
+    const btn = () => [...el.querySelectorAll('button')].find((b) => b.textContent === '+ 에러 응답') as HTMLButtonElement;
+    await act(async () => btn().click());
+    await act(async () => btn().click());
+    expect(edge().interfaces[0].errors.map((x) => x.status)).toEqual([400, 401]);
+  });
+  it('행동 이름을 다른 행동 이름으로 바꾸지 않음', () => {
+    const ex = examples.find((x) => x.name === 'actions.json')!;
+    const p = parseProject(ex.data, catalog.items, ex.name);
+    const [a, b] = p.actions;
+    expect(updateAction(p, b.name, { name: a.name })).toBe(p);
   });
 });

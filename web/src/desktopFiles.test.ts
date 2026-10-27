@@ -35,11 +35,21 @@ describe('데스크톱 앱 폴더 저장 (electron/files.cjs)', () => {
   it('.saves에 시점 파일을 쓰고, max개를 넘으면 가장 오래된 것부터 지움, 목록은 최신이 앞', () => {
     files.allow(project);
     for (let i = 0; i < 23; i++) files.writeSnapshot(project, 'manual', `2026-10-24_03-00-${String(i).padStart(2, '0')}`, `{"i":${i}}`, 20);
-    expect(readdirSync(join(dir, '.saves'))).toHaveLength(20);
+    expect(readdirSync(join(dir, '.saves', basename(project)))).toHaveLength(20);
     const list = files.listSnapshots(project, 'manual');
     expect(list.map((x) => x.name).slice(0, 2)).toEqual(['2026-10-24_03-00-22', '2026-10-24_03-00-21']);
     expect(list.at(-1)!.name).toBe('2026-10-24_03-00-03');
     expect(files.listSnapshots(project, 'auto')).toEqual([]);
+  });
+
+  it('같은 폴더의 다른 프로젝트는 저장 기록을 따로 씀 (감사 13)', () => {
+    const a = join(dir, 'a.aas.json'), b = join(dir, 'b.aas.json');
+    writeFileSync(a, '{}'); writeFileSync(b, '{}');
+    files.allow(a); files.allow(b);
+    for (let i = 0; i < 3; i++) files.writeSnapshot(a, 'manual', `2026-10-27_01-00-0${i}`, '{"p":"A"}', 20);
+    for (let i = 0; i < 25; i++) files.writeSnapshot(b, 'manual', `2026-10-27_02-00-${String(i).padStart(2, '0')}`, '{"p":"B"}', 20);
+    expect(files.listSnapshots(a, 'manual').map((x) => JSON.parse(x.text).p)).toEqual(['A', 'A', 'A']);
+    expect(files.listSnapshots(b, 'manual')).toHaveLength(20);
   });
 
   it('같은 이름이면 덮어씀 (자동 저장이 간격 안에서 같은 시점을 고칠 때)', () => {

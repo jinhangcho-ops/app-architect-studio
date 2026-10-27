@@ -82,8 +82,9 @@ export function App() {
   const onlyDiagram = hide.right && hide.bottom;
   const [report, setReport] = useState<{ plans?: OptimizeResult }>();
   const [find, setFind] = useState<{ q: string; at: number }>();
-  // 앱을 열 때 남아 있던 임시 저장. 복구할지 정하기 전에는 임시 저장을 덮어쓰지 않는다
+  // 앱을 열 때 남아 있던 임시 저장. 이번 작업은 새 시점으로 남겨(안내를 닫지 않아도 자동 저장은 계속) 그 시점을 덮어쓰지 않는다
   const [recovery, setRecovery] = useState<Snapshot | undefined>(() => readAutosaves()[0]);
+  useEffect(() => { if (recovery) startNewSnapshot(); }, []);
   const [history, setHistory] = useState(false);
   const [notice, setNotice] = useState<string>();
   // 새 버전 알림 (데스크톱 앱에서 켤 때 한 번 확인)
@@ -141,7 +142,6 @@ export function App() {
   // 자동 저장이 실패하면(저장소가 꽉 참·폴더에 못 씀) 한 번 알린다. 복구 시점이 없는데 있다고 믿지 않게
   const warnedSave = useRef(false);
   useEffect(() => {
-    if (recovery) return;
     const fail = (where: string) => () => {
       if (warnedSave.current) return;
       warnedSave.current = true;
@@ -149,7 +149,7 @@ export function App() {
     };
     scheduleAutosave(project, positions, fail('브라우저 저장소에'));
     if (filePath) scheduleFolderAutosave(filePath, project, positions, fail('프로젝트 폴더에'));
-  }, [project, positions, recovery, filePath]);
+  }, [project, positions, filePath]);
 
   const hits = find ? searchProject(project, catalog.byId, find.q) : [];
   const go = (h: Hit) => {

@@ -138,3 +138,16 @@ it('리뷰 13: 세부 구성 중 Ctrl+V는 캔버스로 나와 붙인 노드를 
   expect(s.selected).toEqual({ kind: 'node', id: s.project.nodes.at(-1)!.id });
   await done();
 });
+
+it('감사 13: 복구 안내가 떠 있어도 이번 작업은 새 시점으로 자동 저장, 남아 있던 시점은 그대로', async () => {
+  localStorage.clear();
+  const { writeAutosave } = await import('./autosave');
+  const base = useStore.getState().project;
+  writeAutosave({ ...base, name: '한 시간 고친 작업' }, {});
+  const { el, done } = await mount();
+  expect(el.textContent).toContain('한 시간 고친 작업');
+  await act(async () => useStore.getState().edit((p) => ({ ...p, name: '새 작업' })));
+  await wait(1500);
+  expect(readAutosaves().map((s) => s.project.name)).toEqual(['새 작업', '한 시간 고친 작업']);
+  await done();
+});

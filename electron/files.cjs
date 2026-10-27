@@ -33,9 +33,11 @@ function writeAtomic(target, data) {
   }
 }
 
+// 프로젝트 파일마다 따로: .saves/<파일 이름>/ (같은 폴더의 다른 프로젝트가 기록을 지우거나 섞지 않게)
 const dirOf = (projectFile, kind) => {
   if (!Object.hasOwn(KINDS, kind)) throw new Error('알 수 없는 저장 종류');
-  return path.join(path.dirname(check(projectFile)), KINDS[kind]);
+  const file = check(projectFile);
+  return path.join(path.dirname(file), KINDS[kind], path.basename(file));
 };
 
 function writeSnapshot(projectFile, kind, name, text, max) {

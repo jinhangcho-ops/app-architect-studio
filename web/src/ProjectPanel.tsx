@@ -246,7 +246,12 @@ export function ActionsSection() {
         return (
           <div key={a.name} className="action">
             <div className="inline">
-              <input aria-label="행동 이름" defaultValue={a.name} onBlur={(e) => e.target.value && e.target.value !== a.name && upd({ name: e.target.value })} />
+              <input aria-label="행동 이름" defaultValue={a.name} onBlur={(e) => {
+                const v = e.target.value.trim();
+                // 비었거나 다른 행동과 같은 이름이면 받지 않고 칸을 되돌린다
+                if (!v || v === a.name || p.actions.some((x) => x.name === v)) { e.target.value = a.name; return; }
+                upd({ name: v });
+              }} />
               <label className="muted">접속당 <NumInput step={0.01} value={a.per_session} onChange={(e) => upd({ per_session: Number(e.target.value) || 0 })} />회</label>
               <button aria-label="행동 삭제" onClick={() => edit((x) => removeAction(x, a.name))}>×</button>
             </div>

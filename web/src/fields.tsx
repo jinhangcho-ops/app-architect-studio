@@ -20,7 +20,9 @@ export function NumField({ label, value, onChange, step, hint, disabled }: {
         step={step ?? 'any'}
         value={value ?? ''}
         disabled={disabled}
-        onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
+        // 비운 칸은 떠날 때만 "값 없음"으로 보낸다. 지우고 다시 치는 중에 보내면 묶음 전체(처리 시간·배치·백업)를 지우는 칸이 함께 묶인 값을 잃는다
+        onChange={(e) => { if (e.target.value !== '') onChange(Number(e.target.value)); }}
+        onBlur={(e) => { if (e.target.value === '' && value !== undefined) onChange(undefined); }}
       />
     </Row>
   );
