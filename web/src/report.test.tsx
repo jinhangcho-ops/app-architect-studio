@@ -67,3 +67,25 @@ describe('설계서 전체', () => {
     expect(html).toContain('데이터 사전');
   });
 });
+
+describe('설계서: 설계 메모 장과 노드 메모', () => {
+  it('메모 장이 1장부터 맨 앞, 계산 장은 그 뒤 번호. 표·코드는 그려지고 HTML은 글자로, 노드 설명은 7장 카드의 메모', () => {
+    const p = load('phase3.json');
+    const notes = [
+      { title: '3. 개요', body: '| 영역 | 선택 |\n|---|---|\n| 앱 | **React** |\n\n```sql\ncreate table t (id int);\n```\n<script>alert(1)</script>' },
+      { title: '  ', body: '- 범위' },
+    ];
+    const withNotes = { ...p, notes, nodes: p.nodes.map((n) => (n.id === 'api' ? { ...n, description: '- 주문 접수\n- 결제 호출' } : n)) };
+    const html = renderToStaticMarkup(
+      <Report project={withNotes} analysis={run(withNotes, today).analysis} positions={autoLayout(withNotes)} today={today} onClose={() => {}} />,
+    );
+    const heads = [...html.matchAll(/<h2 class="r-h">(.*?)<\/h2>/g)].map((m) => m[1]);
+    expect(heads.slice(0, 4)).toEqual(['1. 개요', '2. (제목 없음)', '3. 요약', '4. 구동 방식']);
+    expect(heads).toContain('9. 노드별 선택과 판정 근거');
+    expect(html).toContain('<table class="note-table"><thead><tr><th>영역</th><th>선택</th></tr></thead><tbody><tr><td>앱</td><td><b>React</b></td></tr></tbody></table>');
+    expect(html).toContain('<pre class="note-code">create table t (id int);</pre>');
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(html).not.toContain('<script>');
+    expect(html).toMatch(/<div class="r-memo"><b>메모<\/b><div class="note"><div class="note-list">.*주문 접수.*결제 호출/);
+  });
+});

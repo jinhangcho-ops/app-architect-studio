@@ -116,3 +116,29 @@ export function parseInline(text: string): Span[] {
   push('text', text.slice(at));
   return out;
 }
+
+/** 설계서가 장 번호를 매기므로 제목 앞의 번호(1. · 2) · 5.3)는 뗀다 ("1. 1. 개요"가 되지 않게). 비면 (제목 없음) */
+export const chapterTitle = (t: string) => t.trim().replace(/^\d+(\.\d+)*[.)]?\s+/, '') || '(제목 없음)';
+
+/** 마크다운 문서 한 덩이 → 장 목록. `## 제목` 줄마다 새 장 (코드 블록 안의 ##는 제외).
+ *  첫 ## 앞의 글은 맨 앞 `# 제목`을 장 제목으로(없으면 "머리말") 한 장이 된다. 앞뒤 빈 줄은 뗀다 */
+export function splitChapters(doc: string): { title: string; body: string }[] {
+  const lines = doc.replace(/\r\n?/g, '\n').split('\n');
+  const out: { title: string; lines: string[] }[] = [{ title: '', lines: [] }];
+  let fence: string | undefined;
+  for (const l of lines) {
+    const f = FENCE.exec(l);
+    if (f) fence = fence === undefined ? f[1] : l.trim().startsWith(fence) ? undefined : fence;
+    const h = fence === undefined && !f ? /^\s{0,3}##\s+(.*?)\s*#*\s*$/.exec(l) : null;
+    if (h) out.push({ title: h[1], lines: [] });
+    else out[out.length - 1].lines.push(l);
+  }
+  const trim = (ls: string[]) => ls.join('\n').replace(/^\s*\n/, '').trimEnd();
+  const [head, ...rest] = out;
+  const top = /^\s{0,3}#\s+(.*?)\s*#*\s*$/.exec(head.lines.find((l) => l.trim()) ?? '');
+  const headBody = trim(top ? head.lines.slice(head.lines.findIndex((l) => l.trim()) + 1) : head.lines);
+  return [
+    ...(headBody.trim() ? [{ title: top?.[1] ?? '머리말', body: headBody }] : []),
+    ...rest.map((c) => ({ title: c.title.replace(/^\d+(\.\d+)*[.)]?\s+/, ''), body: trim(c.lines) })),
+  ];
+}

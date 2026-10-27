@@ -144,13 +144,32 @@ textarea.spec { width: 100%; min-height: 90px; font-family: ui-monospace, monosp
 .r-node-layer { font-size: 10px; fill: var(--muted); } .r-node-name { font-size: 13px; fill: var(--ink); font-weight: 600; }
 .r-src li { word-break: break-all; font-size: 9pt; }
 
+/* 설계 메모 (설계서·설정 미리보기·노드 패널) */
+.note p { margin: 4px 0; }
+.note-h { margin: 8px 0 4px; }
+h3.note-h { font-size: 11pt; } h4.note-h { font-size: 10.5pt; } h5.note-h { font-size: 10pt; }
+.note-li { position: relative; margin: 1px 0; }
+.note-mark { display: inline-block; width: 1.4em; margin-left: -1.4em; }
+.note-table { border-collapse: collapse; width: 100%; margin: 4px 0; font-size: 9.5pt; }
+.note-table th, .note-table td { border: 1px solid var(--line); padding: 2px 6px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.note-code { white-space: pre-wrap; overflow-wrap: anywhere; background: rgba(127, 127, 127, 0.12); padding: 6px 8px; border-radius: 4px; font-size: 9pt; }
+.note blockquote { margin: 4px 0; padding-left: 8px; border-left: 3px solid var(--line); color: var(--muted); }
+.note code { background: rgba(127, 127, 127, 0.12); padding: 0 3px; border-radius: 3px; }
+.r-memo { margin-top: 4px; padding-top: 4px; border-top: 1px dashed var(--line); }
+.note-edit { margin: 6px 0 10px; }
+.note-edit-head { display: flex; gap: 4px; align-items: center; margin-bottom: 4px; }
+.note-edit-head input { flex: 1; min-width: 0; }
+.note-edit textarea, .note-paste textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, Consolas, monospace; }
+.note-preview { border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
+
 @page { size: A4; margin: 12mm; }
 @media print {
   body { background: #fff; }
   .app, .no-print { display: none !important; }
   .report-overlay { position: static; overflow: visible; background: #fff; }
   .report { width: auto; margin: 0; padding: 0; box-shadow: none; }
-  .r-h { break-after: avoid; }
+  .r-h, .note-h { break-after: avoid; }
+  .note-table tr, .note-li { break-inside: avoid; }
   section { break-inside: auto; }
 }
 

@@ -17,6 +17,7 @@ import { usePick } from './store';
 import { StorageSection, TablesSection } from './TablesPanel';
 import { NodeSummary } from './NodeSummary';
 import { InterfacesSection } from './InterfacesPanel';
+import { NoteView } from './NoteView';
 import { pyProfile } from '../../engine/pyCompat';
 
 const itemName = (id: string) => catalog.byId.get(id)?.name ?? id;
@@ -60,7 +61,10 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
             {LAYERS.map((l) => <option key={l} value={l} disabled={n.tables.length > 0 && !(TABLE_LAYERS as readonly string[]).includes(l)}>{LAYER_NAMES[l]}</option>)}
           </Select>
         </Row>
-        <Row label="설명"><textarea value={n.description ?? ''} onChange={(e) => upd({ description: e.target.value || undefined })} /></Row>
+        <Row label="설명" hint="설계서 7장 이 노드 카드에 메모로 들어가요. 설계 메모와 같은 형식(- 목록, | 표 |, **굵게** …)">
+          <textarea aria-label="노드 설명" rows={5} value={n.description ?? ''} onChange={(e) => upd({ description: e.target.value || undefined })} />
+        </Row>
+        {n.description && <details className="note-preview"><summary>설명 미리보기</summary><NoteView body={n.description} /></details>}
       </Section>
 
       <Section title="선택 항목">

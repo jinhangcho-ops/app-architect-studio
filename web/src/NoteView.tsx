@@ -1,0 +1,48 @@
+// 설계 메모 본문을 그린다 (설계서·설정 미리보기·노드 패널이 같이 씀). React 요소만 만들어 메모 속 HTML은 글자로 보인다
+import { Fragment } from 'react';
+import { parseInline, parseNote, type ListItem } from './notes';
+
+/** 글 한 덩이: 줄바꿈은 그대로, **굵게**·`코드` */
+function Inline({ text }: { text: string }) {
+  return <>{text.split('\n').map((line, i) => (
+    <Fragment key={i}>{i > 0 && <br />}{parseInline(line).map((s, k) => (
+      s.kind === 'bold' ? <b key={k}>{s.text}</b> : s.kind === 'code' ? <code key={k}>{s.text}</code> : <Fragment key={k}>{s.text}</Fragment>
+    ))}</Fragment>
+  ))}</>;
+}
+
+/** 목록: 깊이마다 들여 쓰고, 번호 목록은 같은 깊이에서 이어지는 동안 1, 2, 3 … (안쪽 목록이 끝나면 바깥 번호를 이어 감) */
+function List({ items }: { items: ListItem[] }) {
+  const counters: number[] = [];
+  return <div className="note-list">{items.map((it, i) => {
+    counters.length = it.depth + 1;
+    counters[it.depth] = it.ordered ? (counters[it.depth] ?? 0) + 1 : 0;
+    return (
+      <div key={i} className="note-li" style={{ paddingLeft: `${it.depth * 1.2 + 1.4}em` }}>
+        <span className="note-mark">{it.ordered ? `${counters[it.depth]}.` : '•'}</span><Inline text={it.text} />
+      </div>
+    );
+  })}</div>;
+}
+
+export function NoteView({ body }: { body: string }) {
+  return <div className="note">{parseNote(body).map((b, i) => {
+    switch (b.kind) {
+      case 'heading': {
+        const Tag = b.level <= 2 ? 'h3' : b.level === 3 ? 'h4' : 'h5';
+        return <Tag key={i} className="note-h"><Inline text={b.text} /></Tag>;
+      }
+      case 'paragraph': return <p key={i}><Inline text={b.text} /></p>;
+      case 'quote': return <blockquote key={i}><Inline text={b.text} /></blockquote>;
+      case 'list': return <List key={i} items={b.items} />;
+      case 'rule': return <hr key={i} />;
+      case 'code': return <pre key={i} className="note-code">{b.text}</pre>;
+      case 'table': return (
+        <table key={i} className="note-table">
+          {b.head.length > 0 && <thead><tr>{b.head.map((c, k) => <th key={k}><Inline text={c} /></th>)}</tr></thead>}
+          <tbody>{b.rows.map((r, k) => <tr key={k}>{r.map((c, j) => <td key={j}><Inline text={c} /></td>)}</tr>)}</tbody>
+        </table>
+      );
+    }
+  })}</div>;
+}

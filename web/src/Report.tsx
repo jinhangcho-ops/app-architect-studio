@@ -1,5 +1,5 @@
 // 설계서 화면(7·17절): A4 인쇄용으로 그리고, 브라우저 인쇄 창의 "PDF로 저장"으로만 내보낸다.
-// 목차: 요약 → 구동 방식 → 규모 가정 → 구조도 → 화면 설계·API → 데이터 명세 → 노드별 판정 근거 → 확장 한계·지연·비용 → 최선 조합 → 가용성·성장 → 조문 → 미해결 → 적용한 설정 → 출처
+// 목차: (설계 메모 장들) → 요약 → 구동 방식 → 규모 가정 → 구조도 → 화면 설계·API → 데이터 명세 → 노드별 판정 근거 → 확장 한계·지연·비용 → 최선 조합 → 가용성·성장 → 조문 → 미해결 → 적용한 설정 → 출처
 import { PATHS_CUT_TEXT } from '../../engine/latency';
 import { useEffect, useRef, type ReactNode } from 'react';
 import type { Analysis } from '../../engine/analyze';
@@ -21,6 +21,8 @@ import { costTimeline, milestoneText, nodeCard, openIssues, sourcesOf } from './
 import { drawScreen, screenFrame } from './wireDraw';
 import { FeatureTablesTable } from './ResultsPanel';
 import { dialectOf, keyCols, sqlType } from '../../engine/ddl';
+import { NoteView } from './NoteView';
+import { chapterTitle } from './notes';
 
 const H = ({ n, children }: { n: number; children: ReactNode }) => <h2 className="r-h">{n}. {children}</h2>;
 const KV = ({ rows }: { rows: [string, ReactNode][] }) => (
@@ -34,6 +36,8 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
   const t = a?.traffic;
   const counts = a ? a.judgements.map((j) => worstVerdict(j)).reduce<Record<string, number>>((s, v) => (v ? { ...s, [v]: (s[v] ?? 0) + 1 } : s), {}) : {};
   // 계산에 쓴 가격 행: 비용 항목의 입력 이름에 가격 행 id가 들어 있다
+  // 설계 메모 장 수: 메모 장들이 1장부터, 계산 장들은 그 뒤 번호
+  const N = p.notes.length;
   const usedPrices = a?.cost ? prices.filter((r) => Object.values(a.cost!.parts).some((m) => Object.keys(m.inputs).some((k) => k.includes(` ${r.id} `)))) : [];
 
   return (
@@ -50,11 +54,17 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           <h1>{p.name}</h1>
           <p className="muted">App Architect Studio 설계서 · {today} · 카탈로그 항목 {catalog.items.length}개 · 가격표 {prices.length}행</p>
         </header>
+        {p.notes.map((note, i) => (
+          <section key={i} className="r-note">
+            <H n={i + 1}>{chapterTitle(note.title)}</H>
+            <NoteView body={note.body} />
+          </section>
+        ))}
         {!a && <p className="warn">입력에 오류가 있어 계산 결과가 없습니다. 화면에서 오류를 고친 뒤 다시 여세요.</p>}
 
         {a && <>
           <section>
-            <H n={1}>요약</H>
+            <H n={N + 1}>요약</H>
             <KV rows={[
               ['구동 방식', MODE_NAMES[p.deploy.mode]],
               ['활성 사용자', p.scale ? `${fmt(p.scale.users)}명` : '입력 없음'],
@@ -66,7 +76,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={2}>구동 방식</H>
+            <H n={N + 2}>구동 방식</H>
             <KV rows={[
               ['방식', MODE_NAMES[p.deploy.mode]],
               ['사용 범위', SCOPE_NAMES[p.deploy.scope]],
@@ -76,7 +86,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={3}>규모 가정</H>
+            <H n={N + 3}>규모 가정</H>
             {p.scale && <KV rows={[
               ['활성 사용자', `${fmt(p.scale.users)}명`], ['이벤트 배수', `${p.scale.event_multiplier}배`],
               ['창 안 비율', fmtShare(p.scale.window_share)], ['하루 피크 (업종)', dayLabel(p.scale) ?? '없음 (페르소나마다 깨어 있는 시간 가운데)'], ['보관 기간', `${p.scale.retention_days}일`], ['기준 나라', p.scale.report_country],
@@ -108,18 +118,18 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={4}>구조도</H>
+            <H n={N + 4}>구조도</H>
             <Diagram project={p} analysis={a} positions={positions} />
           </section>
 
           <section>
-            <H n={5}>화면 설계 · API 호출 · 인터페이스 명세</H>
+            <H n={N + 5}>화면 설계 · API 호출 · 인터페이스 명세</H>
             <Screens project={p} analysis={a} />
             <Interfaces project={p} analysis={a} />
           </section>
 
           <section>
-            <H n={6}>데이터 명세 · 기능별 테이블 · 데이터 사전</H>
+            <H n={N + 6}>데이터 명세 · 기능별 테이블 · 데이터 사전</H>
             {p.nodes.some((n) => n.tables.length) ? <>
               <h3 className="r-sub">기능별 테이블</h3>
               <FeatureTablesTable project={p} className="r-grid" />
@@ -128,7 +138,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={7}>노드별 선택과 판정 근거</H>
+            <H n={N + 7}>노드별 선택과 판정 근거</H>
             {p.nodes.map((n) => {
               const c = nodeCard(p, a, catalog.byId, n.id);
               return (
@@ -137,13 +147,14 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
                   <table><tbody>{c.rows.map((r) => (
                     <tr key={r.label}><th>{r.label}</th><td>{r.lines.length ? r.lines.map((l, k) => <div key={k}>{l}</div>) : <span className="muted">없음</span>}</td></tr>
                   ))}</tbody></table>
+                  {n.description && <div className="r-memo"><b>메모</b><NoteView body={n.description} /></div>}
                 </div>
               );
             })}
           </section>
 
           <section>
-            <H n={8}>확장 한계 · 지연시간 · 월 비용</H>
+            <H n={N + 8}>확장 한계 · 지연시간 · 월 비용</H>
             <ul>{p.nodes.filter((n) => a.nodes[n.id].limitUsers).map((n) => <li key={n.id}>{n.name}: 한계 사용자 약 {fmt(a.nodes[n.id].limitUsers!.value)}명</li>)}</ul>
             <ul>{a.paths.map((pa) => <li key={pa.nodes.join()}>{pa.nodes.map(name).join(' → ')}: p99 {fmtMetric(pa.p99)}</li>)}</ul>
             {a.pathsCut && <p>{PATHS_CUT_TEXT}</p>}
@@ -158,7 +169,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={9}>최선 조합과 선택 조건</H>
+            <H n={N + 9}>최선 조합과 선택 조건</H>
             <KV rows={[
               ['우선순위', p.optimize.priorities.join(' > ') || '없음 (모든 목표 같은 무게)'],
               ['꼭 지킬 조건', [p.optimize.budget_monthly !== undefined && `월 예산 ${fmt(p.optimize.budget_monthly)}`, p.optimize.min_limit_users !== undefined && `한계 사용자 ${fmt(p.optimize.min_limit_users)}명 이상`, p.optimize.max_p99_ms !== undefined && `p99 ${p.optimize.max_p99_ms}ms 이하`, p.optimize.min_availability !== undefined && `가용성 ${fmtShare(p.optimize.min_availability)} 이상`].filter(Boolean).join(' · ') || '없음'],
@@ -168,7 +179,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={10}>가용성 · 성장 타임라인</H>
+            <H n={N + 10}>가용성 · 성장 타임라인</H>
             <ul>{a.paths.map((pa) => <li key={pa.nodes.join()}>{pa.nodes.map(name).join(' → ')}: 가용성 {fmtMetric(pa.availability)}, 월 중단 {fmtMetric(pa.downtime)}</li>)}</ul>
             {a.spof.length > 0 && <p>단일 장애점: {a.spof.map(name).join(', ')}</p>}
             {a.failure && a.failure.regions.length > 0 && <ul>{regionLines(a.failure, name).map((l, k) => <li key={k}>{l}</li>)}</ul>}
@@ -180,7 +191,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={11}>확인 필요 조문</H>
+            <H n={N + 11}>확인 필요 조문</H>
             {!a.regulation.length ? <p className="muted">개인정보 노드가 없거나 걸린 조문이 없습니다.</p> : <ul>
               {a.regulation.map((h) => <li key={h.nodeId + h.law + h.article}>{name(h.nodeId)} · {lawLine(h)}</li>)}
             </ul>}
@@ -188,12 +199,12 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={12}>미해결 ❌·⚠️ 목록</H>
+            <H n={N + 12}>미해결 ❌·⚠️ 목록</H>
             {(() => { const xs = openIssues(p, a, catalog.byId); return xs.length ? <ul>{xs.map((x, k) => <li key={k}>{x}</li>)}</ul> : <p className="muted">없습니다.</p>; })()}
           </section>
 
           <section>
-            <H n={13}>적용한 설정</H>
+            <H n={N + 13}>적용한 설정</H>
             <ul>{p.nodes.flatMap((n) => {
               const sp = nodeStorageProfile(n, catalog.byId);
               const feats = sp ? selectedFeatures(sp, n).map((f) => f.label) : [];
@@ -203,7 +214,7 @@ export function Report({ project: p, analysis: a, positions, plans, today, onClo
           </section>
 
           <section>
-            <H n={14}>카탈로그 출처</H>
+            <H n={N + 14}>카탈로그 출처</H>
             <ul className="r-src">
               {sourcesOf(p, catalog.byId).map((s) => <li key={s.item}>{s.item}: {s.urls.join(' · ')}</li>)}
               {usedPrices.map((r) => <li key={r.id}>가격 {r.id} ({r.as_of}): {r.source}</li>)}

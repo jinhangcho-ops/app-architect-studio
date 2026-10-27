@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseInline, parseNote } from './notes';
+import { chapterTitle, parseInline, parseNote, splitChapters } from './notes';
 
 // 사용자가 붙여 준 거래명세서 설계서의 한 부분 (표·목록·코드·중첩 목록·인용 없는 굵게)
 const doc = [
@@ -65,5 +65,23 @@ describe('설계 메모: 가벼운 마크다운 읽기', () => {
       { kind: 'bold', text: 'PWA는' }, { kind: 'text', text: ' ' }, { kind: 'code', text: 'service key' }, { kind: 'text', text: ' 노출 금지' },
     ]);
     expect(parseInline('`a**b**` 와 **열린 채')).toEqual([{ kind: 'code', text: 'a**b**' }, { kind: 'text', text: ' 와 **열린 채' }]);
+  });
+});
+
+describe('마크다운 문서 → 장 나누기', () => {
+  it('## 제목마다 장, 코드 블록 안의 ##는 그대로, # 제목 아래 글은 그 제목의 장', () => {
+    const doc = ['# 거래명세서 설계서', '', '머리 글', '', '## 1. 개요', '', '**목적**: 자동 입력', '', '## 2. 범위', '- 사진 촬영', '```', '## 코드 속 제목', '```', '', ''].join('\n');
+    expect(splitChapters(doc)).toEqual([
+      { title: '거래명세서 설계서', body: '머리 글' },
+      { title: '개요', body: '**목적**: 자동 입력' },
+      { title: '범위', body: '- 사진 촬영\n```\n## 코드 속 제목\n```' },
+    ]);
+  });
+  it('장 제목 앞의 번호는 뗌 (설계서가 번호를 매김), 숫자로 시작하는 낱말은 그대로', () => {
+    expect(['1. 개요', '5.3 표 복원', '2) 범위', '7 SQL', '2024년 계획', '3D 보기', '  '].map(chapterTitle)).toEqual(['개요', '표 복원', '범위', 'SQL', '2024년 계획', '3D 보기', '(제목 없음)']);
+  });
+  it('머리 글이 없으면 그 장은 없고, ## 가 없으면 한 장', () => {
+    expect(splitChapters('# 제목만\n\n## A\n가')).toEqual([{ title: 'A', body: '가' }]);
+    expect(splitChapters('그냥 글\n  - 들여 쓴 목록')).toEqual([{ title: '머리말', body: '그냥 글\n  - 들여 쓴 목록' }]);
   });
 });

@@ -11,6 +11,7 @@ import { NumField, NumInput, Row, Section, TextField } from './fields';
 import { addAction, patchAt, removeAction, removePersona, setActionRate, updateAction, updatePersona } from './edit';
 import { usePick } from './store';
 import { desktop, setUpdateCheck, updateCheckOn } from './desktop';
+import { NotesSection } from './NotesPanel';
 
 export function ProjectPanel() {
   const { project: p, edit } = usePick('project', 'edit');
@@ -25,6 +26,8 @@ export function ProjectPanel() {
       <Section id="s-proj" title="프로젝트" desc="설계서에 표시되는 이름이에요.">
         <TextField label="이름" value={p.name} onChange={(v) => set({ name: v })} />
       </Section>
+
+      <NotesSection />
 
       <Section id="s-mode" title="구동 방식" desc="서비스가 어디서, 누구에게 쓰이는지 골라 주세요.">
         <Row label="방식">
