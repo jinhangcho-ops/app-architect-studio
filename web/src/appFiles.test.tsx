@@ -110,3 +110,31 @@ it('감사 12: 앞 알림의 타이머가 뒤에 뜬 긴 알림을 일찍 지우
   expect(el.textContent).toContain('JSON 파일을 읽지 못했습니다');
   await done();
 });
+
+it('리뷰 13: 처음 프로젝트에서 파일을 연 뒤 되돌리면 비교 기준도 처음 프로젝트로', () => {
+  const ex = examples.find((e) => e.name === 'phase1.json')!;
+  // 앱을 켰을 때처럼 load를 거치지 않은 프로젝트
+  const first = { ...useStore.getState().project, name: '처음' };
+  useStore.setState({ project: first, baseline: first, past: [], future: [] });
+  const a = parseProject(ex.data, catalog.items, ex.name);
+  useStore.getState().load(a);
+  useStore.getState().undo();
+  expect(useStore.getState().project).toBe(first);
+  expect(useStore.getState().baseline).toBe(first);
+});
+
+it('리뷰 13: 세부 구성 중 Ctrl+V는 캔버스로 나와 붙인 노드를 고름', async () => {
+  const ex = examples.find((e) => e.name === 'phase3.json')!;
+  useStore.getState().load(parseProject(ex.data, catalog.items, ex.name));
+  const { done } = await mount();
+  const id = useStore.getState().project.nodes[1].id;
+  await act(async () => useStore.getState().setFocus(id, 'servers'));
+  await key('c');
+  const before = useStore.getState().project.nodes.length;
+  await key('v');
+  const s = useStore.getState();
+  expect(s.project.nodes.length).toBe(before + 1);
+  expect(s.focus).toBeUndefined();
+  expect(s.selected).toEqual({ kind: 'node', id: s.project.nodes.at(-1)!.id });
+  await done();
+});

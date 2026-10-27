@@ -159,6 +159,8 @@ export function App() {
   };
   const paste = () => {
     if (!clipboard) return;
+    // 세부 구성 중이면 캔버스로 나와 붙인 노드가 보이게 (가운데·오른쪽이 다른 노드를 보이지 않게)
+    if (focus) setFocus(undefined);
     let id = '';
     edit((p) => { const r = pasteNode(p, clipboard); id = r.id; return r.project; });
     const from = positions[clipboard.id];

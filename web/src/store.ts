@@ -48,6 +48,8 @@ const MERGE_MS = 500;
 let lastEdit = 0;
 /** load로 들어온 프로젝트. 되돌리기·다시 하기가 이것을 지나면 불러오기 경계를 넘은 것 */
 const loaded = new WeakSet<Project>();
+/** 불러온(load) 프로젝트 → 불러오기 직전의 설정 비교 기준. 되돌리기로 그 앞으로 가면 기준도 돌려놓는다 (처음 예시·기록에서 잘린 경우도) */
+const prevBase = new WeakMap<Project, Project>();
 /** 지금 프로젝트를 되돌리기 기록에 넣는다 (바로 전 편집과 묶이면 넣지 않는다) */
 const remember = (s: State, merge: boolean): Pick<State, 'past' | 'future'> => {
   const now = Date.now();
@@ -84,7 +86,7 @@ export const useStore = create<State>((set, get) => ({
   positions: autoLayout(initial),
   selected: null,
   // 다른 프로젝트를 불러오는 것도 되돌릴 수 있다
-  load: (p, positions, boundary = true) => { if (boundary) loaded.add(p); set((s) => ({ ...remember(s, false), project: p, baseline: p, positions: { ...autoLayout(p), ...positions }, selected: null, focus: undefined })); },
+  load: (p, positions, boundary = true) => { if (boundary) loaded.add(p); set((s) => { prevBase.set(p, s.baseline); return { ...remember(s, false), project: p, baseline: p, positions: { ...autoLayout(p), ...positions }, selected: null, focus: undefined }; }); },
   edit: (fn) => set((s) => {
     const project = fn(s.project);
     if (project === s.project) return {};
@@ -112,19 +114,17 @@ export const useStore = create<State>((set, get) => ({
     const s = get();
     if (!s.past.length) return false;
     lastEdit = 0;
-    // 불러오기 경계를 넘어 앞 파일로 돌아가면 설정 비교 기준(baseline)도 그 파일을 연 시점으로
-    const crossed = loaded.has(s.project);
-    const base = crossed ? s.past.findLast((x) => loaded.has(x)) ?? s.baseline : s.baseline;
-    set({ project: s.past.at(-1)!, past: s.past.slice(0, -1), future: [s.project, ...s.future], baseline: base });
-    return crossed;
+    // 불러온 시점보다 앞으로 돌아가면 설정 비교 기준(baseline)도 불러오기 직전 것으로
+    set({ project: s.past.at(-1)!, past: s.past.slice(0, -1), future: [s.project, ...s.future], baseline: prevBase.get(s.project) ?? s.baseline });
+    return loaded.has(s.project);
   },
   redo: () => {
     const s = get();
     if (!s.future.length) return false;
     lastEdit = 0;
-    const crossed = loaded.has(s.future[0]);
-    set({ project: s.future[0], future: s.future.slice(1), past: [...s.past, s.project], ...(crossed && { baseline: s.future[0] }) });
-    return crossed;
+    const next = s.future[0];
+    set({ project: next, future: s.future.slice(1), past: [...s.past, s.project], ...(prevBase.has(next) && { baseline: next }) });
+    return loaded.has(next);
   },
 }));
 
