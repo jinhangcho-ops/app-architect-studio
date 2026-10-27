@@ -67,7 +67,10 @@ flowchart LR
 
 1. [CHANGELOG.md](../CHANGELOG.md)에 `## v버전` 절을 **추가 · 개선 · 삭제** 세 칸으로 씁니다(바뀐 것이 없으면 "- 없음").
 2. `package.json`의 `version`을 같은 값으로 올리고 `v버전` 태그를 push합니다.
-3. GitHub Actions가 시험·빌드 뒤 설치 파일, `.sha256`, `RELEASE_NOTES.md`(CHANGELOG에서 그 절만 뽑음)를 올리고, 릴리스 설명 첫 줄에 지문을 적습니다. 절이 없으면 릴리스하지 않습니다.
+3. GitHub Actions가 시험·빌드 뒤 설치 파일, `.sha256`, `RELEASE_NOTES.md`(CHANGELOG에서 그 절만 뽑음)를 **초안** 릴리스로 올리고, 설명 첫 줄에 지문을 적습니다. 절이 없거나 `electron/release-key.pub.pem`(서명 확인용 공개 키)이 없으면 릴리스하지 않습니다.
+4. Actions가 끝나면 개발자 PC에서 `node tools/sign-release.cjs v버전`을 실행합니다. 지문을 보여 주고 확인을 받은 뒤, 개인 키 비밀번호로 `.sha256`에 ed25519 서명을 해서 `.sha256.sig`로 올리고 릴리스를 공개합니다. 앱은 이 서명이 맞을 때만 업데이트를 설치합니다.
+
+**서명 키 (처음 한 번):** `node tools/sign-release.cjs init`이 비밀번호로 잠근 개인 키를 `~/.aas-release/release-key.pem`에, 공개 키를 `electron/release-key.pub.pem`에 씁니다. 공개 키는 커밋하고, 개인 키 파일과 비밀번호는 저장소 밖(USB 등)에 따로 백업합니다. 개인 키를 잃으면 그 뒤 버전은 자동 업데이트가 안 되어 사용자가 직접 받아 설치해야 합니다.
 
 ## 파일 형식 버전
 

@@ -1,7 +1,8 @@
 // 새 버전 확인과 업데이트 (설치 앱에서만).
 // 확인: https://github.com/<저장소>/releases/latest 를 열면 .../releases/tag/v1.2.3 으로 넘어간다. 넘어간 주소의 마지막 조각에서 태그를 읽는다(API는 쓰지 않음).
 //       새 버전일 때만 그 릴리스의 RELEASE_NOTES.md(추가·개선·삭제)를 받는다. 실행마다 한 번만 묻고, 인터넷·프록시 오류는 조용히 넘긴다.
-// 업데이트: 설치 파일과 .sha256을 임시 폴더에 받아 지문이 맞을 때만 조용히 설치한다(NSIS /S, 끝나면 --force-run으로 앱을 다시 연다).
+// 업데이트: 설치 파일과 .sha256, 그 서명(.sha256.sig)을 받아, 서명이 앱 안의 공개 키(release-key.pub.pem)와 맞고 지문도 맞을 때만 조용히 설치한다(NSIS /S, 끝나면 --force-run으로 앱을 다시 연다).
+//         서명은 개발자 PC의 개인 키로만 만든다(tools/sign-release.cjs). GitHub 계정·Actions가 털려도 가짜 설치 파일에 맞는 서명은 만들 수 없다.
 // GitHub에 보내는 것은 최신 릴리스 주소, (새 버전일 때) 노트, (업데이트할 때) 설치 파일·지문 요청뿐이다. 프로젝트·데이터 값은 보내지 않는다
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -50,7 +51,14 @@ async function readCapped(res, max) {
   return buf.length > max ? undefined : buf;
 }
 
-/** deps: latestUrl(releases/latest가 넘어가는 주소), fetchImpl, getVersion, isPackaged, tempDir, installDir, freeBytes(dir), busy, spawn, quit */
+/** .sha256 파일 내용(그대로의 바이트)에 대한 ed25519 서명(base64 한 줄)이 공개 키와 맞는지 */
+function signatureOk(sumBuf, sigBuf, publicKey) {
+  const sig = Buffer.from(String(sigBuf ?? '').trim(), 'base64');
+  if (sig.length !== 64) return false;
+  try { return crypto.verify(null, sumBuf, publicKey, sig); } catch { return false; }
+}
+
+/** deps: latestUrl(releases/latest가 넘어가는 주소), fetchImpl, getVersion, isPackaged, tempDir, installDir, freeBytes(dir), busy, spawn, quit, publicKey(서명 확인용 PEM, 없으면 설치하지 않음) */
 function createUpdater(deps) {
   let asked; // 실행마다 한 번만 (메모리)
   let found; // 확인으로 찾은 새 버전 — 설치는 이 값으로만 한다 (화면이 넘긴 값은 쓰지 않음)
@@ -83,6 +91,7 @@ function createUpdater(deps) {
     const why = whyNotAsk(deps.isPackaged(), current);
     if (why) return { ok: false, reason: why };
     if (!parseVersion(version) || !TAG.test(`v${version}`)) return { ok: false, reason: '버전 글자가 올바르지 않아 받지 않았어요' };
+    if (!deps.publicKey) return { ok: false, reason: '이 앱에 서명 확인 키가 없어 자동 설치하지 않았어요. 릴리스 페이지에서 직접 받으세요' };
     const busy = deps.busy?.();
     if (busy) return { ok: false, reason: busy };
     const installDir = deps.installDir();
@@ -95,9 +104,12 @@ function createUpdater(deps) {
     const cleanup = () => fs.rmSync(dir, { recursive: true, force: true });
     try {
       const timeout = { signal: AbortSignal.timeout(10 * 60 * 1000), headers: HEADERS };
-      const [exe, sum] = await Promise.all([deps.fetchImpl(base, timeout), deps.fetchImpl(`${base}.sha256`, timeout)]);
+      const [exe, sum, sig] = await Promise.all([deps.fetchImpl(base, timeout), deps.fetchImpl(`${base}.sha256`, timeout), deps.fetchImpl(`${base}.sha256.sig`, timeout)]);
       if (!exe.ok || !sum.ok) { cleanup(); return { ok: false, reason: `받지 못했어요 (${exe.status} / ${sum.status})` }; }
-      const [exeBuf, sumBuf] = await Promise.all([readCapped(exe, EXE_MAX), readCapped(sum, 1024)]);
+      if (!sig.ok) { cleanup(); return { ok: false, reason: '이 릴리스에 서명(.sig)이 없어 실행하지 않았어요. 릴리스 페이지에서 직접 받으세요' }; }
+      const [exeBuf, sumBuf, sigBuf] = await Promise.all([readCapped(exe, EXE_MAX), readCapped(sum, 1024), readCapped(sig, 1024)]);
+      // 지문 파일이 개발자가 서명한 것인지 먼저 (지문만으로는 같은 곳에서 함께 바뀐 가짜를 못 가림)
+      if (!sumBuf || !signatureOk(sumBuf, sigBuf, deps.publicKey)) { cleanup(); return { ok: false, reason: '서명이 맞지 않아 실행하지 않고 지웠어요 (공식 릴리스가 아닐 수 있어요)' }; }
       const expected = sumBuf?.toString('utf8').trim().split(/\s+/)[0]?.toLowerCase() ?? '';
       if (!exeBuf || !/^[0-9a-f]{64}$/.test(expected)) { cleanup(); return { ok: false, reason: '설치 파일이나 지문 파일이 올바르지 않아 실행하지 않았어요' }; }
       if (crypto.createHash('sha256').update(exeBuf).digest('hex') !== expected) { cleanup(); return { ok: false, reason: '받은 설치 파일의 지문이 .sha256과 달라 실행하지 않고 지웠어요' }; }
@@ -168,6 +180,7 @@ function registerUpdateApi() {
     installDir: () => path.dirname(process.execPath),
     freeBytes: (dir) => { const s = fs.statfsSync(dir); return s.bavail * s.bsize; },
     spawn: (...a) => require('node:child_process').spawn(...a),
+    publicKey: (() => { try { return fs.readFileSync(path.join(__dirname, 'release-key.pub.pem'), 'utf8'); } catch { return undefined; } })(),
     // 응답을 보낸 뒤 닫는다. 창이 안 닫히면 10초 뒤 강제 종료
     quit: () => setTimeout(() => { app.quit(); setTimeout(() => app.exit(0), 10000); }, 300),
   });
@@ -175,4 +188,4 @@ function registerUpdateApi() {
   ipcMain.handle('update:install', () => updater.install());
 }
 
-module.exports = { parseVersion, compareVersions, tagFromUrl, createUpdater, registerUpdateApi, removeOldDownloads, RELEASES, MIN_FREE };
+module.exports = { parseVersion, compareVersions, tagFromUrl, createUpdater, registerUpdateApi, removeOldDownloads, signatureOk, RELEASES, MIN_FREE };

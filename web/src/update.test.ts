@@ -23,6 +23,10 @@ const u = require('../../electron/update.cjs') as {
   RELEASES: string;
   removeOldDownloads: (dir: string) => string[];
 };
+// 릴리스 서명 도구(tools/sign-release.cjs)로 만든 시험용 키: 앱은 이 공개 키로 .sha256의 서명을 확인한다
+const signer = require('../../tools/sign-release.cjs') as { makeKeys: (pass: string) => { publicKey: string; privateKey: string }; sign: (buf: Buffer, pem: string, pass: string) => string };
+const keys = signer.makeKeys('시험용 비밀번호'), other = signer.makeKeys('다른 키');
+const signed = (sum: string, k = keys) => signer.sign(Buffer.from(sum), k.privateKey, k === keys ? '시험용 비밀번호' : '다른 키');
 
 const res = (body: string | Buffer, status = 200, url = ''): Res => {
   const buf = Buffer.isBuffer(body) ? body : Buffer.from(body);
@@ -32,7 +36,7 @@ const tmp = mkdtempSync(join(tmpdir(), 'aas-updtest-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
 /** latestTag: releases/latest가 넘어가는 태그. files: 받는 주소 → 응답 */
-function setup(o: { current?: string; latestTag?: string; notes?: string | null; files?: Record<string, Res>; packaged?: boolean; free?: number; busy?: string; exit?: number | null; offline?: boolean } = {}) {
+function setup(o: { current?: string; latestTag?: string; notes?: string | null; files?: Record<string, Res>; packaged?: boolean; free?: number; busy?: string; exit?: number | null; offline?: boolean; publicKey?: string | null } = {}) {
   const calls: string[] = [], spawned: { file: string; args: string[]; opts: Record<string, unknown> }[] = [];
   let quit = 0;
   const latestUrl = async () => {
@@ -48,7 +52,7 @@ function setup(o: { current?: string; latestTag?: string; notes?: string | null;
   };
   const updater = u.createUpdater({
     latestUrl, fetchImpl, getVersion: () => o.current ?? '1.9.0', isPackaged: () => o.packaged ?? true, tempDir: () => tmp, installDir: () => 'C:\\Users\\me\\AppData\\Local\\Programs\\App Architect Studio',
-    freeBytes: () => o.free ?? 10e9, busy: () => o.busy,
+    freeBytes: () => o.free ?? 10e9, busy: () => o.busy, publicKey: o.publicKey === null ? undefined : (o.publicKey ?? keys.publicKey),
     spawn: (file: string, args: string[], opts: Record<string, unknown>) => {
       spawned.push({ file, args, opts });
       const child = new EventEmitter() as EventEmitter & { unref: () => void };
@@ -62,9 +66,10 @@ function setup(o: { current?: string; latestTag?: string; notes?: string | null;
 }
 const exe = Buffer.from('MZ 가짜 설치 파일');
 const sha = createHash('sha256').update(exe).digest('hex');
-const files = (version: string, sum: string) => {
+/** sig: 기본은 지문 파일을 시험 키로 서명한 것, null이면 .sig 없음(404) */
+const files = (version: string, sum: string, sig: string | null = signed(sum)) => {
   const base = `${u.RELEASES}download/v${version}/App-Architect-Studio-Setup-${version}.exe`;
-  return { [base]: res(exe), [`${base}.sha256`]: res(sum) };
+  return { [base]: res(exe), [`${base}.sha256`]: res(sum), ...(sig === null ? {} : { [`${base}.sha256.sig`]: res(sig) }) };
 };
 
 describe('새 버전 확인', () => {
@@ -141,6 +146,29 @@ describe('지금 업데이트', () => {
     }
   });
 
+  it('서명이 없거나, 다른 키로 했거나, 지문 파일과 짝이 아니거나, 앱에 공개 키가 없으면 실행하지 않고 받은 것을 지움', async () => {
+    const good = `${sha}  App-Architect-Studio-Setup-1.10.0.exe`;
+    const cases: [string, Parameters<typeof setup>[0]][] = [
+      ['서명 없음', { files: files('1.10.0', good, null) }],
+      ['다른 키', { files: files('1.10.0', good, signed(good, other)) }],
+      // 가짜 설치 파일과 그 지문을 함께 바꿔 올려도, 서명은 원래 지문 파일의 것이라 맞지 않음
+      ['지문 파일만 바꿈', { files: files('1.10.0', good, signed(`${'1'.repeat(64)}  App-Architect-Studio-Setup-1.10.0.exe`)) }],
+      ['서명 글자가 아님', { files: files('1.10.0', good, '!!!') }],
+      ['공개 키 없음', { files: files('1.10.0', good), publicKey: null }],
+    ];
+    for (const [why, o] of cases) {
+      const before = readdirSync(tmp).length;
+      const { updater, spawned, quits } = setup(o);
+      await updater.check();
+      const r = await updater.install();
+      expect(r.ok, why).toBe(false);
+      expect(r.reason, why).toMatch(/서명/);
+      expect(spawned, why).toEqual([]);
+      expect(quits(), why).toBe(0);
+      expect(readdirSync(tmp).length, why).toBe(before);
+    }
+  });
+
   it('설치 프로그램이 2초 안에 실패 코드로 끝나면 앱을 닫지 않고 알림', async () => {
     const { updater, quits } = setup({ files: files('1.10.0', sha), exit: 1223 });
     await updater.check();
@@ -152,7 +180,8 @@ describe('지금 업데이트', () => {
   it('지정 버전은 그 릴리스 주소로 받고, 잘못된 버전 글자는 받지 않음', async () => {
     const a = setup({ files: files('1.2.0', 'x') });
     await a.updater.installVersion('1.2.0');
-    expect(a.calls.sort()).toEqual([`${u.RELEASES}download/v1.2.0/App-Architect-Studio-Setup-1.2.0.exe`, `${u.RELEASES}download/v1.2.0/App-Architect-Studio-Setup-1.2.0.exe.sha256`].sort());
+    const base = `${u.RELEASES}download/v1.2.0/App-Architect-Studio-Setup-1.2.0.exe`;
+    expect(a.calls.sort()).toEqual([base, `${base}.sha256`, `${base}.sha256.sig`].sort());
     for (const bad of ['../1.2.0', '1.2.0;del', 'nightly', '']) {
       const b = setup();
       expect((await b.updater.installVersion(bad)).ok, bad).toBe(false);

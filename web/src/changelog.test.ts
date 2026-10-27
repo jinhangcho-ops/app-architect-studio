@@ -30,5 +30,9 @@ describe('CHANGELOG.md · 릴리스 워크플로', () => {
     expect(wf).not.toContain('--generate-notes');
     expect(wf).not.toMatch(/runs-on: .*-latest/);
     expect(wf).toContain('persist-credentials: false');
+    // 초안으로만 올리고(공개는 서명을 올리며 tools/sign-release.cjs가), 서명 확인용 공개 키 없이는 빌드하지 않음
+    expect(wf).toContain('--draft --verify-tag');
+    expect(wf).not.toContain('--draft=false');
+    expect(wf).toContain('test -s electron/release-key.pub.pem');
   });
 });
