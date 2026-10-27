@@ -67,7 +67,7 @@ export type Analysis = {
   storage?: { personaGb: Metric; tablesGb?: Metric };
   judgements: NodeJudgement[];
   rules: RuleHit[];
-  /** 네트워크·보안 점검 (v1.4.0): 노드·연결선 보안 값의 ❌·⚠️·ℹ️. 항목 판정(judgements)과 따로 */
+  /** 네트워크·보안 점검 (v1.3.0): 노드·연결선 보안 값의 ❌·⚠️·ℹ️. 항목 판정(judgements)과 따로 */
   security: SecurityHit[];
   /** 15절 "법령명 제N조 확인 필요" 목록 */
   regulation: LawHit[];

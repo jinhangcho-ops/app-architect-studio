@@ -1,4 +1,4 @@
-// 네트워크·보안 점검 (v1.4.0): 노드·연결선의 보안 값과 구조로 ❌(막아야 함)·⚠️(확인 필요)·ℹ️(알아 둘 것)을 낸다.
+// 네트워크·보안 점검 (v1.3.0): 노드·연결선의 보안 값과 구조로 ❌(막아야 함)·⚠️(확인 필요)·ℹ️(알아 둘 것)을 낸다.
 // 비어 있는 값은 "미정"으로 노드·연결선마다 한 줄로 묶어 ⚠️ (사용자 결정: 비면 모두 확인 필요). 기존 항목 판정(judgements)과 따로 낸다.
 import type { Layer } from './model';
 import { itemIds, nodeRegion, type Project, type ProjectNode } from './schema';

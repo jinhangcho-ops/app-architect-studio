@@ -414,7 +414,7 @@ export type Exchange = z.infer<typeof Exchange>;
  *  점·괄호가 없는 숫자("2024 로드맵", "3 계층")는 제목의 일부라 둔다. 비면 (제목 없음) */
 export const chapterTitle = (t: string) => t.trim().replace(/^(\d+(\.\d+)*[.)]|\d+(\.\d+)+)\s+/, '') || '(제목 없음)';
 
-// 네트워크·보안 (v1.4.0). 모든 칸은 비면 "미정"이고, 판정은 미정을 ⚠️ 확인 필요로 알린다
+// 네트워크·보안 (v1.3.0). 모든 칸은 비면 "미정"이고, 판정은 미정을 ⚠️ 확인 필요로 알린다
 /** 노드가 열려 있는 범위: public = 인터넷에서 바로 닿음, internal = 내부망(같은 VPC·사내망)에서만, private = 같은 서버·사설 구역 안에서만 */
 export const EXPOSURES = ['public', 'internal', 'private'] as const;
 /** 비밀(키·비밀번호) 보관: none = 쓰지 않음, env = 환경 변수·설정 파일, manager = 비밀 관리 서비스(Vault·Secrets Manager 등) */
@@ -506,7 +506,7 @@ export const Project = z.object({
     /** 15절 이 노드가 데이터를 두는 곳: 클라우드 리전 또는 사용자 기기(local) */
     region: z.union([z.enum(REGIONS), z.literal('local')]).optional(),
     /** 15절 개인정보 속성. 사람이 확정한다(코드 분석은 후보만 표시) */
-    /** 네트워크·보안 (v1.4.0) */
+    /** 네트워크·보안 (v1.3.0) */
     security: NodeSecurity.optional(),
     privacy: z.object({
       personal: z.boolean().default(false),
@@ -541,7 +541,7 @@ export const Project = z.object({
     rtt_ms: z.number().nonnegative().default(0),
     /** 이 연결로 주고받는 인터페이스 명세. 있으면 호출 비율·흐르는 요청 대신 이것으로 부하를 나눈다 */
     interfaces: z.array(Interface).default([]),
-    /** 네트워크·보안 (v1.4.0) */
+    /** 네트워크·보안 (v1.3.0) */
     security: EdgeSecurity.optional(),
   })).default([]),
   /** 9절 목표 사용률: 필요 대수 = ceil(부하 / (대당 처리량 × 이 값)) */
