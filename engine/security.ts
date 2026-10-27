@@ -109,7 +109,7 @@ export function checkSecurity(p: Project): SecurityHit[] {
     // 4. 인터넷 공개 백엔드·게이트웨이에 WAF·속도 제한 없음
     if (s.exposure === 'public' && (n.layer === 'gateway' || n.layer === 'backend')) {
       const missing = [...(s.waf === false ? ['WAF'] : []), ...(s.rate_limit === false && !itemIds(n).some((id) => RATE_LIMITERS.has(id)) ? ['속도 제한'] : [])];
-      if (missing.length) hits.push({ ...at, ruleId: 'sec_public_unguarded', level: 'conditional', why: `${n.name}이 인터넷에 열려 있는데 ${missing.join('·')}이 없어 대량 요청·알려진 공격 패턴을 그대로 받습니다`, instead: '앞에 WAF(CDN·클라우드 WAF)와 사용자·IP별 속도 제한을 두세요' });
+      if (missing.length) hits.push({ ...at, ruleId: 'sec_public_unguarded', level: 'conditional', why: `${n.name}이 인터넷에 열려 있는데 ${missing.join('·')} 없이 대량 요청·알려진 공격 패턴을 그대로 받습니다`, instead: '앞에 WAF(CDN·클라우드 WAF)와 사용자·IP별 속도 제한을 두세요' });
     }
     // 6. 화면(사용자 기기)에 비밀을 둠
     if (n.layer === 'ui' && (s.secrets === 'env' || s.secrets === 'manager')) {

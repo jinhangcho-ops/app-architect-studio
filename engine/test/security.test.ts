@@ -7,7 +7,8 @@ import { checkSecurity, edgeNet } from '../security';
 const root = (rel: string) => fileURLToPath(new URL(`../../${rel}`, import.meta.url));
 const catalog = loadCatalog(root('data/catalog'));
 // 장부 앱: PWA(U-01) → FastAPI(B-01) → Supabase(D-01), FastAPI → Google Vision(X-01), 크론(J-01) → FastAPI
-const ledger = loadProject(root('examples/ledger-fastapi.json'), catalog.items);
+const example = loadProject(root('examples/ledger-fastapi.json'), catalog.items);
+const ledger: Project = { ...example, nodes: example.nodes.map(({ security: _, ...n }) => n), edges: example.edges.map(({ security: _, ...e }) => e) };
 
 type Sec = NonNullable<Project['nodes'][number]['security']>;
 const withSec = (nodes: Record<string, Sec>, edges: Record<string, NonNullable<Project['edges'][number]['security']>> = {}, p: Project = ledger): Project => ({
@@ -27,6 +28,12 @@ const safeEdges = { 'U-01>B-01': { tls: 'tls' as const }, 'J-01>B-01': { tls: 't
 const ids = (p: Project) => checkSecurity(p).filter((h) => h.ruleId !== 'sec_cross_cloud').map((h) => `${h.level}:${h.ruleId}:${h.node ?? h.edge!.join('>')}`);
 
 describe('네트워크·보안 점검', () => {
+  it('예시 장부 앱: 정해 둔 값은 미정에서 빠지고, 인터넷 공개 API의 WAF 끔이 ⚠️로 보임', () => {
+    expect(ids(example)).toEqual([
+      'conditional:sec_public_unguarded:B-01', 'conditional:sec_unset:D-01', 'conditional:sec_unset:J-01', 'conditional:sec_edge_unset:J-01>B-01',
+    ]);
+  });
+
   it('다 정하고 안전하면 아무것도 없음', () => {
     expect(ids(withSec(safe, safeEdges))).toEqual([]);
   });

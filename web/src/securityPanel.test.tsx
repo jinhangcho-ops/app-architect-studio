@@ -10,7 +10,11 @@ import { EdgePanel, NodePanel } from './NodePanel';
 import { useStore } from './store';
 import { zoneAt, zoneRects } from './zones';
 
-const ledger = () => { const ex = examples.find((e) => e.name === 'ledger-fastapi.json')!; return parseProject(ex.data, catalog.items, ex.name); };
+// 아무것도 안 정한 장부 앱 (예시에 넣은 보안 값은 뺌)
+const ledger = () => {
+  const ex = examples.find((e) => e.name === 'ledger-fastapi.json')!, p = parseProject(ex.data, catalog.items, ex.name);
+  return { ...p, nodes: p.nodes.map(({ security: _, ...n }) => n), edges: p.edges.map(({ security: _, ...e }) => e) };
+};
 const state = () => useStore.getState().project;
 /** 집 Select(버튼 + 목록)에서 고르기 */
 const choose = (el: Element, label: string, option: string) => {

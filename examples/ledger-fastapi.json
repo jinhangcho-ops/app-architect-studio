@@ -9,9 +9,10 @@
   "cost": { "region": "aws:ap-northeast-2" },
   "nodes": [
     { "id": "U-01", "name": "장부 PWA", "layer": "ui", "primary": "react_next", "extras": ["pwa"],
-      "description": "React PWA (Vercel). 매출 입력·오늘 손익·영수증 사진" },
+      "description": "React PWA (Vercel). 매출 입력·오늘 손익·영수증 사진", "security": { "secrets": "none" } },
     { "id": "B-01", "name": "장부 API (FastAPI)", "layer": "backend", "primary": "fastapi", "region": "aws:ap-northeast-2",
-      "description": "마진 계산, 매출 입력, POS 엑셀 파싱, OCR, 푸시 발송", "perf": { "service_ms": 30, "workers": 4 } },
+      "description": "마진 계산, 매출 입력, POS 엑셀 파싱, OCR, 푸시 발송", "perf": { "service_ms": 30, "workers": 4 },
+      "security": { "exposure": "public", "tls": true, "secrets": "manager", "waf": false, "rate_limit": true } },
     { "id": "D-01", "name": "Supabase (PostgreSQL)", "layer": "db", "primary": "supabase", "region": "supabase:ap-northeast-2",
       "tables": [
         { "name": "daily_sales", "primary_key": ["id"],
@@ -30,7 +31,7 @@
     { "name": "매출 입력", "per_session": 1, "writes": [{ "node": "D-01", "table": "daily_sales" }] }
   ],
   "edges": [
-    { "from": "U-01", "to": "B-01",
+    { "from": "U-01", "to": "B-01", "security": { "tls": "tls" },
       "interfaces": [
         { "name": "매출 저장", "kind": "rest", "method": "POST", "path": "/api/sales", "on": "write", "auth": "bearer",
           "description": "하루 매출을 한 트랜잭션으로 저장",
@@ -61,7 +62,7 @@
         { "name": "마감 알림 보내기", "kind": "rest", "method": "POST", "path": "/internal/notify",
           "request": [{ "name": "now", "type": "datetime" }], "response": [{ "name": "sent", "type": "integer", "description": "푸시를 보낸 매장 수" }] }
       ] },
-    { "from": "B-01", "to": "D-01" },
-    { "from": "B-01", "to": "X-01", "carries": "write", "callRatio": 0.1 }
+    { "from": "B-01", "to": "D-01", "security": { "tls": "tls" } },
+    { "from": "B-01", "to": "X-01", "carries": "write", "callRatio": 0.1, "security": { "tls": "tls" } }
   ]
 }
