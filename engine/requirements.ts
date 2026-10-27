@@ -72,6 +72,15 @@ export function parseRequirements(text: string): RequirementsResult {
   return { reqs, skipped };
 }
 
+/** 환경 표시가 python_version 비교 하나(python_version < "3.12")면 그 Python에서 맞는지. 그 밖의 표시는 모름(undefined) */
+export function markerHolds(marker: string, python: string): boolean | undefined {
+  const m = /^python_version\s*(<=|>=|==|!=|<|>)\s*["']([\d.]+)["']$/.exec(marker.trim());
+  if (!m) return undefined;
+  // python_version은 주.부 버전(3.12)만 본다
+  const d = cmpVersion(python.split('.').slice(0, 2).join('.'), m[2]);
+  return { '<': d < 0, '<=': d <= 0, '>': d > 0, '>=': d >= 0, '==': d === 0, '!=': d !== 0 }[m[1]];
+}
+
 const highest = (vs: (string | undefined)[]) => vs.filter((v): v is string => !!v).reduce<string | undefined>((a, b) => (!a || cmpVersion(b, a) > 0 ? b : a), undefined);
 
 /** 환경마다 pip가 적용하는 조건들. 환경 표시 없는 줄은 어디서나 함께(그리고) 적용되고, 환경 표시 줄은 그 환경에서 그 위에 더해진다.

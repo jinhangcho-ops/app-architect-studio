@@ -66,3 +66,16 @@ describe('리뷰 3d0bb10', () => {
     expect([a.run, a.extraPip, b.run, b.extraPip]).toEqual(['cli', undefined, 'cli', undefined]);
   });
 });
+
+describe('리뷰 3cbec11', () => {
+  it('노드의 Python 버전에서 맞지 않는 python_version 표시 줄은 건너뜀', () => {
+    const req = 'fastapi>=0.115\npydantic<2 ; python_version<"3.12"';
+    expect(pyProfile({ requirements: req, python: '3.12' }).pydantic).toBe(2);
+    expect(pyProfile({ requirements: req, python: '3.11.9' }).pydantic).toBe(1);
+    // Python 버전을 모르면 지금처럼 표시 줄도 본다
+    expect(pyProfile({ requirements: req }).pydantic).toBe(1);
+  });
+  it('환경 표시 줄의 [standard]는 어디서나 깔린다고 보지 않음', () => {
+    expect(pyProfile({ requirements: 'fastapi>=0.115\nfastapi[standard] ; sys_platform!="win32"' })).toMatchObject({ run: 'uvicorn', extraPip: 'uvicorn' });
+  });
+});

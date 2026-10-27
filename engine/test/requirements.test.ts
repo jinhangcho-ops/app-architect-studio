@@ -94,3 +94,10 @@ describe('requirements.txt 읽기', () => {
     expect(normName('Typing__Extensions')).toBe('typing-extensions');
   });
 });
+
+it('python_version 표시 판단 (주.부 버전만, 그 밖의 표시는 모름)', async () => {
+  const { markerHolds } = await import('../requirements');
+  expect(markerHolds('python_version < "3.12"', '3.12.1')).toBe(false);
+  expect(markerHolds("python_version>='3.8'", '3.10')).toBe(true);
+  expect(markerHolds('sys_platform == "win32"', '3.12')).toBeUndefined();
+});

@@ -1,6 +1,6 @@
 // FastAPI 뼈대를 노드의 requirements.txt·Python 버전에 맞추는 규칙표.
 // 버전 목록이 없으면 지금 기본(최신 방식)과 똑같이 만든다. 경계 버전의 근거는 각 줄 주석 (2026-10-27 확인).
-import { allBelow, cmpVersion, parseRequirements, versionOf } from './requirements';
+import { allBelow, cmpVersion, markerHolds, parseRequirements, versionOf } from './requirements';
 
 /** 뼈대에서 버전에 따라 고르는 문법 */
 export type PyProfile = {
@@ -34,8 +34,10 @@ const atLeast = (v: string | undefined, min: string) => v === undefined || cmpVe
 
 export function pyProfile(node: { requirements?: string; python?: string }): PyProfile {
   if (!node.requirements?.trim() && !node.python) return LATEST;
-  const r = parseRequirements(node.requirements ?? '');
-  const fa = versionOf(r, 'fastapi'), pd = versionOf(r, 'pydantic'), py = node.python;
+  const py = node.python, all = parseRequirements(node.requirements ?? '');
+  // Python 버전을 적었으면 그 버전에서 pip가 건너뛸 줄(python_version 표시가 맞지 않음)은 뺀다
+  const r = py ? { ...all, reqs: all.reqs.filter((x) => !x.marker || markerHolds(x.marker, py) !== false) } : all;
+  const fa = versionOf(r, 'fastapi'), pd = versionOf(r, 'pydantic');
   const warnings: string[] = [];
   const listed = (name: string) => r.reqs.some((x) => x.name === name);
   if (node.requirements?.trim() && !listed('fastapi')) warnings.push('requirements.txt에 fastapi가 없습니다');
@@ -66,8 +68,10 @@ export function pyProfile(node: { requirements?: string; python?: string }): PyP
   // requirements.txt가 있으면 그 목록으로 설치하므로, 실행 명령도 목록에 든 것으로 (2026-10-27 실제 설치: fastapi 0.146.0만 적으면 fastapi dev도 uvicorn도 없음)
   // fastapi dev: [standard]나 fastapi-cli를 적었거나, fastapi-cli를 기본으로 딸려 오던 0.111.x
   // [standard]는 fastapi 줄 어디에 적어도 같은 것을 깐다 (줄 순서와 상관없게)
-  const standard = r.reqs.some((x) => x.name === 'fastapi' && x.extras.includes('standard'));
-  const cli = !!fa && cmpVersion(fa, '0.111') >= 0 && (standard || listed('fastapi-cli') || cmpVersion(fa, '0.112') < 0);
+  // 환경 표시 줄은 이 PC에서 건너뛸 수 있어 표시 없는 줄만 본다 (안 깔리면 fastapi dev가 없음)
+  const always = (name: string) => r.reqs.some((x) => x.name === name && !x.marker);
+  const standard = r.reqs.some((x) => x.name === 'fastapi' && !x.marker && x.extras.includes('standard'));
+  const cli = !!fa && cmpVersion(fa, '0.111') >= 0 && (standard || always('fastapi-cli') || cmpVersion(fa, '0.112') < 0);
   const fromList = !!node.requirements?.trim();
   const run: PyProfile['run'] = fromList ? (cli ? 'cli' : 'uvicorn') : atLeast(fa, '0.112') ? 'standard' : atLeast(fa, '0.111') ? 'cli' : 'uvicorn';
   return {
@@ -80,7 +84,7 @@ export function pyProfile(node: { requirements?: string; python?: string }): PyP
     annotatedFromExtensions: py !== undefined && cmpVersion(py, '3.9') < 0,
     // fastapi 0.112.0 "fastapi[standard]", 0.111.0 fastapi-cli(fastapi dev)
     run,
-    ...(fromList && run === 'uvicorn' && !listed('uvicorn') && { extraPip: 'uvicorn' }),
+    ...(fromList && run === 'uvicorn' && !always('uvicorn') && { extraPip: 'uvicorn' }),
     basis: [...(fa ? [`fastapi ${fa}`] : []), ...(pd ? [`pydantic ${pd}`] : []), ...(py ? [`Python ${py}`] : [])],
     warnings,
   };
