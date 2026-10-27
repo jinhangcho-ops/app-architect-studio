@@ -45,6 +45,8 @@ export function pyProfile(node: { requirements?: string; python?: string }): PyP
   // pydantic 주 버전: 적혀 있으면 그것, 없으면 fastapi 버전으로 짐작 (0.100 전 fastapi는 pydantic 1만 받음)
   const pydantic: 1 | 2 = pd !== undefined ? (cmpVersion(pd, '2') >= 0 ? 2 : 1) : allBelow(r, 'pydantic', '2') || faBelow('0.100') ? 1 : 2;
   // 함께 쓸 수 없는 조합 (fastapi 릴리스 노트: 0.100.0 pydantic 2 지원, 0.126.0 pydantic 1 지원 중단, 0.135.2 pydantic >=2.9, 0.125.0·0.129.0 Python 3.8·3.9 중단)
+  // fastapi에 상한만 있어도 pydantic 2와는 함께 깔리지 않는다
+  if (!fa && pydantic === 2 && faBelow('0.100')) warnings.push('fastapi 0.100 미만은 pydantic 2를 쓰지 못합니다');
   if (fa && pd) {
     if (pydantic === 2 && cmpVersion(fa, '0.100') < 0) warnings.push(`fastapi ${fa}는 pydantic 2를 쓰지 못합니다 (0.100부터)`);
     if (pydantic === 1 && cmpVersion(fa, '0.126') >= 0) warnings.push(`fastapi ${fa}는 pydantic 1을 쓰지 못합니다 (0.126부터 2만)`);
@@ -57,7 +59,8 @@ export function pyProfile(node: { requirements?: string; python?: string }): PyP
   for (const [name, v] of [['fastapi', fa], ['pydantic', pd], ['python', py]] as const) {
     if (v && cmpVersion(v, CHECKED[name]) > 0) warnings.push(`${name} ${v}는 규칙표를 확인한 범위(${CHECKED[name]}) 밖이라 그 최신 규칙으로 만들었습니다`);
   }
-  if (node.requirements?.trim() && listed('fastapi') && fa === undefined) warnings.push('fastapi 하한 버전이 없어 최신 규칙으로 만들었습니다');
+  // 상한이 경계 아래면 그 아래 규칙으로 만들었으므로 "최신 규칙" 경고는 아니다
+  if (node.requirements?.trim() && listed('fastapi') && fa === undefined && !faBelow('0.100')) warnings.push('fastapi 하한 버전이 없어 최신 규칙으로 만들었습니다');
   for (const s of r.skipped) warnings.push(`requirements.txt ${s}`);
 
   // requirements.txt가 있으면 그 목록으로 설치하므로, 실행 명령도 목록에 든 것으로 (2026-10-27 실제 설치: fastapi 0.146.0만 적으면 fastapi dev도 uvicorn도 없음)

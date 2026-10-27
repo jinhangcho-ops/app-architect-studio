@@ -218,5 +218,8 @@ describe('형식 3: 노드의 requirements·python', () => {
     // 따옴표 없이 쓴 숫자 3.12도 파일이 열림 (리뷰)
     saved.nodes[0].python = 3.12;
     expect(readProject(saved, catalog.items, 'x', []).nodes[0].python).toBeUndefined();
+    // 이름만 python인 다른 칸(실측값 measured.python)은 이 규칙으로 지우지 않는다 (리뷰 da1bc83)
+    saved.nodes[0].measured = { python: 'x' };
+    expect(() => readProject(saved, catalog.items, 'x', [])).toThrow();
   });
 });

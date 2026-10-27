@@ -107,7 +107,7 @@ function repair(src: unknown, issues: z.core.$ZodIssue[], lines: string[]): unkn
       while (list.some((f) => f.name === `field${n}`)) n++;
       lines.push(`${where} = "${String(o.name)}": 필드 이름은 영문·숫자·_ → field${n} 이름으로 바꿨습니다`);
       o.name = `field${n}`;
-    } else if ((i.code === 'invalid_format' || i.code === 'invalid_type') && key === 'python' && i.path[0] === 'nodes') {
+    } else if ((i.code === 'invalid_format' || i.code === 'invalid_type') && key === 'python' && i.path[0] === 'nodes' && i.path.length === 3) {
       // 따옴표 없이 쓴 3.12(숫자)도: 3.10은 숫자로 3.1이 되어 글자로 바꿀 수 없으니 뺀다
       // 손으로 고친 파일의 "3.x" 같은 값: 빼면 3.9 이상으로 본다
       lines.push(`${where} = "${String(o.python)}": Python 버전은 3.12처럼 → 빼고 열었습니다`);

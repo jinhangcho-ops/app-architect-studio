@@ -39,3 +39,17 @@ describe('상한만 적은 줄 (리뷰)', () => {
     expect(pyProfile({ requirements: 'pydantic<2 ; python_version<"3.8"\npydantic>=2 ; python_version>="3.8"' }).pydantic).toBe(2);
   });
 });
+
+describe('리뷰 da1bc83', () => {
+  it('환경 표시 없는 두 줄은 함께 적용 (pydantic<2 + pydantic>=1.8 → 1.8, fastapi<0.95 + >=0.90 → 0.90)', () => {
+    expect(pyProfile({ requirements: 'pydantic<2\npydantic>=1.8' })).toMatchObject({ pydantic: 1, basis: ['pydantic 1.8'] });
+    expect(pyProfile({ requirements: 'fastapi<0.95\nfastapi>=0.90' })).toMatchObject({ pydantic: 1, annotated: false, basis: ['fastapi 0.90'] });
+  });
+  it('상한 아래 규칙으로 만들면 "최신 규칙" 경고 대신, 함께 못 까는 조합을 알림', () => {
+    const w = (requirements: string) => pyProfile({ requirements }).warnings.join(' / ');
+    expect(w('fastapi<0.100')).not.toContain('최신 규칙');
+    expect(w('fastapi<1')).toContain('최신 규칙');
+    expect(w('fastapi<0.100\npydantic>=2')).toContain('pydantic 2를 쓰지 못합니다');
+    expect(w('fastapi<0.100\npydantic<2')).not.toContain('pydantic 2를 쓰지 못합니다');
+  });
+});

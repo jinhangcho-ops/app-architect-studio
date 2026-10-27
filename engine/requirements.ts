@@ -72,9 +72,20 @@ export function parseRequirements(text: string): RequirementsResult {
   return { reqs, skipped };
 }
 
-/** 패키지의 모든 줄이 bound보다 낮은 버전만 허용하는지 (pydantic<2, fastapi<=0.99). 하한 없이 상한만 적으면 pip가 그 아래 버전을 깔므로 */
-export function allBelow(r: RequirementsResult, name: string, bound: string): boolean {
+/** 패키지의 조건들: 환경 표시 없는 줄은 pip가 함께(그리고) 적용하므로 한 조건으로 합치고, 환경 표시별 줄은 따로(어느 하나) */
+function specsOf(r: RequirementsResult, name: string): { spec: string; min?: string }[] {
   const lines = r.reqs.filter((x) => x.name === normName(name));
+  const plain = lines.filter((x) => !x.marker);
+  const mins = plain.map((x) => x.min).filter((v): v is string => !!v);
+  return [
+    ...(plain.length ? [{ spec: plain.map((x) => x.spec).filter(Boolean).join(','), min: mins.length ? mins.reduce((a, b) => (cmpVersion(a, b) >= 0 ? a : b)) : undefined }] : []),
+    ...lines.filter((x) => x.marker),
+  ];
+}
+
+/** 패키지의 모든 조건이 bound보다 낮은 버전만 허용하는지 (pydantic<2, fastapi<=0.99). 하한 없이 상한만 적으면 pip가 그 아래 버전을 깔므로 */
+export function allBelow(r: RequirementsResult, name: string, bound: string): boolean {
+  const lines = specsOf(r, name);
   return lines.length > 0 && lines.every((x) => x.spec.split(',').some((c) => {
     const m = CLAUSE.exec(c.trim());
     return !!m && ((m[1] === '<' && cmpVersion(m[2], bound) <= 0) || (m[1] === '<=' && cmpVersion(m[2], bound) < 0));
@@ -83,7 +94,7 @@ export function allBelow(r: RequirementsResult, name: string, bound: string): bo
 
 /** 패키지의 판단 버전. 같은 이름이 여러 줄이면(환경 표시별 등) 하한 중 가장 낮은 것 — 어느 환경에서도 돌아야 하므로 */
 export function versionOf(r: RequirementsResult, name: string): string | undefined {
-  const mins = r.reqs.filter((x) => x.name === normName(name)).map((x) => x.min);
+  const mins = specsOf(r, name).map((x) => x.min);
   if (!mins.length || mins.some((v) => v === undefined)) return undefined;
   return (mins as string[]).reduce((a, b) => (cmpVersion(a, b) <= 0 ? a : b));
 }
