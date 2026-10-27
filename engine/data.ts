@@ -36,7 +36,7 @@ export function buildPrices(files: JsonFile[]): PriceRow[] {
 
 /** 저장 파일 형식 버전. 저장 파일의 모양이 바뀌면(필드 이름·뜻이 바뀜) 올리고 MIGRATIONS에 옛 모양을 새 모양으로 바꾸는 함수를 더한다.
  *  format_version이 없는 파일은 1 (버전을 넣기 전에 만든 파일) */
-export const FORMAT_VERSION = 4;
+export const FORMAT_VERSION = 5;
 type Raw = Record<string, unknown>;
 /** MIGRATIONS[v]: 형식 v인 파일을 v + 1로 바꾼다 */
 export const MIGRATIONS: Record<number, (d: Raw) => Raw> = {
@@ -46,6 +46,8 @@ export const MIGRATIONS: Record<number, (d: Raw) => Raw> = {
   2: (d) => d,
   // 4: 프로젝트 설계 메모(notes)가 새로 생김 (v1.3.0). 바꿀 것 없이 버전만 올림
   3: (d) => d,
+  // 5: 노드·연결선의 네트워크·보안(security)이 새로 생김 (v1.4.0). 바꿀 것 없이 버전만 올림
+  4: (d) => d,
 };
 
 /** 저장 파일을 지금 형식으로 바꾼다. 이 앱보다 새 버전에서 만든 파일은 모르는 값이 버려져 다시 저장할 때 사라지므로 열지 않는다 */
@@ -109,6 +111,10 @@ function repair(src: unknown, issues: z.core.$ZodIssue[], lines: string[]): unkn
       while (list.some((f) => f.name === `field${n}`)) n++;
       lines.push(`${where} = "${String(o.name)}": 필드 이름은 영문·숫자·_ → field${n} 이름으로 바꿨습니다`);
       o.name = `field${n}`;
+    } else if ((i.path[0] === 'nodes' || i.path[0] === 'edges') && i.path[2] === 'security' && i.path.length === 4) {
+      // 손으로 고친 파일의 모르는 보안 값(exposure: "world" 등): 빼면 미정 → 판정이 "확인 필요"로 알린다
+      lines.push(`${where} = ${JSON.stringify(o[key])}: 알 수 없는 보안 값 → 빼고 열었습니다 (미정)`);
+      delete o[key];
     } else if ((i.code === 'invalid_format' || i.code === 'invalid_type') && key === 'python' && i.path[0] === 'nodes' && i.path.length === 3) {
       // 따옴표 없이 쓴 3.12(숫자)도: 3.10은 숫자로 3.1이 되어 글자로 바꿀 수 없으니 뺀다
       // 손으로 고친 파일의 "3.x" 같은 값: 빼면 3.9 이상으로 본다

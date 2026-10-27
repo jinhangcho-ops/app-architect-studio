@@ -414,6 +414,31 @@ export type Exchange = z.infer<typeof Exchange>;
  *  점·괄호가 없는 숫자("2024 로드맵", "3 계층")는 제목의 일부라 둔다. 비면 (제목 없음) */
 export const chapterTitle = (t: string) => t.trim().replace(/^(\d+(\.\d+)*[.)]|\d+(\.\d+)+)\s+/, '') || '(제목 없음)';
 
+// 네트워크·보안 (v1.4.0). 모든 칸은 비면 "미정"이고, 판정은 미정을 ⚠️ 확인 필요로 알린다
+/** 노드가 열려 있는 범위: public = 인터넷에서 바로 닿음, internal = 내부망(같은 VPC·사내망)에서만, private = 같은 서버·사설 구역 안에서만 */
+export const EXPOSURES = ['public', 'internal', 'private'] as const;
+/** 비밀(키·비밀번호) 보관: none = 쓰지 않음, env = 환경 변수·설정 파일, manager = 비밀 관리 서비스(Vault·Secrets Manager 등) */
+export const SECRET_STORES = ['none', 'env', 'manager'] as const;
+/** 여러 고객(매장·회사) 데이터 분리: none = 나누지 않음, app = 앱 코드가 조건을 붙임, rls = DB 행 권한(Row Level Security) */
+export const TENANT_ISOLATIONS = ['none', 'app', 'rls'] as const;
+/** 연결선 전송 암호화 */
+export const EDGE_TLS = ['none', 'tls', 'mtls'] as const;
+/** 연결선이 지나는 망: local = 같은 서버, internal = 내부망, internet = 인터넷 */
+export const EDGE_NETS = ['local', 'internal', 'internet'] as const;
+export const NodeSecurity = z.object({
+  exposure: z.enum(EXPOSURES).optional(),
+  /** 받는 연결을 TLS로 받음 */
+  tls: z.boolean().optional(),
+  /** 저장 데이터 암호화 (디스크·DB 암호화) */
+  at_rest: z.boolean().optional(),
+  secrets: z.enum(SECRET_STORES).optional(),
+  waf: z.boolean().optional(),
+  rate_limit: z.boolean().optional(),
+  audit_log: z.boolean().optional(),
+  tenant_isolation: z.enum(TENANT_ISOLATIONS).optional(),
+});
+export const EdgeSecurity = z.object({ tls: z.enum(EDGE_TLS).optional(), crosses: z.enum(EDGE_NETS).optional() });
+
 export const Project = z.object({
   name: z.string(),
   /** 설계 메모: 장 제목과 본문(가벼운 마크다운). 순서대로 설계서 맨 앞 장들이 된다. 계산에는 쓰지 않는다 */
@@ -481,6 +506,8 @@ export const Project = z.object({
     /** 15절 이 노드가 데이터를 두는 곳: 클라우드 리전 또는 사용자 기기(local) */
     region: z.union([z.enum(REGIONS), z.literal('local')]).optional(),
     /** 15절 개인정보 속성. 사람이 확정한다(코드 분석은 후보만 표시) */
+    /** 네트워크·보안 (v1.4.0) */
+    security: NodeSecurity.optional(),
     privacy: z.object({
       personal: z.boolean().default(false),
       sensitive: z.boolean().default(false),
@@ -514,6 +541,8 @@ export const Project = z.object({
     rtt_ms: z.number().nonnegative().default(0),
     /** 이 연결로 주고받는 인터페이스 명세. 있으면 호출 비율·흐르는 요청 대신 이것으로 부하를 나눈다 */
     interfaces: z.array(Interface).default([]),
+    /** 네트워크·보안 (v1.4.0) */
+    security: EdgeSecurity.optional(),
   })).default([]),
   /** 9절 목표 사용률: 필요 대수 = ceil(부하 / (대당 처리량 × 이 값)) */
   target_utilization: z.number().gt(0).max(1).default(0.7),

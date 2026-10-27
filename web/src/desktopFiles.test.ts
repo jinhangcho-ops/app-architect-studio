@@ -229,9 +229,31 @@ describe('형식 4: 프로젝트 설계 메모', () => {
     const p = parseProject(examples.find((e) => e.name === 'ledger-fastapi.json')!.data, catalog.items);
     const notes = [{ title: '1. 개요', body: '**목적**: 거래명세서 자동 입력\n\n| 영역 | 선택 |\n| --- | --- |\n| 앱 | React |' }, { title: '2. 범위', body: '- 사진 촬영' }];
     const saved = JSON.parse(JSON.stringify(exportProject({ ...p, notes }, {})));
-    expect(saved.format_version).toBe(4);
+    expect(saved.format_version).toBe(FORMAT_VERSION);
     expect(importProject(saved, 'x').project.notes).toEqual(notes);
     const { notes: _n, ...old } = saved;
     expect(importProject({ ...old, format_version: 3 }, 'x').project.notes).toEqual([]);
+  });
+});
+
+describe('형식 5: 네트워크·보안', () => {
+  it('노드·연결선 보안 값이 저장·열기에서 그대로, 형식 4 파일은 미정으로 열리고, 모르는 값은 그 칸만 빼고 엶', () => {
+    const p = parseProject(examples.find((e) => e.name === 'ledger-fastapi.json')!.data, catalog.items);
+    const node = { exposure: 'public' as const, tls: true, at_rest: false, secrets: 'manager' as const, waf: true, rate_limit: true, audit_log: false, tenant_isolation: 'rls' as const };
+    const edge = { tls: 'mtls' as const, crosses: 'internet' as const };
+    const q = { ...p, nodes: p.nodes.map((n, i) => (i === 0 ? { ...n, security: node } : n)), edges: p.edges.map((e, i) => (i === 0 ? { ...e, security: edge } : e)) };
+    const saved = JSON.parse(JSON.stringify(exportProject(q, {})));
+    expect(saved.format_version).toBe(5);
+    const back = importProject(saved, 'x').project;
+    expect([back.nodes[0].security, back.edges[0].security]).toEqual([node, edge]);
+    const { security: _n, ...n0 } = saved.nodes[0];
+    const { security: _e, ...e0 } = saved.edges[0];
+    const old = importProject({ ...saved, format_version: 4, nodes: [n0, ...saved.nodes.slice(1)], edges: [e0, ...saved.edges.slice(1)] }, 'x').project;
+    expect([old.nodes[0].security, old.edges[0].security]).toEqual([undefined, undefined]);
+    // 모르는 값은 그 칸만 빼고(미정) 열며 알림, 같은 노드의 다른 보안 값은 남음
+    const notes: string[] = [];
+    const odd = readProject({ ...saved, nodes: [{ ...saved.nodes[0], security: { ...node, exposure: 'world' } }, ...saved.nodes.slice(1)], edges: [{ ...saved.edges[0], security: { tls: 'ssl3' } }, ...saved.edges.slice(1)] }, catalog.items, 'x', notes);
+    expect([odd.nodes[0].security?.exposure, odd.nodes[0].security?.waf, odd.edges[0].security?.tls]).toEqual([undefined, true, undefined]);
+    expect(notes.join('\n')).toContain('알 수 없는 보안 값');
   });
 });

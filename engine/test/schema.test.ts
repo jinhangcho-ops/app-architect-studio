@@ -108,8 +108,9 @@ describe('테이블·연결 검증 (감사 2)', () => {
     expect(checkProject(p, [])).toEqual([]);
   });
 
-  it('형식 버전 4: 버전 1·2·3 파일(또는 버전 없음)은 그대로 열림', () => {
-    expect(FORMAT_VERSION).toBe(4);
+  it('형식 버전 5: 버전 1~4 파일(또는 버전 없음)은 그대로 열림', () => {
+    expect(FORMAT_VERSION).toBe(5);
+    expect(migrate({ name: 'p', format_version: 4 })).toEqual({ name: 'p' });
     expect(migrate({ name: 'p', format_version: 3 })).toEqual({ name: 'p' });
     expect(migrate({ name: 'p', format_version: 1 })).toEqual({ name: 'p' });
     expect(migrate({ name: 'p', format_version: 2 })).toEqual({ name: 'p' });
