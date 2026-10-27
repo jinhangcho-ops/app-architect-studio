@@ -102,3 +102,8 @@ describe('리뷰: 설계 메모 기능', () => {
     expect(nums('2024. 3. 15. 회의에서 결정')).toEqual(['2024.']);
   });
 });
+
+it('리뷰 1980710: 줄 앞의 ```글 속 코드```는 울타리가 아님 (뒤 글·장이 살아 있음)', () => {
+  expect(parseNote('```npm ci``` 로 설치\n\n뒤 글').map((b) => b.kind)).toEqual(['paragraph', 'paragraph']);
+  expect(splitChapters('## A\n```npm ci``` 로 설치\n## B\n본문\n## C\n끝').map((c) => c.title)).toEqual(['A', 'B', 'C']);
+});

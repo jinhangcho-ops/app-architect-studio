@@ -14,8 +14,8 @@ export type Block =
   | { kind: 'code'; lang: string; text: string }
   | { kind: 'rule' };
 
-// 코드 울타리: ``` 나 ~~~ 3개 이상, 뒤에 언어와 아무 글(```ts title="a.ts")
-const FENCE = /^\s*(`{3,}|~{3,})\s*([^`\s]*).*$/;
+// 코드 울타리: ``` 나 ~~~ 3개 이상, 뒤에 언어와 아무 글(```ts title="a.ts"). ``` 줄 뒤에 ` 가 또 있으면 글 속 코드(```npm ci```)라 울타리가 아니다
+const FENCE = /^\s*(`{3,}(?=[^`]*$)|~{3,})\s*([^`\s]*).*$/;
 /** 여는 울타리와 같은 글자로만, 그 길이 이상인 줄이 닫는다 (```` 안의 ``` 는 코드) */
 const closes = (l: string, open: string) => { const t = l.trim(); return t.length >= open.length && [...t].every((c) => c === open[0]); };
 // 닫는 # 는 앞에 공백이 있을 때만 뗀다 ("C#"이 "C"가 되지 않게)
