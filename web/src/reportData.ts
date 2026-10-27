@@ -106,6 +106,9 @@ export function openIssues(p: Project, a: Analysis, byId: Map<string, CatalogIte
       // 나쁜 것부터
       .sort((x, y) => VERDICT_RANK[y.v] - VERDICT_RANK[x.v]).map((x) => x.text),
     ...a.rules.map((r) => `❌ 구조 규칙 · ${r.target}: ${r.why} → ${r.instead}`),
+    // 보안: 막아야 할 것(❌) 먼저, 확인 필요(⚠️) 다음. 알아 둘 것(ℹ️)은 보안 장에만
+    ...[...a.security].filter((h) => h.level !== 'info').sort((x, y) => (x.level === 'fail' ? 0 : 1) - (y.level === 'fail' ? 0 : 1))
+      .map((h) => `${h.level === 'fail' ? '❌' : '⚠️'} 보안 · ${h.target}: ${h.why} → ${h.instead}`),
   ];
 }
 

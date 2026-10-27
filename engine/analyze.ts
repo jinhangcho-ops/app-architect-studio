@@ -1,6 +1,7 @@
 // 분석의 유일한 입구. 정해진 순서로 계산하고, 판정은 모든 계산값을 변수로 받아 맨 마지막에 한다.
 // deploy → traffic → load → calibrate/capacity → latency·availability·cost → limits → growth → judge
 import { monthlyDowntimeHours, nodeAvailability, pathAvailability, singlePointsOfFailure, standingInstances } from './availability';
+import { checkSecurity, type SecurityHit } from './security';
 import { calibrate } from './calibrate';
 import { instancesNeeded } from './capacity';
 import { monthlyCost, type CostResult } from './cost';
@@ -66,6 +67,8 @@ export type Analysis = {
   storage?: { personaGb: Metric; tablesGb?: Metric };
   judgements: NodeJudgement[];
   rules: RuleHit[];
+  /** 네트워크·보안 점검 (v1.4.0): 노드·연결선 보안 값의 ❌·⚠️·ℹ️. 항목 판정(judgements)과 따로 */
+  security: SecurityHit[];
   /** 15절 "법령명 제N조 확인 필요" 목록 */
   regulation: LawHit[];
   /** 데이터 파이프라인: 큐 → 소비자 적체·지연, 배치 1회 실행 */
@@ -371,6 +374,7 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     growth,
     judgements: p.nodes.map((n) => judgeNode(n, d.catalog, judged.get(n.id))),
     rules: checkRules(p, d.rules, tables.map((x) => ({ target: `${p.nodes.find((n) => n.id === x.nodeId)!.name}.${x.table}`, vars: x.vars }))),
+    security: checkSecurity(p),
     tables,
     api: loads ? apiLoads(p, loads) : [],
     ...(t && {
