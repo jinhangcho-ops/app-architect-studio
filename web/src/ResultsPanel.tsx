@@ -35,7 +35,7 @@ export function FeatureTablesTable({ project, className }: { project: Project; c
       ))}</tbody>
     </table></div> : <p className="muted">아직 테이블에 연결한 기능이 없어요. 행동에서 쓰는 테이블을, 연결선의 인터페이스에서 읽고 쓰는 테이블을 고르세요.</p>}
     {unused.length > 0 && <p className="warn">어떤 기능에도 연결되지 않은 테이블: {cell(unused.map((k) => { const d = k.indexOf('.'); return { node: k.slice(0, d), table: k.slice(d + 1) }; }))}</p>}
-    {/* 스키마 경고(기본값·코드 타입, 인덱스 이름 겹침 …) — 전체 결과와 설계서 6절에 같이 나온다 */}
+    {/* 스키마 경고(기본값·코드 타입, 인덱스 이름 겹침 …) — 전체 결과와 설계서 데이터 명세 장에 같이 나온다 */}
     {warns.length > 0 && <ul className="warn">{warns.map((w, i) => <li key={i}>⚠️ {name(w.node)}{w.table ? `.${w.table}` : ''}: {w.text}</li>)}</ul>}
   </>;
 }

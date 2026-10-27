@@ -3,7 +3,8 @@
 // 글 안: **굵게**, `코드`. 링크·이미지·HTML은 받지 않는다(글자 그대로).
 
 export type Span = { kind: 'text' | 'bold' | 'code'; text: string };
-export type ListItem = { text: string; depth: number; ordered: boolean };
+/** num: 번호 목록에 적은 번호 그대로("3.", "2)") — 빈 줄로 나뉜 목록도 1, 1, 1이 되지 않게 */
+export type ListItem = { text: string; depth: number; ordered: boolean; num?: string };
 export type Block =
   | { kind: 'heading'; level: number; text: string }
   | { kind: 'paragraph'; text: string }
@@ -13,8 +14,12 @@ export type Block =
   | { kind: 'code'; lang: string; text: string }
   | { kind: 'rule' };
 
-const FENCE = /^\s*(```|~~~)\s*([\w+-]*)\s*$/;
-const HEADING = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
+// 코드 울타리: ``` 나 ~~~ 3개 이상, 뒤에 언어와 아무 글(```ts title="a.ts")
+const FENCE = /^\s*(`{3,}|~{3,})\s*([^`\s]*).*$/;
+/** 여는 울타리와 같은 글자로만, 그 길이 이상인 줄이 닫는다 (```` 안의 ``` 는 코드) */
+const closes = (l: string, open: string) => { const t = l.trim(); return t.length >= open.length && [...t].every((c) => c === open[0]); };
+// 닫는 # 는 앞에 공백이 있을 때만 뗀다 ("C#"이 "C"가 되지 않게)
+const HEADING = /^\s{0,3}(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/;
 const ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
 const RULE = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/;
 const SEPARATOR = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/;
@@ -38,7 +43,7 @@ export function parseNote(body: string): Block[] {
       // 닫는 줄이 없으면 끝까지 코드로 (뒤 글이 사라지지 않게)
       flush();
       const text: string[] = [];
-      for (i++; i < lines.length && !(lines[i].trim().startsWith(fence[1]) && FENCE.test(lines[i])); i++) text.push(lines[i]);
+      for (i++; i < lines.length && !closes(lines[i], fence[1]); i++) text.push(lines[i]);
       out.push({ kind: 'code', lang: fence[2], text: text.join('\n') });
       continue;
     }
@@ -72,7 +77,8 @@ export function parseNote(body: string): Block[] {
           const indent = m[1].replace(/\t/g, '    ').length;
           while (indents.length && indent < indents[indents.length - 1]) indents.pop();
           if (!indents.length || indent > indents[indents.length - 1]) indents.push(indent);
-          items.push({ text: m[3], depth: Math.min(3, indents.length - 1), ordered: /\d/.test(m[2]) });
+          const ordered = /\d/.test(m[2]);
+          items.push({ text: m[3], depth: Math.min(3, indents.length - 1), ordered, ...(ordered && { num: m[2] }) });
         } else if (lines[i].trim() && /^\s+/.test(lines[i]) && items.length) {
           // 들여 쓴 이어지는 줄은 앞 항목에 붙인다
           items[items.length - 1].text += `\n${lines[i].trim()}`;
@@ -126,18 +132,17 @@ export function splitChapters(doc: string): { title: string; body: string }[] {
   const out: { title: string; lines: string[] }[] = [{ title: '', lines: [] }];
   let fence: string | undefined;
   for (const l of lines) {
-    const f = FENCE.exec(l);
-    if (f) fence = fence === undefined ? f[1] : l.trim().startsWith(fence) ? undefined : fence;
-    const h = fence === undefined && !f ? /^\s{0,3}##\s+(.*?)\s*#*\s*$/.exec(l) : null;
+    const h = fence === undefined && !FENCE.test(l) ? /^\s{0,3}##\s+(.*?)(?:\s+#+)?\s*$/.exec(l) : null;
+    if (fence !== undefined) { if (closes(l, fence)) fence = undefined; } else fence = FENCE.exec(l)?.[1];
     if (h) out.push({ title: h[1], lines: [] });
     else out[out.length - 1].lines.push(l);
   }
   const trim = (ls: string[]) => ls.join('\n').replace(/^\s*\n/, '').trimEnd();
   const [head, ...rest] = out;
-  const top = /^\s{0,3}#\s+(.*?)\s*#*\s*$/.exec(head.lines.find((l) => l.trim()) ?? '');
+  const top = /^\s{0,3}#\s+(.*?)(?:\s+#+)?\s*$/.exec(head.lines.find((l) => l.trim()) ?? '');
   const headBody = trim(top ? head.lines.slice(head.lines.findIndex((l) => l.trim()) + 1) : head.lines);
   return [
     ...(headBody.trim() ? [{ title: top?.[1] ?? '머리말', body: headBody }] : []),
-    ...rest.map((c) => ({ title: c.title.replace(/^\d+(\.\d+)*[.)]?\s+/, ''), body: trim(c.lines) })),
+    ...rest.map((c) => ({ title: c.title, body: trim(c.lines) })),
   ];
 }

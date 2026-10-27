@@ -410,8 +410,9 @@ export const Exchange = z.object({
 });
 export type Exchange = z.infer<typeof Exchange>;
 
-/** 설계 메모 장 제목: 설계서·명령줄이 장 번호를 매기므로 앞의 번호(1. · 2) · 5.3)는 뗀다 ("1. 1. 개요"가 되지 않게). 비면 (제목 없음) */
-export const chapterTitle = (t: string) => t.trim().replace(/^\d+(\.\d+)*[.)]?\s+/, '') || '(제목 없음)';
+/** 설계 메모 장 제목: 설계서·명령줄이 장 번호를 매기므로 앞의 번호(1. · 2) · 5.3)는 보일 때 뗀다 ("1. 1. 개요"가 되지 않게).
+ *  점·괄호가 없는 숫자("2024 로드맵", "3 계층")는 제목의 일부라 둔다. 비면 (제목 없음) */
+export const chapterTitle = (t: string) => t.trim().replace(/^(\d+(\.\d+)*[.)]|\d+(\.\d+)+)\s+/, '') || '(제목 없음)';
 
 export const Project = z.object({
   name: z.string(),

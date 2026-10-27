@@ -11,18 +11,13 @@ function Inline({ text }: { text: string }) {
   ))}</>;
 }
 
-/** 목록: 깊이마다 들여 쓰고, 번호 목록은 같은 깊이에서 이어지는 동안 1, 2, 3 … (안쪽 목록이 끝나면 바깥 번호를 이어 감) */
+/** 목록: 깊이마다 들여 쓰고, 번호는 적은 그대로 (빈 줄로 나뉜 1. 2. 3.이 1. 1. 1.이 되지 않게) */
 function List({ items }: { items: ListItem[] }) {
-  const counters: number[] = [];
-  return <div className="note-list">{items.map((it, i) => {
-    counters.length = it.depth + 1;
-    counters[it.depth] = it.ordered ? (counters[it.depth] ?? 0) + 1 : 0;
-    return (
-      <div key={i} className="note-li" style={{ paddingLeft: `${it.depth * 1.2 + 1.4}em` }}>
-        <span className="note-mark">{it.ordered ? `${counters[it.depth]}.` : '•'}</span><Inline text={it.text} />
-      </div>
-    );
-  })}</div>;
+  return <div className="note-list">{items.map((it, i) => (
+    <div key={i} className="note-li" style={{ paddingLeft: `${it.depth * 1.2}em` }}>
+      <span className="note-mark">{it.num ?? '•'}</span><span><Inline text={it.text} /></span>
+    </div>
+  ))}</div>;
 }
 
 export function NoteView({ body }: { body: string }) {

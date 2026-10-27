@@ -35,11 +35,11 @@ describe('설계 메모: 가벼운 마크다운 읽기', () => {
     expect(b[1]).toEqual({ kind: 'heading', level: 3, text: '기술 스택' });
     expect(b[2]).toEqual({ kind: 'table', head: ['영역', '선택'], rows: [['앱', 'React + TypeScript (Vite, `vite-plugin-pwa`)'], ['OCR', 'Google Cloud Vision (`DOCUMENT_TEXT_DETECTION`)']] });
     expect(b[3]).toEqual({ kind: 'list', items: [
-      { text: '단어를 y좌표 기준으로 묶어 줄(row) 구성', depth: 0, ordered: true },
-      { text: '헤더 행 탐지: 키워드 사전으로 열 이름 식별', depth: 0, ordered: true },
+      { text: '단어를 y좌표 기준으로 묶어 줄(row) 구성', depth: 0, ordered: true, num: '1.' },
+      { text: '헤더 행 탐지: 키워드 사전으로 열 이름 식별', depth: 0, ordered: true, num: '2.' },
       { text: '품명 = 품목 / 품목명', depth: 1, ordered: false },
       { text: '수량 = 수량 / 중량', depth: 1, ordered: false },
-      { text: '합계/소계 행 제거', depth: 0, ordered: true },
+      { text: '합계/소계 행 제거', depth: 0, ordered: true, num: '3.' },
     ] });
     // 코드 안의 빈 줄·| ·** 는 그대로
     expect(b[4]).toEqual({ kind: 'code', lang: 'sql', text: 'create table vendors (\n  id uuid primary key,\n\n  name text not null  -- | 와 ** 는 그대로\n);' });
@@ -73,15 +73,32 @@ describe('마크다운 문서 → 장 나누기', () => {
     const doc = ['# 거래명세서 설계서', '', '머리 글', '', '## 1. 개요', '', '**목적**: 자동 입력', '', '## 2. 범위', '- 사진 촬영', '```', '## 코드 속 제목', '```', '', ''].join('\n');
     expect(splitChapters(doc)).toEqual([
       { title: '거래명세서 설계서', body: '머리 글' },
-      { title: '개요', body: '**목적**: 자동 입력' },
-      { title: '범위', body: '- 사진 촬영\n```\n## 코드 속 제목\n```' },
+      { title: '1. 개요', body: '**목적**: 자동 입력' },
+      { title: '2. 범위', body: '- 사진 촬영\n```\n## 코드 속 제목\n```' },
     ]);
   });
   it('장 제목 앞의 번호는 뗌 (설계서가 번호를 매김), 숫자로 시작하는 낱말은 그대로', () => {
-    expect(['1. 개요', '5.3 표 복원', '2) 범위', '7 SQL', '2024년 계획', '3D 보기', '  '].map(chapterTitle)).toEqual(['개요', '표 복원', '범위', 'SQL', '2024년 계획', '3D 보기', '(제목 없음)']);
+    expect(['1. 개요', '5.3 표 복원', '2) 범위', '7 SQL', '2024 로드맵', '2024년 계획', '3D 보기', '  '].map(chapterTitle)).toEqual(['개요', '표 복원', '범위', '7 SQL', '2024 로드맵', '2024년 계획', '3D 보기', '(제목 없음)']);
   });
   it('머리 글이 없으면 그 장은 없고, ## 가 없으면 한 장', () => {
     expect(splitChapters('# 제목만\n\n## A\n가')).toEqual([{ title: 'A', body: '가' }]);
     expect(splitChapters('그냥 글\n  - 들여 쓴 목록')).toEqual([{ title: '머리말', body: '그냥 글\n  - 들여 쓴 목록' }]);
+  });
+});
+
+describe('리뷰: 설계 메모 기능', () => {
+  it('언어 뒤에 글이 붙은 울타리, ```` 울타리도 닫히고, 뒤 글·장이 살아 있음', () => {
+    expect(parseNote('```ts title="a.ts"\nconst a = 1;\n```\n뒤 글')).toEqual([{ kind: 'code', lang: 'ts', text: 'const a = 1;' }, { kind: 'paragraph', text: '뒤 글' }]);
+    expect(parseNote('````md\n```\n안\n```\n````\n밖')).toEqual([{ kind: 'code', lang: 'md', text: '```\n안\n```' }, { kind: 'paragraph', text: '밖' }]);
+    expect(splitChapters('## 1. 개요\n```ts title="a.ts"\nx\n```\n## 2. 범위\n본문\n## 3. 보안\n끝').map((c) => c.title)).toEqual(['1. 개요', '2. 범위', '3. 보안']);
+  });
+  it('제목 끝 # 는 앞에 공백이 있을 때만 뗌 (C#)', () => {
+    expect(parseNote('## 언어: C#\n### 마무리 ##')).toEqual([{ kind: 'heading', level: 2, text: '언어: C#' }, { kind: 'heading', level: 3, text: '마무리' }]);
+    expect(splitChapters('## F#\n글')[0].title).toBe('F#');
+  });
+  it('번호는 적은 그대로: 빈 줄로 나뉜 목록, 날짜 줄', () => {
+    const nums = (s: string) => parseNote(s).flatMap((b) => (b.kind === 'list' ? b.items.map((x) => x.num) : []));
+    expect(nums('1. 설치\n\n2. 실행\n\n3) 확인')).toEqual(['1.', '2.', '3)']);
+    expect(nums('2024. 3. 15. 회의에서 결정')).toEqual(['2024.']);
   });
 });

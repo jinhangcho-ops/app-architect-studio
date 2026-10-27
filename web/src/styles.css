@@ -148,8 +148,8 @@ textarea.spec { width: 100%; min-height: 90px; font-family: ui-monospace, monosp
 .note p { margin: 4px 0; }
 .note-h { margin: 8px 0 4px; }
 h3.note-h { font-size: 11pt; } h4.note-h { font-size: 10.5pt; } h5.note-h { font-size: 10pt; }
-.note-li { position: relative; margin: 1px 0; }
-.note-mark { display: inline-block; width: 1.4em; margin-left: -1.4em; }
+.note-li { display: flex; gap: 0.35em; margin: 1px 0; }
+.note-mark { flex: none; min-width: 1.1em; }
 .note-table { border-collapse: collapse; width: 100%; margin: 4px 0; font-size: 9.5pt; }
 .note-table th, .note-table td { border: 1px solid var(--line); padding: 2px 6px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
 .note-code { white-space: pre-wrap; overflow-wrap: anywhere; background: rgba(127, 127, 127, 0.12); padding: 6px 8px; border-radius: 4px; font-size: 9pt; }

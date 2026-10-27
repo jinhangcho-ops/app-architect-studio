@@ -1,5 +1,5 @@
 // 설계서(7절): 프로젝트와 분석 결과로 설계서 내용을 만든다. 화면 그리기(Report.tsx)와 나눠 두어 내용만 테스트한다.
-// 노드 카드는 설계서 7절 표의 행 순서를 그대로 따른다: 머리줄 → 판정 근거 → 선택 항목 → 동작 방식 → 계산 결과 → 대안 → 태그 → 연결 → 비고 → 설명.
+// 노드 카드는 설계서 7절 표의 행 순서를 그대로 따른다: 머리줄 → 판정 근거 → 선택 항목 → 동작 방식 → 계산 결과 → 대안 → 태그 → 연결 → 비고 (노드 설명은 카드 아래 메모로).
 import { edgeCalls } from '../../engine/interfaces';
 import type { Analysis } from '../../engine/analyze';
 import { impactOf } from '../../engine/availability';
