@@ -426,6 +426,10 @@ export const Project = z.object({
     description: z.string().optional(),
     primary: z.string().optional(),
     extras: z.array(z.string()).default([]),
+    /** requirements.txt 원문 (FastAPI 노드). 내보내는 FastAPI 뼈대가 이 버전들의 문법으로 나온다. 다른 종류로 바꿔도 지우지 않는다 (다시 돌아올 때 그대로) */
+    requirements: z.string().optional(),
+    /** Python 버전 (3.8, 3.12 …). requirements.txt에는 보통 없어 따로 받는다. 없으면 3.9 이상으로 본다 */
+    python: z.string().regex(/^3(\.\d+){1,2}$/, 'Python 버전은 3.12처럼').optional(),
     spec: Spec.optional(),
     /** 화면 노드가 여럿일 때 이 노드로 들어오는 트래픽 비율. 없으면 화면 노드끼리 균등 */
     entry_share: z.number().min(0).max(1).optional(),

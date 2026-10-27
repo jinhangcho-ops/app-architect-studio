@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { FORMAT_VERSION, migrate, parseProject } from '../../engine/data';
+import { FORMAT_VERSION, migrate, parseProject, readProject } from '../../engine/data';
 import { saveToFolder, snapshotFromFile } from './autosave';
 import { catalog, examples } from './data';
 import { stamp, stampTime, type DesktopApi } from './desktop';
@@ -192,5 +192,28 @@ describe('명세 파일 저장 (writeTexts)', () => {
     const sub = join(dir, 'texts'); mkdirSync(sub);
     writeFileSync(join(sub, 'a.sql'), '');
     expect(files.existingTexts(sub, [{ name: 'a.sql', text: '' }, { name: 'b.sql', text: '' }])).toEqual(['a.sql']);
+  });
+});
+
+describe('형식 3: 노드의 requirements·python', () => {
+  it('저장했다 열어도 그대로 남고, 형식 2 파일도 열림', () => {
+    const p = parseProject(examples.find((e) => e.name === 'ledger-fastapi.json')!.data, catalog.items);
+    const req = 'fastapi==0.110.0\npydantic==2.5.0\n';
+    const withReq = { ...p, nodes: p.nodes.map((n, i) => (i === 0 ? { ...n, requirements: req, python: '3.11' } : n)) };
+    const saved = JSON.parse(JSON.stringify(exportProject(withReq, {})));
+    expect(saved.format_version).toBe(3);
+    const back = importProject(saved, 'x').project.nodes[0];
+    expect([back.requirements, back.python]).toEqual([req, '3.11']);
+    expect(() => importProject({ ...saved, format_version: 2 }, 'x')).not.toThrow();
+  });
+
+  it('잘못된 python 값은 빼고 열며 알림', () => {
+    const p = parseProject(examples.find((e) => e.name === 'ledger-fastapi.json')!.data, catalog.items);
+    const saved = JSON.parse(JSON.stringify(exportProject(p, {})));
+    saved.nodes[0].python = '3.x';
+    const notes: string[] = [];
+    const back = readProject(saved, catalog.items, 'x', notes);
+    expect(back.nodes[0].python).toBeUndefined();
+    expect(notes.join('\n')).toContain('Python 버전');
   });
 });

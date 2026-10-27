@@ -36,12 +36,14 @@ export function buildPrices(files: JsonFile[]): PriceRow[] {
 
 /** 저장 파일 형식 버전. 저장 파일의 모양이 바뀌면(필드 이름·뜻이 바뀜) 올리고 MIGRATIONS에 옛 모양을 새 모양으로 바꾸는 함수를 더한다.
  *  format_version이 없는 파일은 1 (버전을 넣기 전에 만든 파일) */
-export const FORMAT_VERSION = 2;
+export const FORMAT_VERSION = 3;
 type Raw = Record<string, unknown>;
 /** MIGRATIONS[v]: 형식 v인 파일을 v + 1로 바꾼다 */
 export const MIGRATIONS: Record<number, (d: Raw) => Raw> = {
   // 2: 고정장·데이터 사전·테이블 연결이 새로 생김. 모양은 그대로라 바꿀 것이 없고, 옛 앱이 새 칸을 지우며 저장하지 않게 버전만 올림
   1: (d) => d,
+  // 3: 노드의 requirements·python(FastAPI 뼈대를 버전에 맞춤)이 새로 생김. 바꿀 것 없이 버전만 올림 (2와 같은 이유)
+  2: (d) => d,
 };
 
 /** 저장 파일을 지금 형식으로 바꾼다. 이 앱보다 새 버전에서 만든 파일은 모르는 값이 버려져 다시 저장할 때 사라지므로 열지 않는다 */
@@ -105,6 +107,10 @@ function repair(src: unknown, issues: z.core.$ZodIssue[], lines: string[]): unkn
       while (list.some((f) => f.name === `field${n}`)) n++;
       lines.push(`${where} = "${String(o.name)}": 필드 이름은 영문·숫자·_ → field${n} 이름으로 바꿨습니다`);
       o.name = `field${n}`;
+    } else if (i.code === 'invalid_format' && key === 'python' && i.path[0] === 'nodes') {
+      // 손으로 고친 파일의 "3.x" 같은 값: 빼면 3.9 이상으로 본다
+      lines.push(`${where} = "${String(o.python)}": Python 버전은 3.12처럼 → 빼고 열었습니다`);
+      delete o.python;
     } else if (i.code === 'invalid_format' && key === 'code' && listOf === 'errors') {
       lines.push(`${where} = "${String(o.code)}": 에러 코드는 영문·숫자·_.- → 빼고 열었습니다`);
       delete o.code;
