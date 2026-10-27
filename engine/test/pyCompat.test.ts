@@ -25,3 +25,17 @@ describe('버전 규칙표', () => {
     expect(w('-r base.txt\nfastapi==0.120.0')).toContain('1번째 줄');
   });
 });
+
+describe('상한만 적은 줄 (리뷰)', () => {
+  it('pydantic<2·fastapi<0.100이면 pydantic 1, fastapi<0.95면 Annotated 대신 = Path(...)', () => {
+    expect(pyProfile({ requirements: 'fastapi==0.110.0\npydantic<2' }).pydantic).toBe(1);
+    expect(pyProfile({ requirements: 'fastapi>=0.100\npydantic<2.0' }).pydantic).toBe(1);
+    expect(pyProfile({ requirements: 'fastapi<0.100' }).pydantic).toBe(1);
+    expect(pyProfile({ requirements: 'fastapi<0.95' })).toMatchObject({ pydantic: 1, annotated: false });
+    expect(pyProfile({ requirements: 'fastapi<=0.99.1' }).pydantic).toBe(1);
+    // 상한이 경계보다 위면 그대로 최신 쪽
+    expect(pyProfile({ requirements: 'fastapi<1\npydantic<3' })).toMatchObject({ pydantic: 2, annotated: true });
+    // 환경 표시별 줄 중 하나라도 상한이 없으면 모름 → 최신 쪽
+    expect(pyProfile({ requirements: 'pydantic<2 ; python_version<"3.8"\npydantic>=2 ; python_version>="3.8"' }).pydantic).toBe(2);
+  });
+});

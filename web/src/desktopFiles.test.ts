@@ -215,5 +215,8 @@ describe('형식 3: 노드의 requirements·python', () => {
     const back = readProject(saved, catalog.items, 'x', notes);
     expect(back.nodes[0].python).toBeUndefined();
     expect(notes.join('\n')).toContain('Python 버전');
+    // 따옴표 없이 쓴 숫자 3.12도 파일이 열림 (리뷰)
+    saved.nodes[0].python = 3.12;
+    expect(readProject(saved, catalog.items, 'x', []).nodes[0].python).toBeUndefined();
   });
 });

@@ -1,6 +1,6 @@
 // FastAPI 뼈대를 노드의 requirements.txt·Python 버전에 맞추는 규칙표.
 // 버전 목록이 없으면 지금 기본(최신 방식)과 똑같이 만든다. 경계 버전의 근거는 각 줄 주석 (2026-10-27 확인).
-import { cmpVersion, parseRequirements, versionOf } from './requirements';
+import { allBelow, cmpVersion, parseRequirements, versionOf } from './requirements';
 
 /** 뼈대에서 버전에 따라 고르는 문법 */
 export type PyProfile = {
@@ -40,8 +40,10 @@ export function pyProfile(node: { requirements?: string; python?: string }): PyP
   const listed = (name: string) => r.reqs.some((x) => x.name === name);
   if (node.requirements?.trim() && !listed('fastapi')) warnings.push('requirements.txt에 fastapi가 없습니다');
 
+  // 하한 없이 상한만 적은 줄(pydantic<2, fastapi<0.100)은 pip가 그 아래를 까므로 그쪽 규칙으로
+  const faBelow = (v: string) => (fa !== undefined ? cmpVersion(fa, v) < 0 : allBelow(r, 'fastapi', v));
   // pydantic 주 버전: 적혀 있으면 그것, 없으면 fastapi 버전으로 짐작 (0.100 전 fastapi는 pydantic 1만 받음)
-  const pydantic: 1 | 2 = pd !== undefined ? (cmpVersion(pd, '2') >= 0 ? 2 : 1) : fa !== undefined && cmpVersion(fa, '0.100') < 0 ? 1 : 2;
+  const pydantic: 1 | 2 = pd !== undefined ? (cmpVersion(pd, '2') >= 0 ? 2 : 1) : allBelow(r, 'pydantic', '2') || faBelow('0.100') ? 1 : 2;
   // 함께 쓸 수 없는 조합 (fastapi 릴리스 노트: 0.100.0 pydantic 2 지원, 0.126.0 pydantic 1 지원 중단, 0.135.2 pydantic >=2.9, 0.125.0·0.129.0 Python 3.8·3.9 중단)
   if (fa && pd) {
     if (pydantic === 2 && cmpVersion(fa, '0.100') < 0) warnings.push(`fastapi ${fa}는 pydantic 2를 쓰지 못합니다 (0.100부터)`);
@@ -69,7 +71,7 @@ export function pyProfile(node: { requirements?: string; python?: string }): PyP
     // pydantic 문서: validate_by_name·validate_by_alias는 v2.11에 새로 생김, populate_by_name은 2.11+에서 권하지 않음
     validateByName: pydantic === 2 && pd !== undefined && cmpVersion(pd, '2.11') >= 0,
     // Annotated 인자: fastapi 0.95.0
-    annotated: atLeast(fa, '0.95'),
+    annotated: !faBelow('0.95'),
     builtinGenerics: atLeast(py, '3.9'),
     annotatedFromExtensions: py !== undefined && cmpVersion(py, '3.9') < 0,
     // fastapi 0.112.0 "fastapi[standard]", 0.111.0 fastapi-cli(fastapi dev)

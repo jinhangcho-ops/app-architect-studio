@@ -72,6 +72,15 @@ export function parseRequirements(text: string): RequirementsResult {
   return { reqs, skipped };
 }
 
+/** 패키지의 모든 줄이 bound보다 낮은 버전만 허용하는지 (pydantic<2, fastapi<=0.99). 하한 없이 상한만 적으면 pip가 그 아래 버전을 깔므로 */
+export function allBelow(r: RequirementsResult, name: string, bound: string): boolean {
+  const lines = r.reqs.filter((x) => x.name === normName(name));
+  return lines.length > 0 && lines.every((x) => x.spec.split(',').some((c) => {
+    const m = CLAUSE.exec(c.trim());
+    return !!m && ((m[1] === '<' && cmpVersion(m[2], bound) <= 0) || (m[1] === '<=' && cmpVersion(m[2], bound) < 0));
+  }));
+}
+
 /** 패키지의 판단 버전. 같은 이름이 여러 줄이면(환경 표시별 등) 하한 중 가장 낮은 것 — 어느 환경에서도 돌아야 하므로 */
 export function versionOf(r: RequirementsResult, name: string): string | undefined {
   const mins = r.reqs.filter((x) => x.name === normName(name)).map((x) => x.min);
