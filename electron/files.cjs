@@ -54,10 +54,12 @@ function listSnapshots(projectFile, kind) {
   let dir = dirOf(projectFile, kind);
   const has = (d) => fs.existsSync(d) && fs.readdirSync(d).some((f) => f.endsWith('.json'));
   // v1.2.0까지는 .saves/에 바로 두었다. 새 폴더에 아직 아무것도 없으면 그 기록을 보여 준다
-  if (!has(dir)) dir = path.dirname(dir);
+  // 그 폴더는 같은 폴더의 모든 프로젝트가 함께 썼으므로 legacy로 표시한다 (복구하면 다음 저장에서 파일 이름을 다시 묻게)
+  const legacy = !has(dir);
+  if (legacy) dir = path.dirname(dir);
   if (!has(dir)) return [];
   return fs.readdirSync(dir).filter((f) => f.endsWith('.json') && fs.statSync(path.join(dir, f)).isFile()).sort().reverse()
-    .map((f) => ({ name: f.slice(0, -5), text: readText(path.join(dir, f)) }));
+    .map((f) => ({ name: f.slice(0, -5), text: readText(path.join(dir, f)), ...(legacy && { legacy }) }));
 }
 
 /** PNG 파일 이름: 경로·예약 문자를 빼고, 비면 '화면' */

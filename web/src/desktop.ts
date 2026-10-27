@@ -5,7 +5,7 @@ export type DesktopApi = {
   /** file이 없으면 저장 창을 띄운다. 저장한 경로(취소면 null) */
   saveFile: (file: string | undefined, text: string, suggested: string) => Promise<string | null>;
   writeSnapshot: (file: string, kind: 'manual' | 'auto', name: string, text: string, max: number) => Promise<boolean>;
-  listSnapshots: (file: string, kind: 'manual' | 'auto') => Promise<{ name: string; text: string }[]>;
+  listSnapshots: (file: string, kind: 'manual' | 'auto') => Promise<{ name: string; text: string; legacy?: boolean }[]>;
   /** 한 장이면 저장 창, 여러 장이면 폴더 고르기. 저장한 경로들(취소면 null) */
   savePngs: (files: { name: string; base64: string }[]) => Promise<string[] | null>;
   /** 글자 파일 여러 개(명세 등)를 고른 폴더에. 저장한 경로들(취소면 null) */

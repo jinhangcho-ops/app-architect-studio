@@ -23,6 +23,10 @@ export function mergeCodeAnalysis(p: Project, data: unknown): { project: Project
   const nodes = [...p.nodes];
   const edges = [...p.edges];
   let skipped = 0;
+  // from → to 목록. 순환 검사(reaches)가 노드마다 연결선 전체를 훑으면 큰 저장소에서 멈춘다
+  const out = new Map<string, string[]>();
+  const link = (from: string, to: string) => { const l = out.get(from); if (l) l.push(to); else out.set(from, [to]); };
+  for (const e of edges) link(e.from, e.to);
   const addNode = (raw: object) => { const n = NodeSchema.parse(raw); if (!have.has(n.id)) { nodes.push(n); have.add(n.id); } };
   /** to에서 연결선을 따라 from에 닿으면 from → to가 순환을 만든다 */
   const reaches = (start: string, goal: string) => {
@@ -33,14 +37,15 @@ export function mergeCodeAnalysis(p: Project, data: unknown): { project: Project
       if (id === goal) return true;
       if (seen.has(id)) continue;
       seen.add(id);
-      for (const e of edges) if (e.from === id) stack.push(e.to);
+      stack.push(...(out.get(id) ?? []));
     }
     return false;
   };
   const addEdge = (from: string, to: string) => {
-    if (edges.some((e) => e.from === from && e.to === to)) return;
+    if (out.get(from)?.includes(to)) return;
     if (reaches(to, from)) { skipped++; return; }
     edges.push(EdgeSchema.parse({ from, to }));
+    link(from, to);
   };
 
   for (const m of a.modules) {

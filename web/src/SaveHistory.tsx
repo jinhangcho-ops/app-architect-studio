@@ -25,7 +25,7 @@ export function SaveHistory({ filePath, onRestore, onClose }: { filePath?: strin
       {items.map((s) => (
         <div key={s.savedAt} className="history-row">
           <span>{snapshotLabel(s)}</span>
-          <button onClick={() => onRestore(s, sameFile)}>복구</button>
+          <button onClick={() => onRestore(s, sameFile && !s.legacy)}>복구</button>
         </div>
       ))}
     </section>

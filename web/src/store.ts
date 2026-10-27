@@ -50,6 +50,16 @@ let lastEdit = 0;
 const loaded = new WeakSet<Project>();
 /** 불러온(load) 프로젝트 → 불러오기 직전의 설정 비교 기준. 되돌리기로 그 앞으로 가면 기준도 돌려놓는다 (처음 예시·기록에서 잘린 경우도) */
 const prevBase = new WeakMap<Project, Project>();
+/** 불러온 프로젝트 → 불러오기 직전 노드 위치, 되돌린 불러오기 → 되돌리기 직전 위치 (다시 하기용). 위치는 되돌리기 기록에 없어서 경계에서만 따로 돌려놓는다 */
+const prevPos = new WeakMap<Project, Record<string, XY>>();
+const nextPos = new WeakMap<Project, Record<string, XY>>();
+/** 자리가 없는 노드(자동 배치 뒤 지운 노드를 되살린 경우 등)에 자동 배치 자리를 준다. 없으면 모두 (0,0)에 겹친다 */
+function placed(p: Project, positions: Record<string, XY>) {
+  const missing = p.nodes.filter((n) => !positions[n.id]);
+  if (!missing.length) return positions;
+  const fresh = autoLayout(p);
+  return { ...positions, ...Object.fromEntries(missing.map((n) => [n.id, fresh[n.id]])) };
+}
 /** 지금 프로젝트를 되돌리기 기록에 넣는다 (바로 전 편집과 묶이면 넣지 않는다) */
 const remember = (s: State, merge: boolean): Pick<State, 'past' | 'future'> => {
   const now = Date.now();
@@ -86,7 +96,7 @@ export const useStore = create<State>((set, get) => ({
   positions: autoLayout(initial),
   selected: null,
   // 다른 프로젝트를 불러오는 것도 되돌릴 수 있다
-  load: (p, positions, boundary = true) => { if (boundary) loaded.add(p); set((s) => { prevBase.set(p, s.baseline); return { ...remember(s, false), project: p, baseline: p, positions: { ...autoLayout(p), ...positions }, selected: null, focus: undefined }; }); },
+  load: (p, positions, boundary = true) => { if (boundary) loaded.add(p); set((s) => { prevBase.set(p, s.baseline); prevPos.set(p, s.positions); return { ...remember(s, false), project: p, baseline: p, positions: { ...autoLayout(p), ...positions }, selected: null, focus: undefined }; }); },
   edit: (fn) => set((s) => {
     const project = fn(s.project);
     if (project === s.project) return {};
@@ -115,7 +125,9 @@ export const useStore = create<State>((set, get) => ({
     if (!s.past.length) return false;
     lastEdit = 0;
     // 불러온 시점보다 앞으로 돌아가면 설정 비교 기준(baseline)도 불러오기 직전 것으로
-    set({ project: s.past.at(-1)!, past: s.past.slice(0, -1), future: [s.project, ...s.future], baseline: prevBase.get(s.project) ?? s.baseline });
+    const prev = s.past.at(-1)!;
+    if (prevPos.has(s.project)) nextPos.set(s.project, s.positions);
+    set({ project: prev, past: s.past.slice(0, -1), future: [s.project, ...s.future], baseline: prevBase.get(s.project) ?? s.baseline, positions: placed(prev, prevPos.get(s.project) ?? s.positions) });
     return loaded.has(s.project);
   },
   redo: () => {
@@ -123,7 +135,7 @@ export const useStore = create<State>((set, get) => ({
     if (!s.future.length) return false;
     lastEdit = 0;
     const next = s.future[0];
-    set({ project: next, future: s.future.slice(1), past: [...s.past, s.project], ...(prevBase.has(next) && { baseline: next }) });
+    set({ project: next, future: s.future.slice(1), past: [...s.past, s.project], ...(prevBase.has(next) && { baseline: next }), positions: placed(next, nextPos.get(next) ?? s.positions) });
     return loaded.has(next);
   },
 }));

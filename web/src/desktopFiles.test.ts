@@ -58,9 +58,10 @@ describe('데스크톱 앱 폴더 저장 (electron/files.cjs)', () => {
     writeFileSync(f, '{}'); files.allow(f);
     mkdirSync(join(d, '.saves'));
     writeFileSync(join(d, '.saves', '2026-01-01_00-00-00.json'), '{"p":"old"}');
-    expect(files.listSnapshots(f, 'manual').map((x) => x.name)).toEqual(['2026-01-01_00-00-00']);
+    // 예전 공용 폴더는 다른 프로젝트 것일 수 있어 legacy 표시 (복구해도 이 파일에 덮어쓰지 않게, 감사 14)
+    expect(files.listSnapshots(f, 'manual').map((x) => [x.name, (x as { legacy?: boolean }).legacy])).toEqual([['2026-01-01_00-00-00', true]]);
     files.writeSnapshot(f, 'manual', '2026-10-27_00-00-00', '{}', 20);
-    expect(files.listSnapshots(f, 'manual').map((x) => x.name)).toEqual(['2026-10-27_00-00-00']);
+    expect(files.listSnapshots(f, 'manual').map((x) => [x.name, (x as { legacy?: boolean }).legacy])).toEqual([['2026-10-27_00-00-00', undefined]]);
     rmSync(d, { recursive: true, force: true });
   });
 

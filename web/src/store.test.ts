@@ -117,3 +117,28 @@ describe('파일 불러오기에서 화면으로 고칠 수 없는 것을 걸러
     expect(r.dropped).toContain('scale.window_share');
   });
 });
+
+describe('감사 14: 불러오기 경계를 넘는 되돌리기는 노드 위치도 돌려놓음', () => {
+  it('A를 연 뒤 B를 열고 Ctrl+Z → A의 위치, Ctrl+Y → B의 위치', () => {
+    const A = s().project;
+    const posA = { ...s().positions, [A.nodes[0].id]: { x: 777, y: 333 } };
+    s().load(A, posA);
+    const B = { ...A, name: 'B', nodes: A.nodes.map((n) => ({ ...n, id: `b-${n.id}` })), edges: [] };
+    s().load(B, { [B.nodes[0].id]: { x: 5, y: 6 } });
+    s().undo();
+    expect(s().project).toBe(A);
+    expect(s().positions[A.nodes[0].id]).toEqual({ x: 777, y: 333 });
+    s().redo();
+    expect(s().positions[B.nodes[0].id]).toEqual({ x: 5, y: 6 });
+  });
+
+  it('자리가 없는 노드를 되살리면 (0,0)이 아니라 자동 배치 자리', () => {
+    const p = s().project;
+    const id = p.nodes[0].id;
+    s().edit((x) => ({ ...x, nodes: x.nodes.slice(1), edges: x.edges.filter((e) => e.from !== id && e.to !== id) }));
+    s().relayout();
+    expect(s().positions[id]).toBeUndefined();
+    s().undo();
+    expect(s().positions[id]).toBeDefined();
+  });
+});

@@ -7,7 +7,7 @@ import { Canvas, Legend } from './Canvas';
 import { catalog, examples } from './data';
 import { mergeCodeAnalysis } from './codeImport';
 import { addNode, findPlans, pasteNode, run } from './edit';
-import { readAutosaves, saveToFolder, scheduleAutosave, scheduleFolderAutosave, snapshotLabel, startNewSnapshot, writeAutosave, writeManualSave, type Snapshot } from './autosave';
+import { flushAutosave, readAutosaves, saveToFolder, scheduleAutosave, scheduleFolderAutosave, snapshotLabel, startNewSnapshot, writeAutosave, writeManualSave, type Snapshot } from './autosave';
 import { baseName, checkForUpdate, desktop, type UpdateInfo } from './desktop';
 import { UpdatePrompt } from './UpdatePrompt';
 import { SaveHistory } from './SaveHistory';
@@ -153,6 +153,8 @@ export function App() {
     scheduleAutosave(project, positions, fail('브라우저 저장소에'));
     if (filePath) scheduleFolderAutosave(filePath, project, positions, fail('프로젝트 폴더에'));
   }, [project, positions, filePath, recovery]);
+  // 창을 닫을 때 기다리던 자동 저장을 바로 한다 (마지막 편집 뒤 0.8초 안에 닫아도 복구 시점에 남게)
+  useEffect(() => { addEventListener('pagehide', flushAutosave); return () => removeEventListener('pagehide', flushAutosave); }, []);
 
   const hits = find ? searchProject(project, catalog.byId, find.q) : [];
   const go = (h: Hit) => {

@@ -54,3 +54,13 @@ describe('관문: 코드 분석을 불러오면 카탈로그 항목이 매칭됨
     expect(() => mergeCodeAnalysis(Project.parse({ name: 'p', nodes: [] }), { modules: 'x' })).toThrow('코드 분석 JSON');
   });
 });
+
+it('감사 14: 모듈 2000개·연결선 8000개도 금방 불러옴 (순환 검사가 연결선 전체를 매번 훑지 않음)', () => {
+  const n = 2000;
+  const modules = Array.from({ length: n }, (_, i) => ({ id: `m${i}`, file: `m${i}.py`, layer: 'backend', eager: [], lazy: [], privacy_hints: [] }));
+  const edges = Array.from({ length: n * 4 }, (_, k) => ({ from: `m${k % n}`, to: `m${(k % n) + 1 + (k % 7)}` })).filter((e) => Number(e.to.slice(1)) < n);
+  const t = performance.now();
+  const r = mergeCodeAnalysis(Project.parse({ name: 'p', nodes: [] }), { ...analysis, modules, edges, matches: [] });
+  expect(performance.now() - t).toBeLessThan(3000);
+  expect(r.project.nodes.length).toBeGreaterThanOrEqual(n);
+});
