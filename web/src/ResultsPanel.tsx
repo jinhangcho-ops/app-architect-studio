@@ -1,5 +1,7 @@
 import type { Analysis } from '../../engine/analyze';
 import { regionLines } from '../../engine/failure';
+import { SecurityList } from './SecurityPanel';
+const LEVEL_ORDER = { fail: 0, conditional: 1, info: 2 } as const;
 import { PATHS_CUT_TEXT } from '../../engine/latency';
 import { GAP_EFFECT, specAdvice, specGaps } from '../../engine/interfaces';
 import type { Traffic } from '../../engine/traffic';
@@ -162,6 +164,10 @@ ${howMetric(a.storage.personaGb)}`}>
           </>}
           {a.cost.stale.length > 0 && <p className="warn">오래된 가격: {a.cost.stale.join(', ')}</p>}
         </>}
+      </Section>
+
+      <Section title="네트워크·보안 점검" desc="노드·연결선의 공개 범위·암호화·비밀 보관 등. 비어 있는 값은 확인 필요로 알려요.">
+        <SecurityList hits={[...a.security].sort((x, y) => LEVEL_ORDER[x.level] - LEVEL_ORDER[y.level])} empty="걸린 것이 없습니다." />
       </Section>
 
       <Section title="구조 규칙">

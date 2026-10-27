@@ -18,6 +18,7 @@ import { StorageSection, TablesSection } from './TablesPanel';
 import { NodeSummary } from './NodeSummary';
 import { InterfacesSection } from './InterfacesPanel';
 import { NoteView } from './NoteView';
+import { EdgeSecuritySection, NodeSecuritySection } from './SecurityPanel';
 import { pyProfile } from '../../engine/pyCompat';
 
 const itemName = (id: string) => catalog.byId.get(id)?.name ?? id;
@@ -289,6 +290,8 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
         ))}
       </Section>
 
+      <NodeSecuritySection node={n} analysis={analysis} />
+
       <Section title="직접 넣는 값">
         {[...new Set([...Object.keys(n.vars.normal), ...missing])].map((k) => (
           <Row key={k} label={k} hint="평소와 이벤트에 같은 값으로 들어갑니다. 비우면 지웁니다">
@@ -333,6 +336,7 @@ export function EdgePanel({ from, to, analysis }: { from: string; to: string; an
         </Row>
         <NumField label="왕복 지연(ms)" value={e.rtt_ms} onChange={(v) => upd({ rtt_ms: v ?? 0 })} />
       </Section>
+      <EdgeSecuritySection edge={e} analysis={analysis} />
       <InterfacesSection e={e} analysis={analysis} />
       <button className="danger" onClick={() => { edit((p) => removeEdge(p, from, to)); select(null); }}>연결선 삭제</button>
     </div>

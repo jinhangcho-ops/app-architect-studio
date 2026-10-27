@@ -144,6 +144,13 @@ textarea.spec { width: 100%; min-height: 90px; font-family: ui-monospace, monosp
 .r-node-layer { font-size: 10px; fill: var(--muted); } .r-node-name { font-size: 13px; fill: var(--ink); font-weight: 600; }
 .r-src li { word-break: break-all; font-size: 9pt; }
 
+/* 캔버스 망 구역 틀 (인터넷 공개·내부망·사설) */
+.zone { position: relative; width: 100%; height: 100%; border: 1.5px dashed; border-radius: 12px; }
+.zone span { position: absolute; top: 3px; left: 10px; font-size: 11px; color: var(--muted); }
+.z-public { border-color: #ff5a5a88; background: #ff5a5a08; }
+.z-internal { border-color: #f5b30188; background: #f5b30108; }
+.z-private { border-color: #2ec4a688; background: #2ec4a608; }
+
 /* 설계 메모 (설계서·설정 미리보기·노드 패널) */
 .note p { margin: 4px 0; }
 .note-h { margin: 8px 0 4px; }

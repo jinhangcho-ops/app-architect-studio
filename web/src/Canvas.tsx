@@ -6,14 +6,16 @@ import { callSplit } from '../../engine/api';
 import { edgeFlow, readMiss } from '../../engine/load';
 import { LAYER_NAMES, VERDICT_NAMES, type Verdict } from '../../engine/model';
 import type { Project, ProjectNode } from '../../engine/schema';
+import { EXPOSURE_NAMES, hasExposure } from '../../engine/security';
+import { CARD, zoneAt, zoneRects, type ZoneRect } from './zones';
 import { catalog } from './data';
-import { addEdge, removeEdge, removeNode, worstVerdict } from './edit';
+import { addEdge, removeEdge, removeNode, updateNode, worstVerdict } from './edit';
 import { fmt } from './format';
 import { useStore } from './store';
 
 /** 카드 색: 첫 병목(빨강) · 성장하면 한계에 닿는 노드(노랑) · 여유 충분(초록) · 계산 대상 아님(회색) */
 export type Health = 'bad' | 'warn' | 'ok' | 'none';
-type CardData = { node: ProjectNode; verdict?: Verdict; sub: string; meter?: number; health: Health; spof: boolean };
+type CardData = { node: ProjectNode; verdict?: Verdict; sub: string; meter?: number; health: Health; spof: boolean; exposed: boolean };
 
 /** 노드마다 색과 막대(한계까지 쓴 비율). 한계 사용자가 있으면 지금 사용자 ÷ 한계, 없으면 이벤트 피크 사용률 */
 export function healthOf(a: Analysis | undefined, users: number | undefined, nodeId: string): { health: Health; meter?: number; startMonth?: number } {
@@ -28,12 +30,12 @@ export function healthOf(a: Analysis | undefined, users: number | undefined, nod
 }
 
 function Card({ data, selected }: NodeProps<Node<CardData>>) {
-  const { node, verdict, sub, meter, health, spof } = data;
+  const { node, verdict, sub, meter, health, spof, exposed } = data;
   return (
     <div className={`card h-${health} ${selected ? 'sel' : ''}`}>
       <Handle type="target" position={Position.Left} />
       <div className="card-head">
-        <span className="layer">{LAYER_NAMES[node.layer]}</span>
+        <span className="layer">{exposed && <span title="인터넷 공개" aria-label="인터넷 공개">🌐 </span>}{LAYER_NAMES[node.layer]}</span>
         {verdict && <span className="badge" data-tip={VERDICT_NAMES[verdict]}>{VERDICT_NAMES[verdict].split(' ')[0]}</span>}
       </div>
       <div className="card-name">{node.name}</div>
@@ -48,7 +50,12 @@ function Card({ data, selected }: NodeProps<Node<CardData>>) {
   );
 }
 
-const nodeTypes = { card: Card };
+/** 망 구역 틀 (공개 범위가 같은 노드들을 감쌈). 클릭은 뒤 캔버스로 지나간다 */
+function Zone({ data }: NodeProps<Node<{ zone: ZoneRect['zone'] }>>) {
+  return <div className={`zone z-${data.zone}`}><span>{EXPOSURE_NAMES[data.zone]} 구역</span></div>;
+}
+
+const nodeTypes = { card: Card, zone: Zone };
 
 type FlowData = { text?: string; color: string };
 /** 연결선: 글자(RPS 등)는 선 위쪽에 띄워 선·화살표와 겹치지 않게 한다 */
@@ -84,7 +91,7 @@ export function Legend({ project, analysis }: { project: Project; analysis?: Ana
 /** layout: 패널을 접거나 펼 때 바뀌는 값. 바뀌면 넓어진(좁아진) 칸에 다이어그램을 다시 맞춘다 */
 export function Canvas({ analysis, onSelect, layout }: { analysis?: Analysis; onSelect: () => void; layout?: string }) {
   const { project, positions, selected, edit, move, select, setFocus, flyTo, set } = useStore();
-  const flow = useRef<ReactFlowInstance<Node<CardData>> | null>(null);
+  const flow = useRef<ReactFlowInstance<Node> | null>(null);
   // 찾기에서 고른 노드로 화면을 옮긴다
   useEffect(() => {
     if (!flyTo || !flow.current) return;
@@ -102,6 +109,12 @@ export function Canvas({ analysis, onSelect, layout }: { analysis?: Analysis; on
   const users = project.scale?.users;
   // 노드를 끄는 동안(위치만 바뀜)에는 아래 계산을 다시 하지 않는다
   const health = useMemo(() => new Map(project.nodes.map((n) => [n.id, healthOf(analysis, users, n.id)])), [project, analysis, users]);
+  // 보안 ❌가 있는 노드·연결선은 빨갛게 (항목 판정보다 먼저)
+  const secFail = useMemo(() => new Set((analysis?.security ?? []).filter((h) => h.level === 'fail').map((h) => h.node ?? h.edge!.join('->'))), [analysis]);
+  const zones: Node[] = zoneRects(project.nodes, positions).map((r) => ({
+    id: `zone:${r.zone}`, type: 'zone', position: { x: r.x, y: r.y }, data: { zone: r.zone },
+    style: { width: r.w, height: r.h, pointerEvents: 'none' }, draggable: false, selectable: false, deletable: false, focusable: false, zIndex: -1,
+  }));
   const nodes: Node<CardData>[] = project.nodes.map((n) => {
     const na = analysis?.nodes[n.id];
     const h = health.get(n.id)!;
@@ -116,7 +129,7 @@ export function Canvas({ analysis, onSelect, layout }: { analysis?: Analysis; on
       type: 'card',
       position: positions[n.id] ?? { x: 0, y: 0 },
       selected: selected?.kind === 'node' && selected.id === n.id,
-      data: { node: n, verdict: worstVerdict(analysis?.judgements.find((j) => j.nodeId === n.id)), sub, meter: h.meter, health: h.health, spof: !!analysis?.spof.includes(n.id) },
+      data: { node: n, verdict: secFail.has(n.id) ? 'fail' : worstVerdict(analysis?.judgements.find((j) => j.nodeId === n.id)), sub, meter: h.meter, health: h.health, spof: !!analysis?.spof.includes(n.id), exposed: n.security?.exposure === 'public' },
     };
   });
 
@@ -130,7 +143,9 @@ export function Canvas({ analysis, onSelect, layout }: { analysis?: Analysis; on
     const maxRps = Math.max(1, ...flows);
     return project.edges.map((e, i): Edge => {
       const rps = flows[i];
-      const color = !e.sync ? EDGE.async : health.get(e.to)?.health === 'bad' ? EDGE.bad : e.carries === 'read' ? EDGE.read : EDGE.base;
+      // 암호화 없는 인터넷 연결(보안 ❌)은 빨간 짧은 점선
+      const plain = secFail.has(`${e.from}->${e.to}`);
+      const color = plain ? EDGE.bad : !e.sync ? EDGE.async : health.get(e.to)?.health === 'bad' ? EDGE.bad : e.carries === 'read' ? EDGE.read : EDGE.base;
       const label = [!e.sync ? `비동기${rps ? ` ${fmt(rps)} RPS` : ''}` : rps ? `${fmt(rps)} RPS` : '', e.carries === 'write' ? '쓰기' : e.carries === 'read' ? '읽기' : '', edgeCalls(e) !== 1 ? `×${fmt(edgeCalls(e))}` : '', e.interfaces.length ? `명세 ${e.interfaces.length}` : '']
         .filter(Boolean).join(' ');
       return {
@@ -139,19 +154,19 @@ export function Canvas({ analysis, onSelect, layout }: { analysis?: Analysis; on
         target: e.to,
         type: 'flow',
         // 굵기 = 요청량 (1.5~4.5px). 비동기(점선)는 굵기로 양을 나타내지 않는다: 굵은 점선은 읽기 어렵다
-        style: { stroke: color, strokeWidth: e.sync ? 1.5 + (3 * rps) / maxRps : 1.5, ...(e.sync ? {} : { strokeDasharray: '5 4' }) },
+        style: { stroke: color, strokeWidth: e.sync ? 1.5 + (3 * rps) / maxRps : 1.5, ...(plain ? { strokeDasharray: '2 3' } : e.sync ? {} : { strokeDasharray: '5 4' }) },
         data: { text: label || undefined, color: e.sync ? '#93a0b3' : EDGE.async },
         // 화살촉은 선 굵기와 상관없이 같은 크기. 그림이 viewBox 20칸 중 5칸이라 28이면 실제 약 7×11px로, 최대 4.5px 선보다 크다
         markerEnd: { type: MarkerType.ArrowClosed, color, width: 28, height: 28, markerUnits: 'userSpaceOnUse' },
         selected: selected?.kind === 'edge' && selected.from === e.from && selected.to === e.to,
       };
     });
-  }, [project, analysis, selected, health]);
+  }, [project, analysis, selected, health, secFail]);
 
   return (
     <div className="canvas-wrap">
       <ReactFlow
-        nodes={nodes}
+        nodes={[...zones, ...nodes]}
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
@@ -159,7 +174,14 @@ export function Canvas({ analysis, onSelect, layout }: { analysis?: Analysis; on
         fitView
         onInit={(f) => { flow.current = f; }}
         onNodesChange={(changes) => {
-          for (const c of changes) if (c.type === 'position' && c.position) move(c.id, c.position);
+          for (const c of changes) if (c.type === 'position' && c.position && !c.id.startsWith('zone:')) move(c.id, c.position);
+        }}
+        // 노드를 다른 구역 틀 안에 놓으면 그 공개 범위로 (틀 밖에 놓으면 그대로)
+        onNodeDragStop={(_, d) => {
+          const n = project.nodes.find((x) => x.id === d.id);
+          if (!n || !hasExposure(n)) return;
+          const zone = zoneAt(zoneRects(project.nodes, positions, n.id), { x: d.position.x + CARD.w / 2, y: d.position.y + CARD.h / 2 });
+          if (zone && zone !== n.security?.exposure) edit((p) => updateNode(p, n.id, { security: { ...n.security, exposure: zone } }));
         }}
         onNodesDelete={(ns) => edit((p) => ns.reduce((acc, n) => removeNode(acc, n.id), p))}
         onEdgesDelete={(es) => edit((p) => es.reduce((acc, e) => removeEdge(acc, e.source, e.target), p))}

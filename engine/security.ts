@@ -22,6 +22,15 @@ export const SECURITY_FIELD_NAMES: Record<Field, string> = {
   waf: 'WAF', rate_limit: '속도 제한', audit_log: '감사 로그', tenant_isolation: '테넌트 분리',
 };
 
+export const EXPOSURE_NAMES = { public: '인터넷 공개', internal: '내부망만', private: '사설 (같은 서버·구역)' } as const;
+export const SECRET_NAMES = { none: '쓰지 않음', env: '환경 변수·설정 파일', manager: '비밀 관리 서비스' } as const;
+export const TENANT_NAMES = { none: '나누지 않음', app: '앱 코드가 조건을 붙임', rls: 'DB 행 권한 (RLS)' } as const;
+export const EDGE_TLS_NAMES = { none: '암호화 없음', tls: 'TLS (HTTPS)', mtls: 'mTLS (서로 확인)' } as const;
+export const EDGE_NET_NAMES = { local: '같은 서버', internal: '내부망', internet: '인터넷' } as const;
+export const LEVEL_MARK = { fail: '❌', conditional: '⚠️', info: 'ℹ️' } as const;
+/** 공개 범위를 정하는 노드 (사용자 기기·외부 서비스는 우리가 정하지 않음) */
+export const hasExposure = (n: ProjectNode) => n.layer !== 'ui' && n.layer !== 'external';
+
 const STORE: Layer[] = ['db', 'cache', 'queue', 'analytics'];
 // 여러 고객(매장·회사·조직)의 데이터가 한 테이블에 섞이는 표시가 되는 컬럼
 const TENANT_KEY = /^(tenant|store|restaurant|shop|merchant|org|organization|company|account|workspace|team)_id$/;
@@ -31,7 +40,7 @@ const RATE_LIMITERS = new Set(['token_bucket', 'kong']);
 const hasTenantKey = (n: ProjectNode) => n.tables.some((t) => t.columns.some((c) => TENANT_KEY.test(c.name)));
 
 /** 이 노드에서 정해야 하는 보안 칸 (레이어·공개 범위·개인정보·테이블에 따라) */
-function relevant(n: ProjectNode): Field[] {
+export function relevant(n: ProjectNode): Field[] {
   const s = n.security ?? {};
   const personal = !!n.privacy?.personal;
   const fields: Field[] =
