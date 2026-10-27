@@ -1,6 +1,6 @@
 {
   "name": "app-architect-studio",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "레이어별 알고리즘·도구를 연결해 앱 구조를 설계하고, 규모·비용·한계·규정을 계산해 설계서로 내보내는 도구",
   "main": "electron/main.cjs",
   "scripts": {
