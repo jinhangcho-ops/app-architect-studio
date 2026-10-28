@@ -26,7 +26,7 @@ export type CostResult = {
 
 const DAY_MS = 86_400_000;
 const UNIT_NAME: Record<PriceRow['unit'], string> = {
-  hour: '대·시간', month: '대(월 정액)', gb_month: 'GB·월', gb: '송신 GB', gb_interregion: '리전 간 GB',
+  hour: '대·시간', month: '대(월 정액)', gb_month: 'GB·월', gb: '송신 GB', gb_interregion: '리전 간 GB', gb_interzone: '존 간 GB',
   vcpu_second: 'vCPU·초', gb_second: 'GB·초', million_requests: '요청 100만 건', tb_scanned: '스캔 TB',
 };
 
@@ -69,7 +69,7 @@ export function monthlyCost(lines: LineItem[], prices: PriceRow[], today: string
 
   const values = Object.values(parts);
   const total = values.length
-    ? { value: values.reduce((s, m) => s + m.value, 0), unit: values[0].unit, formula: '노드별 과금 + 저장 + 송신 + 리전 간 전송', inputs: Object.fromEntries(Object.entries(parts).map(([k, m]) => [k, m.value])) }
+    ? { value: values.reduce((s, m) => s + m.value, 0), unit: values[0].unit, formula: '노드별 과금 + 저장 + 송신 + 리전 간 전송 + 존 간 전송 + 로그', inputs: Object.fromEntries(Object.entries(parts).map(([k, m]) => [k, m.value])) }
     : undefined;
   return { total, parts, missing: [...new Set(missing)], stale };
 }

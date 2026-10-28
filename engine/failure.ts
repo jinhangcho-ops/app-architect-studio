@@ -43,7 +43,7 @@ export type DataCase = { nodeId: string; rpo: Metric; restore?: Metric };
 export type CacheCase = { cacheId: string; affected: { nodeId: string; rps: { normal: Metric; event: Metric }; util?: { normal: Metric; event: Metric } }[] };
 export type Failure = { zone: ZoneCase[]; regions: RegionCase[]; data: DataCase[]; cache: CacheCase[] };
 
-const isServer = (n: ProjectNode) => n.layer !== 'ui' && n.layer !== 'external' && n.region !== 'local';
+export const isServer = (n: ProjectNode) => n.layer !== 'ui' && n.layer !== 'external' && n.region !== 'local';
 const isData = (n: ProjectNode) => n.layer === 'db' || n.layer === 'analytics';
 
 /** 백업에서 되살리는 시간(초). 백업이 없거나 크기를 모르면 undefined */

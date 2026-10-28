@@ -193,3 +193,19 @@ describe('설계서 노드 카드: 캐시 장애 줄', () => {
     expect(cardOf('C-1')).toContain('캐시 장애:');
   });
 });
+
+describe('설계서: 존 간 전송·로그 비용 줄', () => {
+  it('존 2개·요청당 로그·두 상품을 넣으면 비용 표에 두 줄이 나옴', () => {
+    const p0 = load('phase3.json');
+    const p = {
+      ...p0,
+      cost: { ...p0.cost, transfer_zone: 'transfer-interzone', logs: 'logs-storage' },
+      nodes: p0.nodes.map((n) => (n.id === 'api' || n.id === 'db' ? { ...n, zones: 2, ...(n.id === 'api' ? { observability: { log_kb_per_req: 1 } } : {}) } : n)),
+    };
+    const html = renderToStaticMarkup(
+      <Report project={p} analysis={run(p, today).analysis} positions={autoLayout(p)} today={today} onClose={() => {}} />,
+    ).replace(/<!-- -->/g, '');
+    expect(html).toContain('존 간 전송');
+    expect(html).toContain('로그 저장');
+  });
+});

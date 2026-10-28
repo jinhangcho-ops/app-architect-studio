@@ -498,6 +498,8 @@ export const Project = z.object({
     }).optional(),
     /** 서버를 나눠 둔 가용 영역(존) 수. 없으면 1 (존 하나가 멈추면 이 노드도 멈춤) */
     zones: z.number().int().positive().optional(),
+    /** 서버 노드(ui·external 제외)의 로그: 요청 1건당 로그 KB, 보관 일수(없으면 30). 비용 '로그 저장' 줄(보관 중인 양 GB·월)에 쓴다. 요청당 1MB(1024KB) 초과는 받지 않음 */
+    observability: z.object({ log_kb_per_req: z.number().positive().max(1024).optional(), log_retention_days: z.number().int().positive().optional() }).optional(),
     /** 다른 리전 복사본. active = 두 리전이 같이 받음, standby = 대기 중인 복사본으로 넘김, backup = 다른 리전에 둔 백업에서 되살림.
      *  rto_s: 넘기는 데 걸리는 시간(실측), lag_s: 복제 지연(그만큼 데이터를 잃음), instances: standby가 평소 띄워 두는 대수(없으면 1) */
     dr: z.object({
@@ -564,6 +566,10 @@ export const Project = z.object({
     egress: z.string().optional(),
     /** 리전이 다른 노드 사이 전송 상품 */
     transfer: z.string().optional(),
+    /** 같은 리전에서 가용 영역(존)을 넘는 전송 상품 (단위 gb_interzone) */
+    transfer_zone: z.string().optional(),
+    /** 로그 저장 상품 (단위 gb_month) */
+    logs: z.string().optional(),
   }).default({}),
   /** 10절 최선 조합: 꼭 지킬 조건과 목표 우선순위(앞일수록 중요, 비우면 모든 목표 같은 가중치) */
   optimize: z.object({
@@ -624,8 +630,8 @@ export const PriceRow = z.object({
   /** 리전과 무관한 상품 키 (예: vm-2vcpu). 카탈로그 billing.products와 노드 리전으로 찾는다. 없으면 id */
   product: z.string().optional(),
   /** hour = 대당 시간, month = 대당 월 정액, gb_month = 저장 GB·월, gb = 인터넷 송신 GB, gb_interregion = 리전 간 전송 GB,
-   *  vcpu_second·gb_second = 연산 사용량, million_requests = 요청 100만 건, tb_scanned = 스캔 TB */
-  unit: z.enum(['hour', 'month', 'gb_month', 'gb', 'gb_interregion', 'vcpu_second', 'gb_second', 'million_requests', 'tb_scanned']),
+   *  gb_interzone = 같은 리전의 존 간 전송 GB, vcpu_second·gb_second = 연산 사용량, million_requests = 요청 100만 건, tb_scanned = 스캔 TB */
+  unit: z.enum(['hour', 'month', 'gb_month', 'gb', 'gb_interregion', 'gb_interzone', 'vcpu_second', 'gb_second', 'million_requests', 'tb_scanned']),
   price: z.number().nonnegative(),
   currency: z.string().length(3),
   as_of: z.iso.date(),

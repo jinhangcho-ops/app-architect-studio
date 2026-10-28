@@ -60,3 +60,26 @@ describe('설정 화면: 인증·인가 절', () => {
     el.remove();
   });
 });
+
+describe('설정 화면: 비용 기준 (존 간 전송·로그)', () => {
+  it('존 간 전송 상품을 고르면 cost.transfer_zone, 로그 상품을 고르면 cost.logs에 저장됨', () => {
+    const ex = examples.find((e) => e.name === 'phase3.json')!;
+    const p = parseProject(ex.data, catalog.items, ex.name);
+    useStore.setState({ project: p, past: [], future: [] });
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const root = createRoot(el);
+    flushSync(() => root.render(<ProjectPanel />));
+    const choose = (label: string, option: string) => {
+      const row = [...el.querySelectorAll('label.row')].find((r) => r.querySelector('span')?.firstChild?.textContent === label)!;
+      flushSync(() => (row.querySelector('button') as HTMLButtonElement).click());
+      flushSync(() => ([...document.querySelectorAll('.select-list [role="option"]')].find((o) => o.textContent === option) as HTMLElement).click());
+    };
+    choose('존 간 전송 (GB)', 'transfer-interzone');
+    expect(useStore.getState().project.cost.transfer_zone).toBe('transfer-interzone');
+    choose('로그 저장 (GB·월)', 'logs-storage');
+    expect(useStore.getState().project.cost.logs).toBe('logs-storage');
+    root.unmount();
+    el.remove();
+  });
+});

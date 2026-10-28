@@ -113,8 +113,9 @@ describe('테이블·연결 검증 (감사 2)', () => {
     expect(checkProject(proj({ auth: { method: 'jwt', issuer: 'a' } }), [])).toEqual([]);
   });
 
-  it('형식 버전 9: 버전 1~8 파일(또는 버전 없음)은 그대로 열림', () => {
-    expect(FORMAT_VERSION).toBe(9);
+  it('형식 버전 10: 버전 1~9 파일(또는 버전 없음)은 그대로 열림', () => {
+    expect(FORMAT_VERSION).toBe(10);
+    expect(migrate({ name: 'p', format_version: 9 })).toEqual({ name: 'p' });
     expect(migrate({ name: 'p', format_version: 8 })).toEqual({ name: 'p' });
     expect(migrate({ name: 'p', format_version: 7 })).toEqual({ name: 'p' });
     expect(migrate({ name: 'p', format_version: 6 })).toEqual({ name: 'p' });

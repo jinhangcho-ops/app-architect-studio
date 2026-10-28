@@ -48,6 +48,12 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
     if (net.max_connections === undefined) delete net.max_connections;
     upd({ net: Object.keys(net).length ? net : undefined });
   };
+  const updObs = (patch: Partial<NonNullable<typeof n.observability>>) => {
+    const o = { ...n.observability, ...patch };
+    if (o.log_kb_per_req === undefined) delete o.log_kb_per_req;
+    if (o.log_retention_days === undefined) delete o.log_retention_days;
+    upd({ observability: Object.keys(o).length ? o : undefined });
+  };
   const scenario = analysis?.scenarios[id];
   const fits = catalog.items.filter((i) => i.attaches_to.includes(n.layer));
   const goals = [...new Set(fits.flatMap((i) => Object.keys(i.goals)))].sort();
@@ -195,6 +201,10 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
           {n.batch && <NumField label="실행 창(분)" value={n.batch.window_min} step={5} hint="1회 실행이 이 시간 안에 끝나야 해요. 비우면 주기와 같음" onChange={(v) => upd({ batch: { ...n.batch!, window_min: v && v > 0 ? v : undefined } })} />}
         </>}
         {project.edges.some((e) => e.from === n.id && project.nodes.find((x) => x.id === e.to)?.layer === 'db') && <NumField label="DB 연결 풀(대당)" value={n.db_pool} step={1} hint={`이 노드 1대가 DB에 여는 연결 수. DB 연결 수 = 대수 × 이 값. 비우면 ${DEFAULT_DB_POOL} (HikariCP·node-postgres 기본값)`} onChange={(v) => upd({ db_pool: v && v > 0 ? Math.round(v) : undefined })} />}
+        {n.layer !== 'ui' && n.layer !== 'external' && n.region !== 'local' && <>
+          <NumField label="요청당 로그(KB)" value={n.observability?.log_kb_per_req} hint="요청 1건이 남기는 로그 크기. 보통 0.5~2KB. 비우면 로그 비용을 계산하지 않아요" onChange={(v) => updObs({ log_kb_per_req: v && v > 0 ? v : undefined })} />
+          <NumField label="로그 보관(일)" value={n.observability?.log_retention_days} step={1} hint="비우면 30일" onChange={(v) => updObs({ log_retention_days: v && v > 0 ? Math.round(v) : undefined })} />
+        </>}
         {(() => {
           const b = n.primary ? catalog.byId.get(n.primary)?.billing : undefined;
           const MODEL = { provisioned: '대수 × 시간', usage: '사용량', plan: '월 정액' } as const;

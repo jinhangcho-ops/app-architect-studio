@@ -7,12 +7,15 @@
 //   복사본 리전으로 가는 복제 = 하루 쓰는 행(새 행 + 갱신) × 행 크기 × 730/24일을 리전 간 전송으로 센다.
 // shortcut: 복제 1건을 행 크기로 본다 (WAL·binlog의 머리말·인덱스 변경은 빠짐). 실제 복제량을 재면 그 값으로 바꾼다
 // 저장(GB·월), 인터넷 송신(GB), 리전이 다른 노드 사이 전송(GB)은 프로젝트 단위로 더한다.
+// 같은 리전 서버 노드 사이 연결선은 큰 존 수 z가 2 이상이면 전송량 × (1 − 1/z)를 존 간 전송(GB)으로,
+// 로그는 서버 노드마다 보관 중인 양 = 하루 로그 GB(월 요청 × 요청당 KB ÷ 730/24일) × 보관 일수(없으면 30)를 GB·월로 센다.
 import type { LineItem } from './cost';
 import { DAYS_PER_MONTH } from './model';
 import { callSplit } from './api';
 import { interfaceRates, requestBytes, responseBytes } from './interfaces';
 import { edgeFlow, readMiss, type NodeLoad } from './load';
 import type { TableAnalysis } from './tables';
+import { isServer } from './failure';
 import { nodeRegion, type CatalogItem, type Project, type ProjectNode } from './schema';
 import type { Traffic } from './traffic';
 
@@ -107,27 +110,53 @@ export function costLines(
     }
   } else if (t && p.cost.storage) lines.push({ key: '저장', product: p.cost.storage, region: p.cost.region, quantities: { gb_month: t.storageGbWithOverhead.value * factor }, how: { gb_month: '보관 기간 저장량(여유분 포함)' } });
   if (t && p.cost.egress) lines.push({ key: '송신', product: p.cost.egress, region: p.cost.region, quantities: { gb: t.egressGbPerDay.value * DAYS_PER_MONTH * factor }, how: { gb: '하루 송신 × 730/24' } });
+  const byId = new Map(p.nodes.map((n) => [n.id, n]));
+  // 연결선 한 달 전송량(GB): 리전 간·존 간 전송이 같이 쓴다
+  const edgeGbPerMonth = (e: Project['edges'][number]) => {
+    // 연결선이 나르는 몫(호출 비율 포함): load.ts의 전파 규칙(edgeFlow)을 그대로 쓴다
+    const l = loads?.get(e.from);
+    const carried = l?.rps.normal ? edgeFlow(e, l, callSplit(p, byId.get(e.from)!), 'normal', readMiss(p, e)).rps / l.rps.normal : 0;
+    // 인터페이스 명세가 있으면 인터페이스마다 월 호출 × (요청 + 응답 크기), 없으면 사용자 응답 평균 크기로 어림한다
+    const spec = e.interfaces.length > 0 && l && l.rps.normal > 0;
+    const gb = spec
+      ? interfaceRates(e, l, 'normal', readMiss(p, e)).reduce((s, x) => s + requestsPerMonth(byId.get(e.from)!) * (x.rps / l.rps.normal) * (requestBytes(x.i) + responseBytes(x.i)), 0) / 1e9
+      : requestsPerMonth(byId.get(e.from)!) * carried * gbPerRequest;
+    return { gb, how: spec ? `${e.from}→${e.to} Σ 인터페이스 월 호출 × (요청 + 응답 크기)` : `${e.from}→${e.to} 월 요청 × 호출 비율 × 요청당 응답 GB` };
+  };
   if (t && p.cost.transfer) {
-    const byId = new Map(p.nodes.map((n) => [n.id, n]));
     for (const e of p.edges) {
       const a = regionOf(byId.get(e.from)!), b = regionOf(byId.get(e.to)!);
       if (!a || !b || a === b) continue;
-      // 연결선이 나르는 몫(호출 비율 포함): load.ts의 전파 규칙(edgeFlow)을 그대로 쓴다
-      const l = loads?.get(e.from);
-      const carried = l?.rps.normal ? edgeFlow(e, l, callSplit(p, byId.get(e.from)!), 'normal', readMiss(p, e)).rps / l.rps.normal : 0;
-      // 인터페이스 명세가 있으면 인터페이스마다 월 호출 × (요청 + 응답 크기), 없으면 사용자 응답 평균 크기로 어림한다
-      const spec = e.interfaces.length > 0 && l && l.rps.normal > 0;
-      const gb = spec
-        ? interfaceRates(e, l, 'normal', readMiss(p, e)).reduce((s, x) => s + requestsPerMonth(byId.get(e.from)!) * (x.rps / l.rps.normal) * (requestBytes(x.i) + responseBytes(x.i)), 0) / 1e9
-        : requestsPerMonth(byId.get(e.from)!) * carried * gbPerRequest;
-      lines.push({ key: '리전 간 전송', product: p.cost.transfer, region: a, quantities: { gb_interregion: gb },
-        how: { gb_interregion: spec ? `${e.from}→${e.to} Σ 인터페이스 월 호출 × (요청 + 응답 크기)` : `${e.from}→${e.to} 월 요청 × 호출 비율 × 요청당 응답 GB` } });
+      const { gb, how } = edgeGbPerMonth(e);
+      lines.push({ key: '리전 간 전송', product: p.cost.transfer, region: a, quantities: { gb_interregion: gb }, how: { gb_interregion: how } });
     }
     for (const n of p.nodes.filter((x) => (x.layer === 'db' || x.layer === 'analytics') && x.dr && x.dr.mode !== 'backup' && x.region !== 'local')) {
       const mine = tables.filter((x) => x.nodeId === n.id);
       if (!mine.length) { missing.push(`${n.name}: 테이블이 없어 리전 복제량을 모름`); continue; }
       const gb = mine.reduce((s, x) => s + x.writtenRowsPerDay * x.rowBytes.value, 0) * DAYS_PER_MONTH / 1e9;
       lines.push({ key: '리전 간 전송', product: p.cost.transfer, region: regionOf(n), quantities: { gb_interregion: gb }, how: { gb_interregion: `${n.id}→${n.dr!.region} 복제: 하루 쓰는 행 × 행 크기 × 730/24` } });
+    }
+  }
+  if (t && p.cost.transfer_zone) {
+    for (const e of p.edges) {
+      const f = byId.get(e.from)!, to = byId.get(e.to)!, a = regionOf(f);
+      if (!isServer(f) || !isServer(to) || !a || a !== regionOf(to)) continue;
+      // 리전 단위 관리형 서비스(SQS·DynamoDB)는 AZ 간 요금이 없고, 다른 업체(Neon·Turso)는 다른 청구서라 직접 운영(provisioned)끼리만 센다
+      if (![f, to].every((x) => catalog.get(x.primary ?? '')?.billing?.model === 'provisioned')) continue;
+      const z = Math.max(f.zones ?? 1, to.zones ?? 1);
+      if (z < 2) continue;
+      // shortcut: 두 노드가 같은 존들에 고르게 퍼져 있고 호출이 무작위로 간다고 봄, 존 친화 라우팅(zone-aware)을 받게 되면 그 값으로
+      const { gb, how } = edgeGbPerMonth(e);
+      lines.push({ key: '존 간 전송', product: p.cost.transfer_zone, region: a, quantities: { gb_interzone: gb * (1 - 1 / z) }, how: { gb_interzone: `${how} × (1 − 1/존 ${z}개)` } });
+    }
+  }
+  if (t && p.cost.logs) {
+    for (const n of p.nodes.filter((x) => isServer(x) && x.observability?.log_kb_per_req)) {
+      const o = n.observability!, days = o.log_retention_days ?? 30;
+      // 보관 중인 양 = 하루 로그 GB × 보관 일수
+      // shortcut: 성장 중엔 보관일 전체를 지금 요청량으로 봄(월 10% 성장이면 약 60% 과대), 성장 타임라인 정밀도가 필요하면 과거 달 합으로
+      const gb = (requestsPerMonth(n) * o.log_kb_per_req! / 1e6 / DAYS_PER_MONTH) * days;
+      lines.push({ key: '로그 저장', product: p.cost.logs, region: regionOf(n), quantities: { gb_month: gb }, how: { gb_month: `${n.id} 하루 요청 × 요청당 로그 KB × 보관 ${days}일` } });
     }
   }
   return { lines, missing };

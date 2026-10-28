@@ -100,3 +100,30 @@ describe('노드 패널 자동 확장', () => {
     expect(draw('db')).not.toContain('대당 대역폭 한도');
   });
 });
+
+describe('노드 패널 요청당 로그', () => {
+  it('서버 노드에만 요청당 로그(KB) 칸이 있고, 값을 넣으면 observability에 저장·비우면 사라짐', () => {
+    const ex = examples.find((e) => e.name === 'phase3.json')!;
+    useStore.setState({ project: parseProject(ex.data, catalog.items, ex.name), past: [], future: [] });
+    const draw = (id: string) => {
+      const el = document.createElement('div');
+      document.body.append(el);
+      const root = createRoot(el);
+      flushSync(() => root.render(<NodePanel id={id} />));
+      return { el, done: () => { root.unmount(); el.remove(); } };
+    };
+    const ui = useStore.getState().project.nodes.find((n) => n.layer === 'ui')!;
+    const u = draw(ui.id);
+    expect(u.el.innerHTML).not.toContain('요청당 로그(KB)');
+    u.done();
+    const { el, done } = draw('api');
+    expect(el.innerHTML).toContain('요청당 로그(KB)');
+    const inp = [...el.querySelectorAll('label.row')].find((r) => r.querySelector('span')?.firstChild?.textContent === '요청당 로그(KB)')!.querySelector('input') as HTMLInputElement;
+    const type = (v: string) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(inp, v); flushSync(() => inp.dispatchEvent(new Event('input', { bubbles: true }))); };
+    type('1.5');
+    expect(useStore.getState().project.nodes.find((n) => n.id === 'api')!.observability?.log_kb_per_req).toBe(1.5);
+    type('0');
+    expect(useStore.getState().project.nodes.find((n) => n.id === 'api')!.observability).toBeUndefined();
+    done();
+  });
+});

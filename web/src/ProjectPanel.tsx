@@ -186,7 +186,7 @@ export function ProjectPanel() {
             {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
           </Select>
         </Row>
-        {([['저장 (GB·월)', 'storage', 'gb_month'], ['인터넷 송신 (GB)', 'egress', 'gb'], ['리전 간 전송 (GB)', 'transfer', 'gb_interregion']] as const).map(([label, key, unit]) => (
+        {([['저장 (GB·월)', 'storage', 'gb_month'], ['인터넷 송신 (GB)', 'egress', 'gb'], ['리전 간 전송 (GB)', 'transfer', 'gb_interregion'], ['존 간 전송 (GB)', 'transfer_zone', 'gb_interzone'], ['로그 저장 (GB·월)', 'logs', 'gb_month']] as const).map(([label, key, unit]) => (
           <Row key={key} label={label}>
             <Select value={p.cost[key] ?? ''} onChange={(e) => set({ cost: { ...p.cost, [key]: e.target.value || undefined } })}>
               <option value="">(계산 안 함)</option>
