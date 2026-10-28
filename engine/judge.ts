@@ -103,7 +103,7 @@ function issues(s: Scenario, recovery: boolean): { verdict: Verdict; reasons: st
   return verdict && { verdict, reasons: [...new Set(reasons)] };
 }
 
-/** 장애 목표(recovery)를 넣었을 때만: 존·리전 장애에 멈춤(화면이 멈추면 안 됨, 반영만 늦으면 조건부), 존 장애 직후 넘침(조건부: 자동 확장이 채움),
+/** 장애 목표(recovery)를 넣었을 때만: 존·리전 장애에 멈춤(화면이 멈추면 안 됨, 반영만 늦으면 조건부), 존 장애 직후 넘침(조건부: 자동 확장이 채움), 캐시 장애로 넘침(조건부),
  *  복구 시간·잃는 데이터가 목표를 넘음(안 됨). 부하와 무관한 문제라 한계 사용자 찾기(nodeIssues)에는 넣지 않는다 */
 function recoveryIssues(s: Scenario, hit: (v: Verdict, why: string) => void) {
   const x = s.normal, survive = x.survive;
@@ -116,6 +116,11 @@ function recoveryIssues(s: Scenario, hit: (v: Verdict, why: string) => void) {
       const over = nu !== undefined && nu > 1 ? ['평소 피크', nu] as const : eu !== undefined && eu > 1 ? ['이벤트 피크', eu] as const : undefined;
       if (over) hit('conditional', `${over[0]}에 존 하나가 멈추면 남은 서버 사용률이 ${Number.isFinite(over[1]) ? `${Math.round(over[1] * 100)}%` : '끝없음'} — 자동 확장이 남은 존에 대수를 채울 때까지 요청이 밀립니다`);
     }
+  }
+  {
+    const nu = num(x.cache_util), eu = num(s.event.cache_util);
+    const over = nu !== undefined && nu > 1 ? [x.cache_name, nu] as const : eu !== undefined && eu > 1 ? [s.event.cache_name, eu] as const : undefined;
+    if (over) hit('conditional', `${show(over[0]!)}가 멈추면 캐시가 줄여 주던 읽기가 이 노드로 와 사용률 ${Number.isFinite(over[1]) ? `${Math.round(over[1] * 100)}%` : '끝없음'} — 캐시를 이중화(존 2개 이상·복제)하거나 DB에 읽기 복제본·여유 대수를 두세요`);
   }
   if (survive === 'region' && x.region_down === true) hit(x.node_stops ? 'fail' : 'conditional', `리전이 멈추면 다른 리전 복사본이 없어 이 노드가 멈추고 ${effect}`);
   if (survive === 'region' && x.region_down !== true) {

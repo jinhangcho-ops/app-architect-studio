@@ -1,9 +1,9 @@
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { analyze } from '../analyze';
-import { PITR_RPO_S } from '../failure';
+import { failureLines, PITR_RPO_S } from '../failure';
 import { loadCatalog, loadLaws, loadPrices, loadProject } from '../io';
-import type { Project } from '../schema';
+import { NodeSchema, type Project } from '../schema';
 
 const root = (p: string) => fileURLToPath(new URL(`../../${p}`, import.meta.url));
 const catalog = loadCatalog(root('data/catalog'));
@@ -78,6 +78,90 @@ describe('백업·RPO', () => {
     const r = slow.failure!.data.find((x) => x.nodeId === 'N-06')!.restore!;
     expect(r.value).toBeCloseTo(600 + r.inputs['데이터GB'] * 1024);
     expect(primaryOf(slow, 'N-06').reasons.join()).toContain('백업에서 되살리는 데');
+  });
+});
+
+describe('캐시 장애', () => {
+  // from이 캐시(적중률 0.8)도 부르면 cache-aside: N-03은 DB(N-06)를 부르므로 DB 읽기가 줄고, N-09는 DB를 안 불러 줄이는 것이 없다
+  const withCache = (p: Project, from = 'N-03', hit = 0.8): Project => ({
+    ...p,
+    nodes: [...p.nodes, NodeSchema.parse({ id: 'C-1', name: '캐시', layer: 'cache', primary: 'redis_cache', hit_ratio: hit })],
+    edges: [...p.edges, { from, to: 'C-1', carries: 'read', callRatio: 1, sync: true, rtt_ms: 0, interfaces: [] }],
+  });
+  const nameOf = (id: string) => withCache(base).nodes.find((n) => n.id === id)!.name;
+  // 쓰기 연결선이 없고 대수대로 늘어나는 DB(cockroachdb): 캐시 없을 때 읽기만 늘어나 사용률을 넘기고 다른 이유는 없다
+  const readOnlyDb = (q: Project, hit: number): Project => {
+    const p0 = withCache(q, 'N-03', hit);
+    return node({ ...p0, edges: p0.edges.filter((e) => !(e.from === 'N-05' && e.to === 'N-06')).map((e) => (e.to === 'N-06' ? { ...e, carries: 'read' as const } : e)) }, 'N-06', { primary: 'cockroachdb', extras: [] });
+  };
+  const MULT = 10;
+
+  it('캐시가 멈추면 DB 부하 = 지금 읽기 / (1 − 적중률) + 쓰기', () => {
+    const a = run(withCache(base)), c = a.failure!.cache;
+    expect(c.map((x) => x.cacheId)).toEqual(['C-1']);
+    expect(c[0].affected.map((x) => x.nodeId)).toEqual(['N-06']);
+    const now = a.nodes['N-06'].load!, x = c[0].affected[0];
+    for (const s of ['normal', 'event'] as const) {
+      const without = (now.rps[s] - now.writeRps[s]) / 0.2 + now.writeRps[s];
+      expect(x.rps[s].value).toBeCloseTo(without);
+    }
+    expect(x.util!.event.formula).toBe('max(쓰기 / 대당 처리량, 읽기 / (복제본 수 × 대당 처리량)), 대수 그대로');
+  });
+
+  it('장애 목표가 있고 캐시 없을 때 사용률 > 100%면 조건부, 목표가 없으면 줄은 나오되 판정 그대로', () => {
+    // 적중률 0.99: 캐시가 멈추면 DB 읽기가 100배. 배수는 캐시 없을 때만 100%를 넘고 다른 이유는 없는 값
+    const p = readOnlyDb({ ...base, scale: { ...base.scale!, users: base.scale!.users * MULT } }, 0.99);
+    const a = run(p);
+    expect(a.failure!.cache[0].affected[0].util!.event.value).toBeGreaterThan(1);
+    const j = primaryOf(a, 'N-06');
+    expect(j.verdict).toBe('conditional');
+    expect(j.reasons.join()).toContain('캐시가 멈추면 캐시가 줄여 주던 읽기가 이 노드로 와 사용률');
+    const none = run({ ...p, recovery: undefined });
+    expect(none.failure!.cache[0].affected[0].nodeId).toBe('N-06');
+    expect(primaryOf(none, 'N-06').reasons.join()).not.toContain('줄여 주던 읽기가');
+  });
+
+  it('지금 부하가 0이어도(쓰기 없는 DB·적중률 1) 사용률은 유한: 캐시 없을 때 부하 / (대수 × 대당 처리량)', () => {
+    const a = run(readOnlyDb(base, 1)), x = a.failure!.cache[0].affected[0], na = a.nodes['N-06'];
+    for (const s of ['normal', 'event'] as const) {
+      expect(x.rps[s].inputs['지금부하']).toBe(0);
+      expect(Number.isFinite(x.util![s].value)).toBe(true);
+      expect(x.util![s].value).toBeCloseTo(x.rps[s].value / (na.instances![s].value * na.perInstanceRps!.value));
+    }
+  });
+
+  it('주 서버 1대 DB(읽기 복제본 있음)는 max(쓰기 / 대당, 읽기 / ((대수 − 1) × 대당))', () => {
+    const a = run(withCache(base)), x = a.failure!.cache[0].affected[0], na = a.nodes['N-06'], now = na.load!;
+    for (const s of ['normal', 'event'] as const) {
+      const N = na.instances![s].value, per = na.perInstanceRps!.value, w = now.writeRps[s], L = x.rps[s].value;
+      expect(N).toBeGreaterThan(1);
+      expect(x.util![s].value).toBeCloseTo(Math.max(w / per, (L - w) / ((N - 1) * per)));
+    }
+  });
+
+  it('읽기 복제본 없는 주 서버 1대 DB(대기 서버 2대)는 대수와 상관없이 캐시 없을 때 부하 / 대당 처리량', () => {
+    const p0 = withCache(base);
+    const a = run(node(p0, 'N-06', { extras: p0.nodes.find((n) => n.id === 'N-06')!.extras.filter((e) => e !== 'read_replica') }));
+    const x = a.failure!.cache[0].affected[0], na = a.nodes['N-06'];
+    for (const s of ['normal', 'event'] as const) {
+      expect(na.instances![s].value).toBeGreaterThan(1);
+      expect(x.util![s].value).toBeCloseTo(x.rps[s].value / na.perInstanceRps!.value);
+    }
+  });
+
+  it('DB 읽기를 줄이지 않는 캐시는 시나리오가 없음', () => {
+    expect(run(withCache(base, 'N-09')).failure!.cache).toEqual([]);
+    expect(run(base).failure!.cache).toEqual([]);
+  });
+
+  it('줄 꼴: 캐시 — 캐시 장애: 노드 부하 지금 → 캐시 없을 때 RPS, 사용률 평소 / 이벤트. id면 그 캐시·영향 노드만', () => {
+    const a = run(withCache(base)), f = a.failure!, x = f.cache[0].affected[0];
+    const lines = failureLines(f, nameOf).filter((l) => l.includes('캐시 장애'));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(new RegExp(`^캐시 — 캐시 장애: 정산·원장 DB \\(N-06\\) 부하 [\\d,.]+ → [\\d,.]+ RPS, 사용률 ${Math.round(x.util!.normal.value * 100)}% / ${Math.round(x.util!.event.value * 100)}%$`));
+    expect(failureLines(f, nameOf, 'C-1').some((l) => l.includes('캐시 장애'))).toBe(true);
+    expect(failureLines(f, nameOf, 'N-06').some((l) => l.includes('캐시 장애'))).toBe(true);
+    expect(failureLines(f, nameOf, 'N-03').some((l) => l.includes('캐시 장애'))).toBe(false);
   });
 });
 

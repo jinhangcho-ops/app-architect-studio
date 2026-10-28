@@ -160,7 +160,7 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
         <NumField label="1대 가용성" value={n.availability} step={0.0001} hint="비우면 프로젝트 기본값" onChange={(v) => upd({ availability: v })} />
         <NumField label="평균 처리(ms)" value={n.perf?.service_ms} onChange={(v) => upd({ perf: v ? { workers: n.perf?.workers ?? 8, ...n.perf, service_ms: v } : undefined })} />
         <NumField label="대당 동시 처리" value={n.perf?.workers} step={1} onChange={(v) => n.perf && upd({ perf: { ...n.perf, workers: v ?? 1 } })} />
-        {n.layer === 'cache' && <NumField label="캐시 적중률" value={n.hit_ratio} step={0.05} hint={`읽기 중 캐시에서 끝나는 몫. 이 캐시를 부르는 노드가 DB로 보내는 읽기가 (1 − 적중률)로 줄어요. 비우면 ${DEFAULT_HIT_RATIO} (예시값) — 실측 적중률로 바꾸세요`} onChange={(v) => upd({ hit_ratio: v === undefined ? undefined : Math.min(1, Math.max(0, v)) })} />}
+        {n.layer === 'cache' && <NumField label="캐시 적중률" value={n.hit_ratio} step={0.05} hint={`읽기 중 캐시에서 끝나는 몫. 이 캐시를 부르는 노드가 DB로 보내는 읽기가 (1 − 적중률)로 줄어요. 비우면 ${DEFAULT_HIT_RATIO} (예시값) — 실측 적중률로 바꾸세요. 캐시가 멈추면 줄여 주던 읽기가 DB로 다시 가는 장애 시나리오도 이 값으로 계산해요`} onChange={(v) => upd({ hit_ratio: v === undefined ? undefined : Math.min(1, Math.max(0, v)) })} />}
         {n.layer === 'queue' && <>
           <NumField label="파티션 수" value={n.partitions} step={1} hint="Kafka·Redpanda처럼 파티션으로 나누는 큐: 소비자 병렬 수가 이 수를 넘지 못해요. 비우면 제한 없음" onChange={(v) => upd({ partitions: v && v > 0 ? Math.round(v) : undefined })} />
           <NumField label="허용 지연(초)" value={n.max_lag_s} step={10} hint={`메시지가 들어와 처리될 때까지 허용하는 시간. 넘으면 평소엔 안 됨, 이벤트 때만이면 조건부. 비우면 ${DEFAULT_MAX_LAG_S}초 (예시값)`} onChange={(v) => upd({ max_lag_s: v && v > 0 ? v : undefined })} />

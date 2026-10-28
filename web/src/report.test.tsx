@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { parseProject } from '../../engine/data';
+import { NodeSchema } from '../../engine/schema';
 import { catalog, examples } from './data';
 import { findPlans, run } from './edit';
 import { autoLayout } from './layout';
@@ -121,5 +122,23 @@ describe('설계서 노드 카드: 자동 확장 줄', () => {
     const p = { ...p0, nodes: p0.nodes.map((n) => (n.id === 'api' ? { ...n, autoscale: {} } : n)) };
     const calc = nodeCard(p, run(p, today).analysis!, catalog.byId, 'api').rows.find((r) => r.label === '📊 계산 결과')!.lines;
     expect(calc.find((l) => l.startsWith('자동 확장 평소'))).toMatch(/^자동 확장 평소 \d+~\d+대, 넘침 [\d.]+분\(최대 사용률 \d+%\) \/ 이벤트 \d+~\d+대, 넘침 [\d.]+분\(최대 사용률 \d+%\)/);
+  });
+});
+
+describe('설계서 노드 카드: 캐시 장애 줄', () => {
+  it('영향 받는 DB 카드와 캐시 카드 둘 다 "캐시 장애:" 줄이 나옴', () => {
+    const g = load('global-commerce.json');
+    const p = {
+      ...g,
+      nodes: [...g.nodes, NodeSchema.parse({ id: 'C-1', name: '캐시', layer: 'cache', primary: 'redis_cache', hit_ratio: 0.8 })],
+      edges: [...g.edges, { from: 'N-03', to: 'C-1', carries: 'read' as const, callRatio: 1, sync: true, rtt_ms: 0, interfaces: [] }],
+    };
+    const html = renderToStaticMarkup(
+      <Report project={p} analysis={run(p, today).analysis} positions={autoLayout(p)} plans={findPlans(p, today).result} today={today} onClose={() => {}} />,
+    );
+    const cards = html.split('<div class="r-card-head">').slice(1);
+    const cardOf = (id: string) => cards.find((c) => c.startsWith(`<b>[${id}]`))!;
+    expect(cardOf('N-06')).toContain('캐시 장애:');
+    expect(cardOf('C-1')).toContain('캐시 장애:');
   });
 });

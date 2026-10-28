@@ -49,3 +49,6 @@ export const VERDICT_NAMES: Record<Verdict, string> = {
   fail: '❌ 안 됨',
   unknown: '❔ 판단 불가',
 };
+
+/** 화면 밖(명령줄·장애 줄)에 쓰는 숫자 글자: 100 이상은 정수에 천 단위 쉼표, 작은 값은 소수 둘째 자리, 끝없으면 ∞ */
+export const fmt = (v: number) => (!Number.isFinite(v) ? '∞' : v >= 100 ? Math.round(v).toLocaleString('ko-KR') : String(Math.round(v * 100) / 100));

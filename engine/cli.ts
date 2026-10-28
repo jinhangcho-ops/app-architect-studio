@@ -4,7 +4,7 @@ import { hasExposure, LEVEL_MARK, stride } from './security';
 import { analyze } from './analyze';
 import { PATHS_CUT_TEXT } from './latency';
 import { loadCatalog, loadLaws, loadPrices, loadProject } from './io';
-import { VERDICT_NAMES, type Metric } from './model';
+import { fmt, VERDICT_NAMES, type Metric } from './model';
 import { failureLines } from './failure';
 import { GAP_EFFECT, recordBytes, specAdvice, specGaps } from './interfaces';
 import { chapterTitle, type Interface } from './schema';
@@ -21,7 +21,6 @@ if (!projectPath) {
   process.exit(2);
 }
 
-const fmt = (v: number) => (!Number.isFinite(v) ? '∞' : v >= 100 ? Math.round(v).toLocaleString('ko-KR') : String(Math.round(v * 100) / 100));
 const KIND: Record<Interface['kind'], string> = { rest: 'REST', grpc: 'gRPC', message: '메시지', file: '파일·전문' };
 /** 인터페이스 방식. 파일·전문은 장 형식과 레코드 길이(가변장은 어림)까지 */
 const way = (i: Interface) => {

@@ -3,11 +3,13 @@
 //     남은 서버의 사용률 = 지금 사용률 × N / 남은 대수. 주 서버 1대 DB는 다른 존의 대기 서버로 넘긴다.
 // 리전: 그 리전의 노드는 다른 리전 복사본(dr)이 없으면 리전이 돌아올 때까지 멈춘다. 복사본이 있으면 방식에 따라 넘기는 시간(RTO)과 복제 지연만큼 잃는 데이터(RPO).
 // 백업: RPO = 백업 주기(시점 복구면 로그 보관 간격), RTO = 새 서버 준비 + 데이터 크기 / 되살리는 속도.
+// 캐시: 캐시 노드가 멈추면 cache-aside 읽기가 모두 DB로 간다. 적중률을 0으로 두고 부하를 다시 계산해 늘어나는 노드의 사용률 = 캐시 없을 때 부하 / (대수 × 대당 처리량) (주 서버 1대 DB는 max(쓰기, 읽기 / 복제본 수)).
 //     넘긴 직후 복사본의 사용률: active는 같은 대수가 떠 있어 그대로, standby는 지금 사용률 × 대수 / 대기 대수 (대기 복사본이 대수를 늘리기 전).
 // shortcut: 존·리전 장애 직후(자동 확장이 대수를 다시 채우기 전)의 사용률만 본다. active도 한쪽이 전부 받는 크기로 두 리전에 띄운다고 본다 (평소 나눠 받아 절반만 쓰는 것은 세지 않음)
 import { impactOf, standingInstances } from './availability';
 import type { Vars } from './expr';
-import { metric as m, type Metric } from './model';
+import type { NodeLoad } from './load';
+import { fmt, metric as m, type Metric } from './model';
 import { secs } from './pipeline';
 import { nodeRegion, type Project, type ProjectNode } from './schema';
 
@@ -24,8 +26,8 @@ export const PITR_RPO_S = 300;
 export const RESTORE_MB_S = 100;
 export const PROVISION_S = 600;
 
-/** analyze가 넘기는 노드 정보: 계산된 대수·사용률, 최대 대수, 주 서버 1대 DB인지, 저장 데이터 크기 */
-export type NodeInfo = { N?: { normal: number; event: number }; util?: { normal: number; event: number }; max?: number; singlePrimary: boolean; dataGb?: number };
+/** analyze가 넘기는 노드 정보: 계산된 대수·사용률, 최대 대수, 주 서버 1대 DB인지, 저장 데이터 크기, 지금 부하 */
+export type NodeInfo = { N?: { normal: number; event: number }; util?: { normal: number; event: number }; max?: number; singlePrimary: boolean; dataGb?: number; rps?: { normal: number; event: number }; per?: number; readReplicas?: boolean; writeRps?: { normal: number; event: number } };
 
 /** 장애 때 떠 있는 서버 수: 계산된 대수와 늘 떠 있는 대수 중 큰 것, 최대 대수 이하 (용량 계산과 같은 대수) */
 const serversOf = (n: ProjectNode, x: NodeInfo, s: 'normal' | 'event') => Math.max(x.N?.[s] ?? 0, standingInstances(n, x.max));
@@ -37,7 +39,9 @@ export type RegionCase = {
   util: Record<string, { normal: Metric; event: Metric }>;
 };
 export type DataCase = { nodeId: string; rpo: Metric; restore?: Metric };
-export type Failure = { zone: ZoneCase[]; regions: RegionCase[]; data: DataCase[] };
+/** 캐시 노드 전부 멈춤: 적중률을 0으로 두고 다시 계산하면 부하가 늘어나는 노드(보통 DB) */
+export type CacheCase = { cacheId: string; affected: { nodeId: string; rps: { normal: Metric; event: Metric }; util?: { normal: Metric; event: Metric } }[] };
+export type Failure = { zone: ZoneCase[]; regions: RegionCase[]; data: DataCase[]; cache: CacheCase[] };
 
 const isServer = (n: ProjectNode) => n.layer !== 'ui' && n.layer !== 'external' && n.region !== 'local';
 const isData = (n: ProjectNode) => n.layer === 'db' || n.layer === 'analytics';
@@ -52,7 +56,8 @@ const rpoS = (n: ProjectNode) => Math.min(
   n.dr && n.dr.mode !== 'backup' ? n.dr.lag_s ?? DR_LAG_S : Infinity,
 );
 
-export function failureScenarios(p: Project, info: (n: ProjectNode) => NodeInfo): Failure {
+/** loadsWithout(캐시 id): 그 캐시의 적중률을 0으로 둔 부하. 부하를 계산하지 않으면 undefined (캐시 장애를 만들지 않음) */
+export function failureScenarios(p: Project, info: (n: ProjectNode) => NodeInfo, loadsWithout: (cacheId: string) => Map<string, NodeLoad> | undefined): Failure {
   const servers = p.nodes.filter(isServer);
   const zone = servers.map((n): ZoneCase => {
     const x = info(n), zones = n.zones ?? 1;
@@ -105,7 +110,26 @@ export function failureScenarios(p: Project, info: (n: ProjectNode) => NodeInfo)
       ...(r !== undefined && { restore: m(r, '초', '새 서버 준비 + 데이터 크기 / 되살리는 속도', { 준비초: PROVISION_S, 데이터GB: gb!, 'MB/초': n.backup!.restore_mb_s ?? RESTORE_MB_S }) }),
     };
   });
-  return { zone, regions, data };
+  // shortcut: 대수는 그대로 둠(캐시 장애 때 복제본을 늘리지 않음), 캐시 장애 때 자동 확장이 대수를 늘리는 것까지 세게 되면 sizeAt으로
+  const cache = servers.filter((c) => c.layer === 'cache').flatMap((c): CacheCase[] => {
+    const without = loadsWithout(c.id);
+    if (!without) return [];
+    const affected = p.nodes.flatMap((n) => {
+      const x = info(n), now = x.rps, w = without.get(n.id)?.rps;
+      if (!now || !w || (w.normal <= now.normal && w.event <= now.event)) return [];
+      const rps = (s: 'normal' | 'event') => m(w[s], 'RPS', '캐시 적중률을 0으로 두고 다시 계산한 부하', { 지금부하: now[s] });
+      // 사용률은 지금 사용률의 비율이 아니라 대수로 다시 계산 (지금 부하가 0이어도, 쓰기가 많은 주 서버 1대 DB도 맞게)
+      const util = x.per && x.N && x.writeRps ? (s: 'normal' | 'event') => {
+        const N = x.N![s], wr = x.writeRps![s], per = x.per!;
+        const split = x.singlePrimary && x.readReplicas && N > 1;
+        const v = split ? Math.max(wr / per, (w[s] - wr) / ((N - 1) * per)) : w[s] / ((x.singlePrimary ? 1 : N) * per);
+        return m(v, '비율', split ? 'max(쓰기 / 대당 처리량, 읽기 / (복제본 수 × 대당 처리량)), 대수 그대로' : x.singlePrimary ? '캐시 없을 때 부하 / 대당 처리량 (읽기 복제본이 없어 주 서버 1대가 모두 받음)' : '캐시 없을 때 부하 / (대수 × 대당 처리량), 대수 그대로', { 캐시없을때부하: w[s], 대수: N, 대당: per, 쓰기: wr });
+      } : undefined;
+      return [{ nodeId: n.id, rps: { normal: rps('normal'), event: rps('event') }, ...(util && { util: { normal: util('normal'), event: util('event') } }) }];
+    });
+    return affected.length ? [{ cacheId: c.id, affected }] : [];
+  });
+  return { zone, regions, data, cache };
 }
 
 /** 장애 목표(recovery)가 있을 때 노드의 판정 변수. 판정(judge.recoveryIssues)이 이것으로 이유를 만든다 */
@@ -115,7 +139,11 @@ export function recoveryVars(f: Failure | undefined, p: Project, n: ProjectNode,
   const r = f.regions.find((x) => x.down.includes(n.id) || x.failover.includes(n.id));
   const stops = Object.values(impactOf(p, [n.id])).includes('stopped');
   const drRto = drRtoS(n, gb);
+  // 이 노드에 닿는 캐시 장애 중 사용률이 가장 큰 것 (장면별)
+  const c = f.cache.flatMap((x) => x.affected.filter((a) => a.nodeId === n.id && a.util).map((a) => ({ id: x.cacheId, util: a.util![s].value })))
+    .reduce<{ id: string; util: number } | undefined>((b, a) => (!b || a.util > b.util ? a : b), undefined);
   return {
+    ...(c && { cache_util: c.util, cache_name: p.nodes.find((x) => x.id === c.id)!.name }),
     survive: p.recovery.survive, zones: z.zones, zone_down: z.down, zone_rto_s: z.rto.value, node_stops: stops,
     ...(z.util && { zone_util: z.util[s].value }),
     ...(r && { region_down: r.down.includes(n.id) }),
@@ -133,7 +161,9 @@ export function failureLines(f: Failure, nameOf: (id: string) => string, id?: st
     ? (z.servers === 1 ? '서버가 1대뿐이라 멈춤' : `서버 ${z.servers}대가 모두 한 존에 있어 멈춤`)
     : `${z.servers}대 중 ${z.lost}대를 잃음${z.util ? ` · 남은 서버 사용률 ${pct(z.util.normal.value)} / ${pct(z.util.event.value)}` : ''}${z.rto.value ? ` · 넘기는 데 ${secs(z.rto.value)}` : ''}`}`);
   const data = f.data.filter((x) => !id || x.nodeId === id).map((x) => `${nameOf(x.nodeId)} — 데이터: ${Number.isFinite(x.rpo.value) ? `잃는 데이터 최대 ${secs(x.rpo.value)}` : '백업·복사본이 없어 되살릴 수 없음'}${x.restore ? ` · 백업에서 되살리기 ${secs(x.restore.value)}` : ''}`);
-  return [...zone, ...data, ...regionLines(f, nameOf, id)];
+  const cache = f.cache.filter((c) => !id || c.cacheId === id || c.affected.some((a) => a.nodeId === id)).map((c) => `${nameOf(c.cacheId)} — 캐시 장애: ${c.affected
+    .map((a) => `${nameOf(a.nodeId)} 부하 ${fmt(a.rps.normal.inputs['지금부하'])} → ${fmt(a.rps.normal.value)} RPS${a.util ? `, 사용률 ${pct(a.util.normal.value)} / ${pct(a.util.event.value)}` : ''}`).join(', ')}`);
+  return [...zone, ...data, ...cache, ...regionLines(f, nameOf, id)];
 }
 
 /** 리전마다 한 줄: 멈추는 노드·화면, 넘어가는 노드와 시간, 잃는 데이터. id가 있으면 그 노드가 있는 리전만 */

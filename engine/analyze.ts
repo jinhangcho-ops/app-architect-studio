@@ -325,19 +325,24 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     nodes[n.id].connections = { normal: at('normal'), event: at('event') };
   }
 
-  // 장애 시나리오: 존·리전 장애, 백업에서 되살리기 (서버 가용성을 따지지 않는 방식이면 만들지 않는다)
+  // 장애 시나리오: 존·리전 장애, 백업에서 되살리기, 캐시 장애 (서버 가용성을 따지지 않는 방식이면 만들지 않는다)
   const dataGb = (id: string) => {
     const xs = tables.filter((x) => x.nodeId === id);
     return xs.length ? xs.reduce((s, x) => s + x.storedGb.value, 0) : undefined;
   };
+  // 캐시가 멈춘 부하: 그 캐시 적중률을 0으로 두고 다시 계산 (failureScenarios가 캐시마다 한 번 부름)
+  const loadsWithout = (cacheId: string) => (t && enabled(p.deploy, 'scale')
+    ? nodeLoads({ ...p, nodes: p.nodes.map((n) => (n.id === cacheId ? { ...n, hit_ratio: 0 } : n)) }, t) : undefined);
   const failure = enabled(p.deploy, 'availability') ? failureScenarios(p, (n) => {
     const na = nodes[n.id];
     return {
       ...(na.instances && { N: { normal: na.instances.normal.value, event: na.instances.event.value } }),
       ...(na.utilization && { util: { normal: na.utilization.normal.value, event: na.utilization.event.value } }),
+      ...(na.load && { rps: na.load.rps, writeRps: na.load.writeRps }),
+      per: perOf.get(n.id)?.rps?.value, readReplicas: !!primaryShape(n, d.catalog)?.replicas,
       max: perOf.get(n.id)!.max, singlePrimary: !!primaryShape(n, d.catalog), dataGb: dataGb(n.id),
     };
-  }) : undefined;
+  }, loadsWithout) : undefined;
 
   // 판정 변수에 계산값을 더한다: 사용률, 노드 p99, 이 노드를 지나는 경로 중 가장 낮은 가용성, DB 연결 수, 파이프라인, 장애 목표
   const judged = new Map<string, Scenario>();
