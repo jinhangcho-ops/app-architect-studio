@@ -17,7 +17,7 @@ import { apiLoads, type ApiLoad } from './api';
 import { computedScenarios, nodeLoads, type NodeLoad } from './load';
 import { metric, type Metric } from './model';
 import { failureScenarios, recoveryVars, type Failure } from './failure';
-import { minuteShape, pipelineFlows, type PipelineFlow } from './pipeline';
+import { autoscaleDay, DEFAULT_COOLDOWN_S, DEFAULT_POLL_S, DEFAULT_SCALE_DELAY_S, minuteShape, pipelineFlows, type AutoscaleDay, type PipelineFlow } from './pipeline';
 import { checkRegulation, type LawHit } from './regulation';
 import type { CatalogItem, LawRow, PriceRow, Project, ProjectNode, Rule } from './schema';
 import { tableSizes, type TableAnalysis } from './tables';
@@ -35,7 +35,12 @@ export type NodeAnalysis = {
   limitUsers?: Metric;
   /** DB 노드: 부르는 노드들이 여는 연결 수 */
   connections?: { normal: Metric; event: Metric };
+  /** 자동 확장을 켠 API 서버(backend·gateway): 1분 곡선(급증 포함)으로 돌린 하루 */
+  autoscale?: { normal: ApiScaleDay; event: ApiScaleDay };
 };
+
+/** API 서버 자동 확장 하루: 넘친 시간(분), 가장 큰 도착 / 떠 있는 대수의 처리량(비율, 0대에 도착이 있으면 Infinity), 하루 중 가장 적은·많은 대수 */
+export type ApiScaleDay = { overMin: Metric; peakUtil: Metric; min: number; max: number };
 
 /** 노드 1대가 DB에 여는 연결 풀 기본값 (HikariCP maximumPoolSize, node-postgres Pool max 기본값) */
 export const DEFAULT_DB_POOL = 10;
@@ -84,6 +89,8 @@ export type Data = { catalog: Map<string, CatalogItem>; rules: Rule[]; prices: P
 const m = metric;
 /** 트래픽마다 1분 곡선 (같은 트래픽을 재사용하는 여러 번의 분석이 같은 배열을 써서 자동 확장 결과를 다시 쓴다) */
 const minuteOf = new WeakMap<Traffic, number[]>();
+/** 1분 곡선마다 API 서버 자동 확장 하루 (같은 곡선·설정·부하면 결과가 같다: 최선 조합 찾기가 여러 번 분석해도 다시 돌지 않는다) */
+const apiSim = new WeakMap<number[], Map<string, AutoscaleDay>>();
 
 /** 대당 처리량(사양·실측으로 보정)과 최대 대수. 화면의 세부 구성도 같은 값을 쓴다 */
 export function perInstance(node: ProjectNode, catalog: Map<string, CatalogItem>) {
@@ -110,9 +117,11 @@ export function primaryShape(n: ProjectNode, catalog: Map<string, CatalogItem>, 
 /** 부하 rps를 받는 데 필요한 대수(목표 사용률, 최소·최대 대수 적용), 사용률, 그 대수에서의 p99. 결과 카드·비용·"사용자 증가 시 p99" 그래프가 같이 쓴다.
  *  주 서버 1대 DB는 쓰기를 주 서버 1대가 모두 받는다: 대수를 늘려도 쓰기 한계는 그대로이고, 읽기 복제본이 있을 때만 읽기를 복제본 대수로 나눈다.
  *  사용률은 가장 바쁜 서버 기준 (주 서버와 복제본 중 큰 쪽), p99는 주 서버의 대기열 */
+// 늘 떠 있는 대수: 최소 대수와 이중화(2대 이상) 중 큰 쪽, 최대 대수 이하 (비용·가용성·연결 수·장애·API 자동 확장이 같은 대수를 쓰게)
+const floorOf = (n: ProjectNode, maxInstances: number) => Math.max(n.min_instances, n.replicas > 1 ? Math.min(maxInstances, n.replicas) : 0);
+
 export function sizeAt(n: ProjectNode, perRps: number, maxInstances: number, rps: number, u: number, db?: PrimaryShape) {
-  // 늘 떠 있는 대수: 최소 대수와 이중화(2대 이상) 중 큰 쪽, 최대 대수 이하 (비용·가용성·연결 수·장애가 같은 대수를 쓰게)
-  const floor = Math.max(n.min_instances, n.replicas > 1 ? Math.min(maxInstances, n.replicas) : 0);
+  const floor = floorOf(n, maxInstances);
   if (!db) {
     const N = instancesNeeded(rps, perRps, u, floor, maxInstances);
     return { N, util: N ? rps / (N * perRps) : 0, p99: n.perf && nodeP99(rps, n.perf.service_ms, N * n.perf.workers, n.perf.service_p99_ms) };
@@ -178,7 +187,9 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     return cl && per.rps && enabled(p.deploy, 'scale') ? sizeAt(c, per.rps.value, per.max, cl.rps[s] * f, u, primaryShape(c, d.catalog, cl)).N : undefined;
   };
   // 큐 소비자·배치 1회 양은 1분 단위 트래픽 곡선(페르소나·하루 피크·일시적 급증의 기대 곡선)으로 돈다
-  const queued = p.nodes.some((n) => n.layer === 'queue' || n.batch);
+  // 자동 확장을 켠 API 서버(대수만큼 늘어나는 주 항목)도 같은 곡선으로 하루를 돈다
+  const apiScaled = (n: ProjectNode) => (n.layer === 'backend' || n.layer === 'gateway') && !!n.autoscale && !!n.primary && d.catalog.get(n.primary)?.scaling !== 'single_primary';
+  const queued = p.nodes.some((n) => n.layer === 'queue' || n.batch || apiScaled(n));
   let minute = t && queued ? minuteOf.get(t) : undefined;
   if (t && !minute && queued) {
     // 하루 양은 급증 없는 곡선으로 트래픽 계산과 맞추고, 급증은 그 위에 더한다 (급증만큼 하루 도착이 는다)
@@ -202,6 +213,34 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     if (!an || !ae || nodes[n.id].instances) continue;
     const how = '1분 단위 트래픽으로 자동 확장을 돌린 하루 중 가장 많은 대수';
     nodes[n.id].instances = { normal: m(an.max, '대', how, { 최소: an.min }), event: m(ae.max, '대', how, { 최소: ae.min }) };
+  }
+  /** 자동 확장 API 서버의 하루 (배수 f): 큐 소비자와 같은 시뮬레이션, 대당 처리량을 1건 처리 시간으로 바꿔 넣는다. 대상이 아니면 undefined */
+  const apiDay = (n: ProjectNode, f: number, s: 'normal' | 'event') => {
+    const load = loads?.get(n.id), per = perOf.get(n.id)!, a = n.autoscale;
+    if (!apiScaled(n) || !a || !load || !per.rps || !minute || !enabled(p.deploy, 'scale')) return undefined;
+    const max = Math.min(a.max ?? per.max, per.max);
+    const o = { serviceMs: 1000 / per.rps.value, workers: 1, cap: Infinity, u, min: Math.min(floorOf(n, per.max), max), max,
+      delayS: a.delay_s ?? DEFAULT_SCALE_DELAY_S, pollS: a.poll_s ?? DEFAULT_POLL_S, cooldownS: a.cooldown_s ?? DEFAULT_COOLDOWN_S };
+    const rps = load.rps[s] * f, k = `${Object.values(o).join()}|${rps}`;
+    if (!apiSim.has(minute)) apiSim.set(minute, new Map());
+    const memo = apiSim.get(minute)!;
+    if (!memo.has(k)) memo.set(k, autoscaleDay(minute.map((x) => rps * x), o));
+    return memo.get(k)!;
+  };
+  /** 자동 확장 API 서버의 판정 변수: 넘친 시간(분)·가장 큰 사용률 */
+  const apiVars = (n: ProjectNode, f: number, s: 'normal' | 'event'): Vars => {
+    const x = apiDay(n, f, s);
+    return x ? { autoscale_over_min: x.overS / 60, autoscale_peak_util: x.peakUtil } : {};
+  };
+  for (const n of p.nodes) {
+    const an = apiDay(n, 1, 'normal'), ae = apiDay(n, 1, 'event');
+    if (!an || !ae) continue;
+    const day = (x: AutoscaleDay): ApiScaleDay => ({
+      overMin: m(x.overS / 60, '분', '1분 곡선으로 자동 확장을 돌린 하루 중 도착이 떠 있는 대수의 처리량을 넘은 시간', { 최소: x.min, 최대: x.max }),
+      peakUtil: m(x.peakUtil, '비율', 'max(1분 도착 / 떠 있는 대수 × 대당 처리량)', { 대당: perOf.get(n.id)!.rps!.value }),
+      min: x.min, max: x.max,
+    });
+    nodes[n.id].autoscale = { normal: day(an), event: day(ae) };
   }
   /** 받는 노드의 파이프라인 판정 변수: 큐 지연·허용 지연, 배치 실행·실행 창 (여럿이면 가장 나쁜 것) */
   const pipeVars = (flows: PipelineFlow[], id: string, s: 'normal' | 'event'): Vars => {
@@ -241,7 +280,7 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     // 최대 대수(api_single = 1대)보다 많이 띄울 수 없으므로 그 대수로 자른다 (가용성의 standingInstances와 같은 상한)
     const floor = n.replicas > 1 ? Math.min(per.max, n.replicas) : 0;
     const db = primaryShape(n, d.catalog, load);
-    const hourly = autoOf(n.id, factor, 'normal')?.hourly ?? (load && per.rps && shape
+    const hourly = autoOf(n.id, factor, 'normal')?.hourly ?? apiDay(n, factor, 'normal')?.hourly ?? (load && per.rps && shape
       ? shape.map((s) => sizeAt(n, per.rps!.value, per.max, load.rps.normal * factor * s, u, db).N)
       : Array<number>(24).fill(n.min_instances));
     return hourly.map((x) => Math.max(x, floor));
@@ -314,6 +353,7 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
       ...(na.connections && { db_connections: na.connections[s].value }),
       ...freshness(n.id),
       ...pipeVars(pipeline, n.id, s),
+      ...apiVars(n, 1, s),
       ...recoveryVars(failure, p, n, s, dataGb(n.id)),
     });
     judged.set(n.id, mergeScenario(n, { normal: add('normal'), event: add('event') }));
@@ -330,8 +370,11 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
         ? (x: number) => sizeAt(n, per.rps!.value, per.max, load.rps.event * x, u, db).util : undefined;
       // 이 노드로 들어오는 파이프라인이 있으면 배수마다 적체·실행 시간을 다시 계산한다
       const piped = pipeline.some((x) => x.to === n.id && (x.lag || x.run)) && n.vars.event.queue_lag_s === undefined;
-      const f = limitFactor(n, d.catalog, judged.get(n.id)!, conn || util || piped
-        ? (x) => ({ ...(conn && { db_connections: conn(x, 'event').total }), ...(util && { utilization: util(x) }), ...(piped && pipeVars(flowsAt(x), n.id, 'event')) }) : undefined);
+      // 한계 탐색에서는 넘침을 보지 않음: 사용자 수에 단조롭지 않아 이분 탐색이 안 됨 (f=1 값이 남지 않게 0으로 지움)
+      const scaled = !!nodes[n.id].autoscale && n.vars.event.autoscale_over_min === undefined;
+      const f = limitFactor(n, d.catalog, judged.get(n.id)!, conn || util || piped || scaled
+        ? (x) => ({ ...(conn && { db_connections: conn(x, 'event').total }), ...(util && { utilization: util(x) }), ...(piped && pipeVars(flowsAt(x), n.id, 'event')),
+          ...(scaled && { autoscale_over_min: 0 }) }) : undefined);
       if (f === undefined) continue;
       // 한계 없음(∞)은 화면 그래프 축·성장 타임라인을 깨므로 노드 값으로 두지 않고 표시만 한다
       if (f === Infinity) { unbounded = true; continue; }

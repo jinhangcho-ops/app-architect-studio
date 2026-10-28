@@ -67,3 +67,21 @@ describe('노드 패널 레이어', () => {
     el.remove();
   });
 });
+
+describe('노드 패널 자동 확장', () => {
+  it('API 서버(backend)에는 자동 확장 칸이 있고 single_primary DB에는 없음', () => {
+    const ex = examples.find((e) => e.name === 'phase3.json')!;
+    const p = parseProject(ex.data, catalog.items, ex.name);
+    useStore.setState({ project: p });
+    const draw = (id: string) => {
+      const el = document.createElement('div');
+      const root = createRoot(el);
+      flushSync(() => root.render(<NodePanel id={id} />));
+      const out = el.innerHTML;
+      root.unmount();
+      return out;
+    };
+    expect(draw('api')).toContain('자동 확장');
+    expect(draw('db')).not.toContain('자동 확장');
+  });
+});

@@ -1,7 +1,7 @@
 // 설계서(7절): 프로젝트와 분석 결과로 설계서 내용을 만든다. 화면 그리기(Report.tsx)와 나눠 두어 내용만 테스트한다.
 // 노드 카드는 설계서 7절 표의 행 순서를 그대로 따른다: 머리줄 → 판정 근거 → 선택 항목 → 동작 방식 → 계산 결과 → 대안 → 태그 → 연결 → 비고 (노드 설명은 카드 아래 메모로).
 import { edgeCalls } from '../../engine/interfaces';
-import type { Analysis } from '../../engine/analyze';
+import type { Analysis, ApiScaleDay } from '../../engine/analyze';
 import { impactOf } from '../../engine/availability';
 import type { NodeJudgement } from '../../engine/judge';
 import { LAYER_NAMES, VERDICT_NAMES, VERDICT_RANK, type Metric, type Verdict } from '../../engine/model';
@@ -21,6 +21,8 @@ const withHow = (label: string, m?: Metric) =>
   m ? `${label} ${fmtMetric(m)} — ${m.formula}${m.basis ? ` (${BASIS[m.basis]})` : ''}` : undefined;
 const pair = (label: string, a?: Metric, b?: Metric) =>
   a && b ? `${label} ${fmtMetric(a)} / ${fmtMetric(b)} — ${a.formula}${a.basis ? ` (${BASIS[a.basis]})` : ''}` : undefined;
+export const scaleDay = (label: string, d: ApiScaleDay) =>
+  `${label} ${d.min}~${d.max}대, 넘침 ${+d.overMin.value.toFixed(1)}분(최대 사용률 ${Number.isFinite(d.peakUtil.value) ? `${Math.round(d.peakUtil.value * 100)}%` : '떠 있는 서버가 0대'})`;
 const some = (xs: (string | undefined | false)[]) => xs.filter((x): x is string => !!x);
 
 export function nodeCard(p: Project, a: Analysis, byId: Map<string, CatalogItem>, nodeId: string): NodeCard {
@@ -58,6 +60,7 @@ export function nodeCard(p: Project, a: Analysis, byId: Map<string, CatalogItem>
         withHow('월 비용', cost),
         withHow('한계 사용자', na?.limitUsers),
         pair('DB 연결 수 평소/이벤트', na?.connections?.normal, na?.connections?.event),
+        na?.autoscale && `자동 확장 ${scaleDay('평소', na.autoscale.normal)} / ${scaleDay('이벤트', na.autoscale.event)}`,
         ...a.pipeline.filter((f) => f.from === nodeId || f.to === nodeId).map((f) => flowLine(f, name)),
         ...(a.failure ? failureLines(a.failure, name, nodeId) : []),
         ...tables.map((x) => `테이블 ${x.table}: 하루 ${fmt(x.newRowsPerDay.value)}행 · 행 ${fmt(x.rowBytes.value)}B + 인덱스 ${fmt(x.indexBytesPerRow.value)}B · ${fmt(x.storedGb.value)}GB${x.partitions ? ` (파티션 ${x.partitions.count}개)` : ''}`),

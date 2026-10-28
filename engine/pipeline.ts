@@ -22,8 +22,9 @@ export const DEFAULT_POLL_S = 30;
 /** 줄이기 전 기다리는 시간 (KEDA cooldownPeriod 기본값. 1대 이상에서 줄일 때 쓰는 HPA 축소 안정화 창도 기본 300초) */
 export const DEFAULT_COOLDOWN_S = 300;
 
-/** 자동 확장 하루 결과: 가장 큰 적체·지연, 시간대별 평균 대수(비용), 하루 중 가장 적은·많은 대수 */
-export type AutoscaleDay = { backlog: number; lag: number; hourly: number[]; min: number; max: number };
+/** 자동 확장 하루 결과: 가장 큰 적체·지연, 시간대별 평균 대수(비용), 하루 중 가장 적은·많은 대수,
+ *  도착이 떠 있는 대수의 처리량을 넘은 시간(초)과 가장 큰 도착 / 처리량 (처리량 0에 도착이 있으면 Infinity) */
+export type AutoscaleDay = { backlog: number; lag: number; hourly: number[]; min: number; max: number; overS: number; peakUtil: number };
 
 export type PipelineFlow = {
   /** 보내는 노드(큐 또는 배치에 데이터를 넣는 노드)와 받는 노드 */
@@ -64,8 +65,12 @@ export function autoscaleDay(lam: number[], o: AutoscaleOpts): AutoscaleDay {
   const rate = (N: number) => (Math.min(N * o.workers, o.cap) * 1000) / o.serviceMs;
   const need = (l: number) => Math.min(o.max, Math.max(o.min, Math.ceil((l * o.serviceMs) / 1000 / (o.workers * o.u))));
   const hourly = Array<number>(24).fill(0);
-  if (sum(lam) >= lam.length * rate(o.max)) return { backlog: Infinity, lag: Infinity, hourly: hourly.map(() => o.max), min: o.max, max: o.max };
-  let b = 0, active = need(lam[lam.length - 1]), waiting = 0, waitFrom = -1, maxB = 0, lag = 0, lo = Infinity, hi = 0;
+  // 하루 내내 최대 대수로도 못 따라가면 시뮬레이션 없이: 넘침·사용률은 최대 대수 기준
+  if (sum(lam) >= lam.length * rate(o.max)) {
+    const top = Math.max(...lam), r = rate(o.max);
+    return { backlog: Infinity, lag: Infinity, hourly: hourly.map(() => o.max), min: o.max, max: o.max, overS: lam.filter((l) => l > r).length * 60, peakUtil: top > 0 ? top / r : 0 };
+  }
+  let b = 0, active = need(lam[lam.length - 1]), waiting = 0, waitFrom = -1, maxB = 0, lag = 0, lo = Infinity, hi = 0, overS = 0, peakUtil = 0;
   // 뜨는 중인 소비자(뜨는 시각 순)와 최근 cooldown 동안의 필요 대수. 30초마다 도니 배열을 새로 만들지 않는다
   // recent는 필요 대수가 줄어드는 순서로만 남긴다(뒤에 더 큰 값이 오면 앞의 작은 값은 다시 최대가 될 일이 없음) → 맨 앞이 최근 최대
   const pending: { at: number; n: number }[] = [], recent: { t: number; d: number }[] = [];
@@ -103,13 +108,15 @@ export function autoscaleDay(lam: number[], o: AutoscaleOpts): AutoscaleDay {
         if (wait > lag) lag = wait;
         if (active < lo) lo = active;
         if (active > hi) hi = active;
+        if (l > mu) overS += DT;
+        if (l > 0 && l / mu > peakUtil) peakUtil = l / mu;
       }
     }
     ends.push(b);
   }
   // 이틀째 끝에 적체가 더 많으면 하루에 다 빼지 못한다 (최대 대수에 막힘)
-  if (ends[1] > ends[0] + 1e-6) return { backlog: Infinity, lag: Infinity, hourly, min: lo, max: hi };
-  return { backlog: maxB, lag: lag + o.serviceMs / 1000, hourly, min: lo, max: hi };
+  if (ends[1] > ends[0] + 1e-6) return { backlog: Infinity, lag: Infinity, hourly, min: lo, max: hi, overS, peakUtil };
+  return { backlog: maxB, lag: lag + o.serviceMs / 1000, hourly, min: lo, max: hi, overS, peakUtil };
 }
 
 /** 1분 곡선(같은 트래픽이면 같은 배열)마다 자동 확장 하루 결과 */

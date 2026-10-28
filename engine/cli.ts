@@ -71,6 +71,7 @@ try {
     if (x.load) parts.unshift(`부하 ${fmt(x.load.rps.normal)} / ${fmt(x.load.rps.event)} RPS`);
     if (x.instances) parts.push(`필요 ${x.instances.normal.value} / ${x.instances.event.value}대`);
     if (x.utilization) parts.push(`사용률 ${show(x.utilization.normal)} / ${show(x.utilization.event)}`);
+    if (x.autoscale) parts.push(`자동 확장 평소 ${x.autoscale.normal.min}~${x.autoscale.normal.max}대 넘침 ${fmt(x.autoscale.normal.overMin.value)}분 / 이벤트 ${x.autoscale.event.min}~${x.autoscale.event.max}대 넘침 ${fmt(x.autoscale.event.overMin.value)}분`);
     if (x.p99) parts.push(`p99 ${fmt(x.p99.normal.value)} / ${fmt(x.p99.event.value)} ms`);
     if (x.limitUsers) parts.push(x.limitUsers.value === 0 ? '부하와 무관하게 이미 안 됨' : `한계 ${fmt(x.limitUsers.value)}명`);
     console.log(`  ${n.name}: ${parts.join(' · ')}`);

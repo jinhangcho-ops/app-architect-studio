@@ -76,7 +76,7 @@ export const mergeScenario = (node: ProjectNode, computed?: Scenario): Scenario 
 
 const num = (v: Value | undefined) => (typeof v === 'number' ? v : undefined);
 
-/** 항목 조건과 별개로 노드의 주 항목에 거는 문제: 사용률 100% 초과, 큐 지연이 허용을 넘음, 배치가 실행 창 안에 안 끝남.
+/** 항목 조건과 별개로 노드의 주 항목에 거는 문제: 사용률 100% 초과, 큐 지연이 허용을 넘음, 배치가 실행 창 안에 안 끝남, 자동 확장 API 서버가 넘침.
  *  평소 피크에서 걸리면 안 됨, 이벤트 피크에서만 걸리면 조건부 (사용률 초과는 어느 쪽이든 안 됨: 늘릴 대수가 없어 요청이 끝없이 쌓인다) */
 export const nodeIssues = (s: Scenario) => issues(s, false);
 
@@ -93,6 +93,10 @@ function issues(s: Scenario, recovery: boolean): { verdict: Verdict; reasons: st
         : `${name}에 소비자가 하루 도착량을 따라잡지 못해 큐 적체가 끝없이 늘어납니다`);
     }
     if (run !== undefined && win !== undefined && run > win) hit(soft, `${name}에 배치 1회 실행이 ${secs(run)}로 실행 창 ${secs(win)} 안에 끝나지 않습니다`);
+    const over = num(x.autoscale_over_min), pu = num(x.autoscale_peak_util) ?? 0;
+    if (over !== undefined && over > 0) {
+      hit(soft, `${name}에 자동 확장이 따라오기 전 ${Math.round(over * 10) / 10}분 동안 ${Number.isFinite(pu) ? `사용률 ${Math.round(pu * 100)}%` : '떠 있는 서버가 0대'} — 새 서버가 뜨는 동안 요청이 밀립니다 (최소·최대 대수를 올리거나 뜨는 시간을 줄이세요)`);
+    }
     if (verdict === 'fail') break;
   }
   if (recovery) recoveryIssues(s, hit);

@@ -114,3 +114,12 @@ describe('설계서: 네트워크·보안 장', () => {
     expect(html).toContain('효과가 적습니다');
   });
 });
+
+describe('설계서 노드 카드: 자동 확장 줄', () => {
+  it('자동 확장을 단 API 노드는 계산 결과에 평소/이벤트 줄이 나옴', () => {
+    const p0 = load('phase3.json');
+    const p = { ...p0, nodes: p0.nodes.map((n) => (n.id === 'api' ? { ...n, autoscale: {} } : n)) };
+    const calc = nodeCard(p, run(p, today).analysis!, catalog.byId, 'api').rows.find((r) => r.label === '📊 계산 결과')!.lines;
+    expect(calc.find((l) => l.startsWith('자동 확장 평소'))).toMatch(/^자동 확장 평소 \d+~\d+대, 넘침 [\d.]+분\(최대 사용률 \d+%\) \/ 이벤트 \d+~\d+대, 넘침 [\d.]+분\(최대 사용률 \d+%\)/);
+  });
+});
