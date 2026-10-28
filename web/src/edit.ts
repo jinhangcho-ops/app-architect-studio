@@ -63,7 +63,10 @@ export const removeNode = (p: Project, id: string): Project => {
   const unbind = (x: ProjectNode): ProjectNode => (!x.wireframe ? x : {
     ...x, wireframe: { screens: x.wireframe.screens.map((s) => ({ ...s, items: s.items.map((i) => (i.api?.to === id ? { ...i, api: { ...i.api, to: undefined } } : i)) })) },
   });
-  return { ...cleared, nodes: cleared.nodes.filter((x) => x.id !== id).map(unbind), edges: cleared.edges.filter((e) => e.from !== id && e.to !== id) };
+  // 인증 발급 노드면 발급 노드 값을 빼고, 그것만 있던 인증·인가는 통째로 지운다 (없는 노드를 가리키면 checkProject 오류)
+  const { issuer: _, ...rest } = p.auth ?? {};
+  const auth = p.auth?.issuer !== id ? p.auth : Object.keys(rest).length ? rest : undefined;
+  return { ...cleared, auth, nodes: cleared.nodes.filter((x) => x.id !== id).map(unbind), edges: cleared.edges.filter((e) => e.from !== id && e.to !== id) };
 };
 
 /** 목록의 i번째만 바꾼 새 목록 */

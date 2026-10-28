@@ -110,9 +110,30 @@ describe('설계서: 네트워크·보안 장', () => {
     expect(sec).not.toContain('<td>Google Vision OCR</td>');
     expect(sec).toContain('<td>장부 PWA → 장부 API (FastAPI)</td><td>암호화 없음</td><td>인터넷 (짐작)</td>');
     expect(sec.indexOf('❌')).toBeLessThan(sec.indexOf('⚠️'));
-    expect(sec).toContain('<th colSpan="2">장부 API (FastAPI)</th>');
+    expect(sec).toContain('<th colSpan="3">장부 API (FastAPI)</th>');
     expect(sec).toContain('대량 요청을 막는지 (WAF 끔 · 속도 제한 켬 (600/분))');
     expect(html).toContain('효과가 적습니다');
+  });
+});
+
+describe('설계서: 인증·인가 표와 STRIDE 기호', () => {
+  it('인증·인가 표(비면 미정)와 STRIDE 줄 앞 ✅·⚠️·미정이 나옴', () => {
+    const p0 = load('ledger-fastapi.json');
+    const p = {
+      ...p0,
+      auth: { method: 'jwt' as const, mfa: 'none' as const },
+      nodes: p0.nodes.map((n) => (n.id === 'B-01' ? { ...n, security: { exposure: 'public' as const, tls: true, waf: false } } : n)),
+    };
+    const html = renderToStaticMarkup(
+      <Report project={p} analysis={run(p, today).analysis} positions={autoLayout(p)} today={today} onClose={() => {}} />,
+    ).replace(/<!-- -->/g, '');
+    const sec = html.slice(html.indexOf('네트워크 · 보안</h2>'), html.indexOf('확인 필요 조문</h2>'));
+    expect(sec).toContain('인증 · 인가');
+    expect(sec).toContain('<tr><th>방식</th><td>JWT(자체 발급)</td></tr>');
+    expect(sec).toContain('<tr><th>발급 노드</th><td>미정</td></tr>');
+    const st = sec.slice(sec.indexOf('(STRIDE)'));
+    // 줄 이름과 함께: TLS 켬 → 변조 ✅, WAF 끔 → 서비스 거부 ⚠️, 비밀 보관 비어 → 정보 노출 미정
+    for (const [m, k] of [['✅', '변조'], ['⚠️', '서비스 거부'], ['미정', '정보 노출']]) expect(st).toContain(`<td>${m}</td><th>${k}</th>`);
   });
 });
 

@@ -110,7 +110,7 @@ export function Canvas({ analysis, onSelect, layout }: { analysis?: Analysis; on
   // 노드를 끄는 동안(위치만 바뀜)에는 아래 계산을 다시 하지 않는다
   const health = useMemo(() => new Map(project.nodes.map((n) => [n.id, healthOf(analysis, users, n.id)])), [project, analysis, users]);
   // 보안 ❌가 있는 노드·연결선은 빨갛게 (항목 판정보다 먼저)
-  const secFail = useMemo(() => new Set((analysis?.security ?? []).filter((h) => h.level === 'fail').map((h) => h.node ?? h.edge!.join('->'))), [analysis]);
+  const secFail = useMemo(() => new Set((analysis?.security ?? []).filter((h) => h.level === 'fail').flatMap((h) => h.node ?? h.edge?.join('->') ?? [])), [analysis]);
   const zones: Node[] = zoneRects(project.nodes, positions).map((r) => ({
     id: `zone:${r.zone}`, type: 'zone', position: { x: r.x, y: r.y }, data: { zone: r.zone },
     style: { width: r.w, height: r.h, pointerEvents: 'none' }, draggable: false, selectable: false, deletable: false, focusable: false, zIndex: -1,

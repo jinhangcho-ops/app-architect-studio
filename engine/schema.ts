@@ -575,6 +575,24 @@ export const Project = z.object({
     rto_min: z.number().positive().optional(),
     rpo_min: z.number().nonnegative().optional(),
   }).optional(),
+  /** 인증·인가 (v1.4.0, 형식 8). 비면 미정 */
+  auth: z.object({
+    /** 사용자 인증 방식 */
+    method: z.enum(['none', 'session', 'jwt', 'oauth_oidc', 'api_key']).optional(),
+    /** 토큰·세션을 발급하는 노드 id (백엔드·외부 서비스) */
+    issuer: z.string().optional(),
+    /** 액세스 토큰·세션 수명(분) */
+    token_ttl_min: z.number().positive().optional(),
+    /** 갱신 토큰·세션 연장 사용 */
+    refresh: z.boolean().optional(),
+    mfa: z.enum(['none', 'optional', 'required']).optional(),
+    /** 권한 모델 */
+    roles: z.enum(['none', 'rbac', 'abac']).optional(),
+    /** 관리자 기능·화면을 따로 두고 따로 인증 */
+    admin_separate: z.boolean().optional(),
+    /** 서비스 간 인증 */
+    service_auth: z.enum(['none', 'mtls', 'service_account']).optional(),
+  }).optional(),
   /** 14절 월 성장률, 보는 기간, 교체 준비 기간 */
   exchange: Exchange.optional(),
   growth: z.object({
@@ -688,6 +706,7 @@ export function checkProject(p: Project, items: CatalogItem[]): string[] {
     for (const d of dupes(n.tables.map((t) => t.name))) errors.push(`${n.id}: 테이블 이름 중복 ${d}`);
   }
   for (const d of dupes(p.actions.map((a) => a.name))) errors.push(`행동 이름 중복 ${d}`);
+  if (p.auth?.issuer && !nodeIds.has(p.auth.issuer)) errors.push(`인증·인가: 발급 노드 ${p.auth.issuer}가 없음`);
   const inflow = p.growth?.inflow;
   if (inflow && !p.personas.some((ps) => ps.name === inflow.entry)) errors.push(`유입 모형: 새 사용자가 들어올 페르소나 ${inflow.entry}가 없음`);
   if (inflow && p.scale && inflow.market < p.scale.users) errors.push('유입 모형: 시장 크기가 지금 활성 사용자보다 작음');

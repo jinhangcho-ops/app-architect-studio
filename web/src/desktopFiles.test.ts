@@ -263,5 +263,10 @@ describe('현재 형식: 네트워크·보안', () => {
     const str = readProject({ ...saved, nodes: [{ ...saved.nodes[0], security: { ...node, rate_limit_rpm: '600' } }, ...saved.nodes.slice(1)] }, catalog.items, 'x', notes2);
     expect([str.nodes[0].security?.rate_limit_rpm, str.nodes[0].security?.waf]).toEqual([undefined, true]);
     expect(notes2.join('\n')).toContain('알 수 없는 보안 값');
+    // 모르는 인증·인가 값도 그 칸만 빼고 열며 알림
+    const notes3: string[] = [];
+    const auth = readProject({ ...saved, auth: { method: 'magic', mfa: 'required' } }, catalog.items, 'x', notes3);
+    expect(auth.auth).toEqual({ mfa: 'required' });
+    expect(notes3.join('\n')).toContain('auth.method = "magic": 알 수 없는 인증·인가 값');
   });
 });

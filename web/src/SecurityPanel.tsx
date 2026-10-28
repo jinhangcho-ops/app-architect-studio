@@ -56,10 +56,10 @@ const HINTS: Partial<Record<keyof NodeSec, string>> = {
 };
 
 export function NodeSecuritySection({ node: n, analysis }: { node: ProjectNode; analysis?: Analysis }) {
-  const { edit } = usePick('edit');
+  const { project, edit } = usePick('project', 'edit');
   const s = n.security ?? {};
   const set = (key: keyof NodeSec, v: unknown) => edit((p) => updateNode(p, n.id, { security: patched<NodeSec>(n.security, key, v) }));
-  const fields = relevant(n);
+  const fields = relevant(project, n);
   const hits = analysis?.security.filter((h) => h.node === n.id) ?? [];
   // 엔진과 같게: 한도 값이 있으면 속도 제한 켬. 끔·미정으로 바꾸면 한도도 지움
   const rateOn = s.rate_limit === true || s.rate_limit_rpm !== undefined;

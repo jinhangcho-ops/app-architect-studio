@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseProject, readProject } from '../../engine/data';
 import { catalog, examples } from './data';
 import { parseSpec } from '../../engine/spec';
-import { Table as TableSchema } from '../../engine/schema';
+import { Table as TableSchema, checkProject } from '../../engine/schema';
 import { applyIndustry, setPersonaMix, addAction, addEdge, addWrite, removeWrite, addNode, addTable, applyAlternative, importTables, patchAt, removeAction, removeColumn, removeNode, removePersona, removeTable, renameColumn, run, setActionRate, setVar, updateAction, updateNode, updatePersona, updateTable, worstVerdict } from './edit';
 import { autoLayout } from './layout';
 
@@ -101,6 +101,14 @@ describe('편집 동작', () => {
     expect(addEdge(base, 'api', 'api')).toBe(base);
     const removed = removeNode(base, 'api');
     expect(removed.edges.some((x) => x.from === 'api' || x.to === 'api')).toBe(false);
+  });
+
+  it('인증 발급 노드를 지우면 발급 노드 값이 빠지고(발급 노드만 있던 인증·인가는 통째로) 파일이 그대로 열림', () => {
+    const removed = removeNode({ ...base, auth: { method: 'jwt', issuer: 'api' } }, 'api');
+    expect(removed.auth).toEqual({ method: 'jwt' });
+    expect(() => parseProject(removed, catalog.items)).not.toThrow();
+    expect(checkProject(removed, catalog.items)).toEqual([]);
+    expect(removeNode({ ...base, auth: { issuer: 'api' } }, 'api').auth).toBeUndefined();
   });
 
   it('직접 넣는 값은 평소·이벤트에 같이 들어가고 비우면 지워짐', () => {

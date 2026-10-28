@@ -23,7 +23,7 @@ import { FeatureTablesTable } from './ResultsPanel';
 import { dialectOf, keyCols, sqlType } from '../../engine/ddl';
 import { NoteView } from './NoteView';
 import { chapterTitle } from './notes';
-import { EDGE_NET_NAMES, EDGE_TLS_NAMES, fieldText, hasExposure, LEVEL_MARK, SECURITY_FIELD_NAMES, SECURITY_FIELDS, edgeNet, stride } from '../../engine/security';
+import { EDGE_NET_NAMES, EDGE_TLS_NAMES, fieldText, hasExposure, LEVEL_MARK, SECURITY_FIELD_NAMES, SECURITY_FIELDS, edgeNet, stride, authFields, STRIDE_MARK } from '../../engine/security';
 
 const H = ({ n, children }: { n: number; children: ReactNode }) => <h2 className="r-h">{n}. {children}</h2>;
 const KV = ({ rows }: { rows: [string, ReactNode][] }) => (
@@ -38,9 +38,11 @@ function NetSecChapter({ n, p, a, name }: { n: number; p: Project; a: Analysis; 
   return (
     <section>
       <H n={n}>네트워크 · 보안</H>
+      <h3>인증 · 인가</h3>
+      <KV rows={authFields(p)} />
       <table className="r-grid">
         <thead><tr><th>노드</th>{SECURITY_FIELDS.map((f) => <th key={f}>{SECURITY_FIELD_NAMES[f]}</th>)}</tr></thead>
-        <tbody>{p.nodes.filter((x) => x.layer !== 'external').map((x) => <tr key={x.id}><td>{x.name}</td>{SECURITY_FIELDS.map((f) => <td key={f}>{fieldText(x, f)}</td>)}</tr>)}</tbody>
+        <tbody>{p.nodes.filter((x) => x.layer !== 'external').map((x) => <tr key={x.id}><td>{x.name}</td>{SECURITY_FIELDS.map((f) => <td key={f}>{fieldText(p, x, f)}</td>)}</tr>)}</tbody>
       </table>
       {p.edges.length > 0 && <table className="r-grid">
         <thead><tr><th>연결</th><th>암호화</th><th>지나는 망</th></tr></thead>
@@ -53,8 +55,8 @@ function NetSecChapter({ n, p, a, name }: { n: number; p: Project; a: Analysis; 
       {hits.length ? <ul>{hits.map((h, k) => <li key={k}>{LEVEL_MARK[h.level]} {h.target}: {h.why} → {h.instead}</li>)}</ul> : <p className="muted">걸린 것이 없습니다.</p>}
       <h3>인터넷 공개 노드 위협 점검표 (STRIDE)</h3>
       {pub.length ? pub.map((x) => (
-        <table key={x.id} className="r-grid"><thead><tr><th colSpan={2}>{x.name}</th></tr></thead>
-          <tbody>{stride(p, x).map(([k, v]) => <tr key={k}><th>{k}</th><td>{v}</td></tr>)}</tbody>
+        <table key={x.id} className="r-grid"><thead><tr><th colSpan={3}>{x.name}</th></tr></thead>
+          <tbody>{stride(p, x).map(([k, v, s]) => <tr key={k}><td>{STRIDE_MARK[s]}</td><th>{k}</th><td>{v}</td></tr>)}</tbody>
         </table>
       )) : <p className="muted">인터넷 공개로 정한 노드가 없습니다. 노드 패널 › 네트워크·보안에서 공개 범위를 정하면 여기에 점검표가 나옵니다.</p>}
       <p className="muted">설계 값으로 하는 점검입니다. 실제 보안 그룹·인증서·침투 시험을 대신하지 않습니다.</p>

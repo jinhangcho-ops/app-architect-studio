@@ -12,6 +12,7 @@ import { addAction, patchAt, removeAction, removePersona, setActionRate, updateA
 import { usePick } from './store';
 import { desktop, setUpdateCheck, updateCheckOn } from './desktop';
 import { NotesSection } from './NotesPanel';
+import { AUTH_METHOD_NAMES, MFA_NAMES, ROLE_NAMES, SERVICE_AUTH_NAMES } from '../../engine/security';
 
 export function ProjectPanel() {
   const { project: p, edit } = usePick('project', 'edit');
@@ -211,8 +212,57 @@ export function ProjectPanel() {
         </>}
       </Section>
 
+      <AuthSection />
+
       <AppSection />
     </div>
+  );
+}
+
+type Auth = NonNullable<Project['auth']>;
+const ONOFF = { on: '켬', off: '끔' } as const;
+
+/** 인증·인가: 비운 칸은 지우고, 다 비면 auth 자체를 지운다 */
+function AuthSection() {
+  const { project: p, edit } = usePick('project', 'edit');
+  const a = p.auth ?? {};
+  const put = (patch: Partial<Auth>) => edit((x) => {
+    const next = Object.fromEntries(Object.entries({ ...x.auth, ...patch }).filter(([, v]) => v !== undefined)) as Auth;
+    return { ...x, auth: Object.keys(next).length ? next : undefined };
+  });
+  const pick = (label: string, key: keyof Auth, names: Record<string, string>, hint?: string) => (
+    <Row label={label} hint={hint}>
+      <Select aria-label={label} value={(a[key] as string | undefined) ?? ''} onChange={(e) => put({ [key]: e.target.value || undefined })}>
+        <option value="">미정</option>
+        {Object.entries(names).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </Select>
+    </Row>
+  );
+  const flag = (label: string, key: 'refresh' | 'admin_separate', hint: string) => (
+    <Row label={label} hint={hint}>
+      <Select aria-label={label} value={a[key] === undefined ? '' : a[key] ? 'on' : 'off'} onChange={(e) => put({ [key]: e.target.value ? e.target.value === 'on' : undefined })}>
+        <option value="">미정</option>
+        {Object.entries(ONOFF).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </Select>
+    </Row>
+  );
+  const issuers = p.nodes.filter((n) => n.layer === 'backend' || n.layer === 'external');
+  return (
+    <Section id="s-auth" title="인증·인가" desc="사용자가 어떻게 로그인하고 권한을 어떻게 나누는지 정해요. 인터넷 공개 노드나 화면이 바로 부르는 외부 서비스가 있으면 비어 있는 값을 ⚠️로 알려요.">
+      {pick('방식', 'method', AUTH_METHOD_NAMES, '로그인 상태를 어떻게 유지하는지')}
+      <Row label="발급 노드" hint="로그인 토큰을 만들어 주는 노드 (자체 백엔드 또는 외부 인증 서비스)">
+        <Select aria-label="발급 노드" value={a.issuer ?? ''} onChange={(e) => put({ issuer: e.target.value || undefined })}>
+          <option value="">미정</option>
+          {issuers.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}
+        </Select>
+      </Row>
+      <NumField label="토큰 수명(분)" value={a.token_ttl_min} step={5} hint="로그인 토큰이 유효한 시간. 길수록 새었을 때 오래 쓰여요" onChange={(v) => put({ token_ttl_min: v && v > 0 ? v : undefined })} />
+      {flag('갱신', 'refresh', '짧은 토큰을 갱신 토큰으로 이어 가는지')}
+      {pick('MFA', 'mfa', MFA_NAMES, '비밀번호 외에 한 번 더 확인하는지')}
+      {pick('권한 모델', 'roles', ROLE_NAMES)}
+      {flag('관리자 분리', 'admin_separate', '관리자 기능을 일반 사용자와 따로 두는지')}
+      {pick('서비스 간 인증', 'service_auth', SERVICE_AUTH_NAMES, '서버끼리 서로를 확인하는 방법')}
+    </Section>
   );
 }
 

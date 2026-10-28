@@ -108,8 +108,14 @@ describe('테이블·연결 검증 (감사 2)', () => {
     expect(checkProject(p, [])).toEqual([]);
   });
 
-  it('형식 버전 7: 버전 1~6 파일(또는 버전 없음)은 그대로 열림', () => {
-    expect(FORMAT_VERSION).toBe(7);
+  it('인증·인가 발급 노드가 없는 노드 id면 오류', () => {
+    expect(checkProject(proj({ auth: { method: 'jwt', issuer: 'nope' } }), [])).toEqual(['인증·인가: 발급 노드 nope가 없음']);
+    expect(checkProject(proj({ auth: { method: 'jwt', issuer: 'a' } }), [])).toEqual([]);
+  });
+
+  it('형식 버전 8: 버전 1~7 파일(또는 버전 없음)은 그대로 열림', () => {
+    expect(FORMAT_VERSION).toBe(8);
+    expect(migrate({ name: 'p', format_version: 7 })).toEqual({ name: 'p' });
     expect(migrate({ name: 'p', format_version: 6 })).toEqual({ name: 'p' });
     expect(migrate({ name: 'p', format_version: 5 })).toEqual({ name: 'p' });
     expect(migrate({ name: 'p', format_version: 4 })).toEqual({ name: 'p' });

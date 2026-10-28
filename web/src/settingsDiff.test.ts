@@ -49,3 +49,18 @@ describe('설계 메모와 설정 되돌리기 (v1.3.0)', () => {
     expect(resetSettings(now, base)).toMatchObject({ name: base.name, notes: [{ title: '개요', body: '글' }] });
   });
 });
+
+describe('인증·인가 설정 (s-auth)', () => {
+  it('auth를 바꾸면 s-auth 수가 1이고 되돌리면 불러온 값으로 돌아옴', async () => {
+    const { changedCounts, resetSettings } = await import('./settingsDiff');
+    const { parseProject } = await import('../../engine/data');
+    const { catalog, examples } = await import('./data');
+    const base = parseProject(examples.find((e) => e.name === 'phase1.json')!.data, catalog.items);
+    const b2 = { ...base, auth: { method: 'session' as const } };
+    const now = { ...b2, auth: { method: 'jwt' as const } };
+    expect(changedCounts(now, b2)['s-auth']).toBe(1);
+    expect(changedCounts({ ...base, auth: { method: 'jwt' as const } }, base)['s-auth']).toBe(2); // 칸이 새로 생기면 has까지 센다
+    expect(resetSettings(now, b2).auth).toEqual(b2.auth);
+    expect(resetSettings(now, base).auth).toEqual(base.auth);
+  });
+});

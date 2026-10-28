@@ -1,6 +1,6 @@
 // 사용법: npm run judge -- <프로젝트.json> [카탈로그 폴더] [가격표 폴더]
 import { fileURLToPath } from 'node:url';
-import { hasExposure, LEVEL_MARK, stride } from './security';
+import { authFields, hasExposure, LEVEL_MARK, stride, STRIDE_MARK } from './security';
 import { analyze } from './analyze';
 import { PATHS_CUT_TEXT } from './latency';
 import { loadCatalog, loadLaws, loadPrices, loadProject } from './io';
@@ -153,11 +153,14 @@ try {
   // 네트워크·보안: ❌ → ⚠️ → ℹ️, 그다음 인터넷 공개 노드의 위협 점검표 (STRIDE)
   const order = { fail: 0, conditional: 1, info: 2 };
   const pub = project.nodes.filter((n) => hasExposure(n) && n.security?.exposure === 'public');
-  if (a.security.length || pub.length) console.log('\n## 네트워크·보안');
+  if (a.security.length || pub.length) {
+    console.log('\n## 네트워크·보안');
+    console.log(`🔐 인증·인가: ${authFields(project).map(([k, v]) => `${k} ${v}`).join(' · ')}`);
+  }
   for (const h of [...a.security].sort((x, y) => order[x.level] - order[y.level])) console.log(`${LEVEL_MARK[h.level]} ${h.target}\n    ${h.why}\n    → ${h.instead}`);
   for (const n of pub) {
     console.log(`🌐 ${n.name} 위협 점검 (STRIDE)`);
-    for (const [k, v] of stride(project, n)) console.log(`    ${k}: ${v}`);
+    for (const [k, v, st] of stride(project, n)) console.log(`    ${STRIDE_MARK[st]} ${k}: ${v}`);
   }
   if (a.regulation.length) console.log('\n## 확인 필요 조문 (법률 검토를 대신하지 않음)');
   for (const h of a.regulation) {

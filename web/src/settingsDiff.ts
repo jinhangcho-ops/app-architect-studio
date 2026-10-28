@@ -22,6 +22,7 @@ export const SETTINGS: { id: string; title: string; fields: (p: Project) => Reco
   { id: 's-growth', title: '성장', fields: (p) => ({ ...flat(p.growth), ...flat(p.growth?.inflow, 'in.'), has: !!p.growth }) },
   { id: 's-cost', title: '비용 기준', fields: (p) => flat(p.cost) },
   { id: 's-rec', title: '장애 목표', fields: (p) => ({ ...flat(p.recovery), has: !!p.recovery }) },
+  { id: 's-auth', title: '인증·인가', fields: (p) => ({ ...flat(p.auth), has: !!p.auth }) },
   // 이 PC의 앱 설정이라 프로젝트의 바뀐 항목으로 세지 않는다
   { id: 's-app', title: '앱', fields: () => ({}) },
 ];
@@ -42,6 +43,6 @@ export const resetSettings = (now: Project, base: Project): Project => {
   return keepWrites({
     ...now,
     name: base.name, deploy: base.deploy, scale: base.scale, target_utilization: base.target_utilization,
-    personas: base.personas, persona_mix: base.persona_mix, actions: base.actions, exchange: base.exchange, growth: base.growth, cost: base.cost, recovery: base.recovery,
+    personas: base.personas, persona_mix: base.persona_mix, actions: base.actions, exchange: base.exchange, growth: base.growth, cost: base.cost, recovery: base.recovery, auth: base.auth,
   }, (w) => tables.has(`${w.node}\u0000${w.table}`));
 };

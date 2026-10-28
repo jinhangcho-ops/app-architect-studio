@@ -37,3 +37,26 @@ describe('설정 화면: 문서에 있는 칸 (보관 기간·접속 횟수·접
     root.unmount();
   });
 });
+
+describe('설정 화면: 인증·인가 절', () => {
+  it('절이 보이고 방식을 고르면 p.auth.method가 저장되고 미정으로 되돌리면 auth가 사라짐', () => {
+    const ex = examples.find((e) => e.name === 'phase3.json')!;
+    const p = parseProject(ex.data, catalog.items, ex.name);
+    useStore.setState({ project: { ...p, auth: undefined }, past: [], future: [] });
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const root = createRoot(el);
+    flushSync(() => root.render(<ProjectPanel />));
+    expect(el.querySelector('#s-auth')).toBeTruthy();
+    const choose = (label: string, option: string) => {
+      flushSync(() => (el.querySelector(`button[aria-label="${label}"]`) as HTMLButtonElement).click());
+      flushSync(() => ([...document.querySelectorAll('.select-list [role="option"]')].find((o) => o.textContent === option) as HTMLElement).click());
+    };
+    choose('방식', 'JWT(자체 발급)');
+    expect(useStore.getState().project.auth?.method).toBe('jwt');
+    choose('방식', '미정');
+    expect(useStore.getState().project.auth).toBeUndefined();
+    root.unmount();
+    el.remove();
+  });
+});
