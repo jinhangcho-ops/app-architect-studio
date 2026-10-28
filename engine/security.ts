@@ -16,7 +16,10 @@ export type SecurityHit = {
   instead: string;
 };
 
-type Field = keyof NonNullable<ProjectNode['security']>;
+// rate_limit_rpm은 rate_limit 칸의 한도 값이라 따로 칸으로 세지 않음
+type Field = Exclude<keyof NonNullable<ProjectNode['security']>, 'rate_limit_rpm'>;
+/** 트래픽과 대조할 때 쓰는 값 (analyze가 채움): 노드 이벤트 피크 RPS, 이벤트 피크 동시 접속자 */
+export type SecurityCtx = { nodeEventRps: (id: string) => number | undefined; concurrentEvent: number };
 export const SECURITY_FIELD_NAMES: Record<Field, string> = {
   exposure: '공개 범위', tls: 'TLS', at_rest: '저장 암호화', secrets: '비밀 보관',
   waf: 'WAF', rate_limit: '속도 제한', audit_log: '감사 로그', tenant_isolation: '테넌트 분리',
@@ -37,14 +40,17 @@ const TENANT_KEY = /^(tenant|store|restaurant|shop|merchant|org|organization|com
 // 속도 제한을 대신하는 카탈로그 항목 (API 게이트웨이·속도 제한 패턴)
 const RATE_LIMITERS = new Set(['token_bucket', 'kong']);
 
+// 속도 제한이 있음: 한도 값(rate_limit_rpm)이 있거나 속도 제한 항목을 고름. 값은 rate_limit: false보다 이김
+const rateLimited = (n: ProjectNode) => n.security?.rate_limit_rpm !== undefined || itemIds(n).some((id) => RATE_LIMITERS.has(id));
 const hasTenantKey = (n: ProjectNode) => n.tables.some((t) => t.columns.some((c) => TENANT_KEY.test(c.name)));
 
 export const SECURITY_FIELDS = Object.keys(SECURITY_FIELD_NAMES) as Field[];
 /** 노드 보안 칸 하나를 글자로: 이 노드에서 정할 칸이 아니면 —, 비면 미정 */
 export function fieldText(n: ProjectNode, f: Field): string {
   if (!relevant(n).includes(f)) return '—';
-  const v = n.security?.[f];
-  if (v === undefined) return f === 'rate_limit' && itemIds(n).some((id) => RATE_LIMITERS.has(id)) ? '켬 (항목)' : '미정';
+  const v = n.security?.[f], rpm = n.security?.rate_limit_rpm;
+  if (f === 'rate_limit' && rpm !== undefined) return `켬 (${rpm}/분)`;
+  if (v === undefined) return f === 'rate_limit' && rateLimited(n) ? '켬 (항목)' : '미정';
   if (typeof v === 'boolean') return v ? '켬' : '끔';
   return ({ exposure: EXPOSURE_NAMES, secrets: SECRET_NAMES, tenant_isolation: TENANT_NAMES } as Record<string, Record<string, string>>)[f][v];
 }
@@ -92,7 +98,7 @@ export const edgeNet = (p: Project, e: Project['edges'][number]) => {
   return a && b && a !== b ? 'internet' : undefined;
 };
 
-export function checkSecurity(p: Project): SecurityHit[] {
+export function checkSecurity(p: Project, ctx?: SecurityCtx): SecurityHit[] {
   const hits: SecurityHit[] = [];
   const nameOf = (id: string) => p.nodes.find((n) => n.id === id)?.name ?? id;
   for (const n of p.nodes) {
@@ -108,8 +114,17 @@ export function checkSecurity(p: Project): SecurityHit[] {
     }
     // 4. 인터넷 공개 백엔드·게이트웨이에 WAF·속도 제한 없음
     if (s.exposure === 'public' && (n.layer === 'gateway' || n.layer === 'backend')) {
-      const missing = [...(s.waf === false ? ['WAF'] : []), ...(s.rate_limit === false && !itemIds(n).some((id) => RATE_LIMITERS.has(id)) ? ['속도 제한'] : [])];
+      const missing = [...(s.waf === false ? ['WAF'] : []), ...(s.rate_limit === false && !rateLimited(n) ? ['속도 제한'] : [])];
       if (missing.length) hits.push({ ...at, ruleId: 'sec_public_unguarded', level: 'conditional', why: `${n.name}이 인터넷에 열려 있는데 ${missing.join('·')} 없이 대량 요청·알려진 공격 패턴을 그대로 받습니다`, instead: '앞에 WAF(CDN·클라우드 WAF)와 사용자·IP별 속도 제한을 두세요' });
+      // 9. 속도 제한 기준치를 트래픽과 대조 (트래픽 계산 없음·동시 접속 0·트래픽 0·사용자가 너무 적어 바쁜 1분이 피크 전체 이상이면 건너뜀)
+      // shortcut: 바쁜 1분을 평균의 3배로 봄, 와이어프레임 화면당 호출 수를 모으게 되면 그 값으로 바꾼다
+      // shortcut: 노드에 오는 사용자가 아니라 전체 동시 접속으로 나눔, 노드별 동시 접속을 계산하게 되면 그 값으로
+      const rpm = s.rate_limit_rpm, rps = ctx?.nodeEventRps(n.id) ?? 0;
+      const busy = ctx && ctx.concurrentEvent > 0 ? (rps / ctx.concurrentEvent) * 60 * 3 : Infinity;
+      if (rpm !== undefined && rps > 0 && busy < rps * 60) {
+        if (rpm < busy) hits.push({ ...at, ruleId: 'sec_rate_limit_low', level: 'conditional', why: `속도 제한 ${rpm}/분이 정상 사용자의 바쁜 1분(약 ${Math.ceil(busy)}/분)보다 낮아 정상 사용자를 차단합니다`, instead: `${Math.ceil(busy)}/분 이상으로 올리거나, IP 대신 사용자(토큰) 단위로 세세요 (한 IP 뒤에 여러 사용자가 있음)` });
+        else if (rpm >= rps * 60) hits.push({ ...at, ruleId: 'sec_rate_limit_loose', level: 'info', why: `한 클라이언트가 이벤트 피크 전체(${Math.round(rps * 60)}/분)만큼 보내도 막히지 않아 효과가 적습니다`, instead: '피크의 몇 분의 일로 낮추세요' });
+      }
     }
     // 6. 화면(사용자 기기)에 비밀을 둠
     if (n.layer === 'ui' && (s.secrets === 'env' || s.secrets === 'manager')) {
@@ -124,7 +139,7 @@ export function checkSecurity(p: Project): SecurityHit[] {
       hits.push({ ...at, ruleId: 'sec_no_audit', level: 'conditional', why: `${n.name}이 개인정보를 다루는데 감사 로그가 없어 누가 언제 열람·변경했는지 확인할 수 없습니다`, instead: '개인정보 열람·변경·내보내기를 누가·언제·무엇을 남기는 로그로 남기세요 (개인정보 보호법의 접속기록 보관과 연결)' });
     }
     // 미정: 이 노드에서 정해야 하는 칸 중 비어 있는 것
-    const unset = relevant(n).filter((f) => s[f] === undefined && !(f === 'rate_limit' && itemIds(n).some((id) => RATE_LIMITERS.has(id))));
+    const unset = relevant(n).filter((f) => s[f] === undefined && !(f === 'rate_limit' && rateLimited(n)));
     if (unset.length) hits.push({ ...at, ruleId: 'sec_unset', level: 'conditional', why: `보안 값 미정: ${unset.map((f) => SECURITY_FIELD_NAMES[f]).join('·')}`, instead: '노드 패널 › 네트워크·보안에서 정하세요' });
   }
 

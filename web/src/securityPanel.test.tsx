@@ -43,6 +43,40 @@ describe('네트워크·보안 패널', () => {
     root.unmount(); el.remove();
   });
 
+  it('노드: 속도 제한을 켜면 한도 칸이 보이고, 값은 rate_limit_rpm(+rate_limit 켬)으로 저장, 비우거나 끄면 키가 지워짐, 파일에 값만 있어도 켬으로 보임', () => {
+    const base = ledger();
+    const withSec = (security?: object) => ({ ...base, nodes: base.nodes.map((n) => (n.id === 'B-01' ? { ...n, security } : n)) });
+    const sec = () => state().nodes.find((n) => n.id === 'B-01')!.security;
+    useStore.setState({ project: withSec({ exposure: 'public' }), past: [], future: [] });
+    const el = document.createElement('div'); document.body.append(el);
+    const root = createRoot(el);
+    const render = () => flushSync(() => root.render(<NodePanel id="B-01" analysis={run(state(), '2026-10-28').analysis} />));
+    const rpm = () => [...el.querySelectorAll('label.row')].find((l) => l.textContent?.startsWith('클라이언트당 분당 요청 한도'))?.querySelector('input') as HTMLInputElement | undefined;
+    const type = (v: string) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(rpm()!, v);
+      rpm()!.dispatchEvent(new Event('input', { bubbles: true }));
+      rpm()!.dispatchEvent(new FocusEvent('focusout', { bubbles: true })); // 비운 칸은 떠날 때 반영
+      render();
+    };
+    render();
+    expect(rpm()).toBeUndefined();
+    choose(el, '속도 제한', '켬'); render();
+    expect(rpm()).toBeDefined();
+    type('600');
+    expect(sec()).toEqual({ exposure: 'public', rate_limit: true, rate_limit_rpm: 600 });
+    type('');
+    expect(sec()).toEqual({ exposure: 'public', rate_limit: true });
+    type('600');
+    choose(el, '속도 제한', '끔'); render();
+    expect(sec()).toEqual({ exposure: 'public', rate_limit: false });
+    expect(rpm()).toBeUndefined();
+    // 파일에 rpm만 있고 rate_limit이 없어도 켬
+    useStore.setState({ project: withSec({ exposure: 'public', rate_limit_rpm: 300 }) }); render();
+    expect(el.querySelector('button[aria-label="속도 제한"]')!.textContent).toContain('켬');
+    expect(rpm()!.value).toBe('300');
+    root.unmount(); el.remove();
+  });
+
   it('연결선: 암호화·지나는 망, 비우면 짐작한 망을 안내하고 암호화 없음은 ❌', () => {
     useStore.setState({ project: ledger(), past: [], future: [] });
     const el = document.createElement('div'); document.body.append(el);

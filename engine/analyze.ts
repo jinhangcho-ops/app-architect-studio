@@ -374,7 +374,7 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     growth,
     judgements: p.nodes.map((n) => judgeNode(n, d.catalog, judged.get(n.id))),
     rules: checkRules(p, d.rules, tables.map((x) => ({ target: `${p.nodes.find((n) => n.id === x.nodeId)!.name}.${x.table}`, vars: x.vars }))),
-    security: checkSecurity(p),
+    security: checkSecurity(p, loads && t ? { nodeEventRps: (id) => loads.get(id)?.rps.event, concurrentEvent: t.concurrentPeakEvent.value } : undefined),
     tables,
     api: loads ? apiLoads(p, loads) : [],
     ...(t && {

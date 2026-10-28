@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { loadCatalog, loadProject } from '../io';
 import type { Project } from '../schema';
-import { checkSecurity, edgeNet } from '../security';
+import { checkSecurity, edgeNet, fieldText } from '../security';
 
 const root = (rel: string) => fileURLToPath(new URL(`../../${rel}`, import.meta.url));
 const catalog = loadCatalog(root('data/catalog'));
@@ -93,5 +93,56 @@ describe('네트워크·보안 점검', () => {
     // B-01(aws) → D-01(supabase)은 다른 클라우드라 인터넷, J-01(리전 없음 = 프로젝트 기본 aws) → B-01은 모름
     expect([edgeNet(ledger, e('U-01', 'B-01')), edgeNet(ledger, e('B-01', 'X-01')), edgeNet(ledger, e('B-01', 'D-01')), edgeNet(ledger, e('J-01', 'B-01'))]).toEqual(['internet', 'internet', 'internet', undefined]);
     expect(edgeNet(ledger, { ...e('U-01', 'B-01'), security: { crosses: 'internal' } })).toBe('internal');
+  });
+});
+
+describe('속도 제한 기준치(rate_limit_rpm)를 트래픽과 대조', () => {
+  // B-01 이벤트 피크 10 RPS, 동시 접속 100명 → 바쁜 1분 = 10/100×60×3 = 18/분, 피크 전체 = 600/분
+  const ctx = { nodeEventRps: (id: string): number | undefined => (id === 'B-01' ? 10 : undefined), concurrentEvent: 100 };
+  const rpm = (n: number, extra: Sec = {}) => withSec({ ...safe, 'B-01': { ...safe['B-01'], rate_limit_rpm: n, ...extra } }, safeEdges);
+  const rateHits = (p: Project, c?: typeof ctx) => checkSecurity(p, c).filter((h) => h.ruleId.startsWith('sec_rate_limit'));
+
+  it('⚠️ 바쁜 1분보다 낮음, ℹ️ 피크 전체 이상, 사이 값은 없음', () => {
+    expect(rateHits(rpm(10), ctx).map((h) => [h.level, h.ruleId, h.node, h.why, h.instead])).toEqual([[
+      'conditional', 'sec_rate_limit_low', 'B-01',
+      '속도 제한 10/분이 정상 사용자의 바쁜 1분(약 18/분)보다 낮아 정상 사용자를 차단합니다',
+      '18/분 이상으로 올리거나, IP 대신 사용자(토큰) 단위로 세세요 (한 IP 뒤에 여러 사용자가 있음)',
+    ]]);
+    expect(rateHits(rpm(600), ctx).map((h) => [h.level, h.ruleId, h.why, h.instead])).toEqual([[
+      'info', 'sec_rate_limit_loose', '한 클라이언트가 이벤트 피크 전체(600/분)만큼 보내도 막히지 않아 효과가 적습니다', '피크의 몇 분의 일로 낮추세요',
+    ]]);
+    expect(rateHits(rpm(100), ctx)).toEqual([]);
+    expect(rateHits(rpm(18), ctx)).toEqual([]);
+  });
+
+  it('ctx가 없거나 동시 접속이 0이면 대조하지 않음', () => {
+    expect(rateHits(rpm(10))).toEqual([]);
+    expect(rateHits(rpm(600))).toEqual([]);
+    expect(rateHits(rpm(10), { ...ctx, concurrentEvent: 0 })).toEqual([]);
+  });
+
+  it('사용자가 매우 적어 바쁜 1분이 피크 전체 이상이거나 트래픽이 0이면 대조하지 않음', () => {
+    // 동시 접속 2명: 바쁜 1분 = 10/2×60×3 = 900/분 ≥ 피크 전체 600/분
+    expect(rateHits(rpm(10), { ...ctx, concurrentEvent: 2 })).toEqual([]);
+    expect(rateHits(rpm(600), { ...ctx, concurrentEvent: 2 })).toEqual([]);
+    expect(rateHits(rpm(10), { ...ctx, nodeEventRps: () => 0 })).toEqual([]);
+    expect(rateHits(rpm(0), { ...ctx, nodeEventRps: () => 0 })).toEqual([]);
+  });
+
+  it('바쁜 1분은 올림해서 보임: 한도가 올림값과 같으면 ⚠️ 없음, 낮으면 올림값을 안내', () => {
+    const c = { nodeEventRps: () => 103, concurrentEvent: 1800 }; // 바쁜 1분 = 10.3/분
+    expect(rateHits(rpm(11), c)).toEqual([]);
+    const [h] = rateHits(rpm(10), c);
+    expect(h.why).toContain('약 11/분');
+    expect(h.instead).toContain('11/분 이상');
+  });
+
+  it('값이 있으면 속도 제한은 켬: 공개 무방비·미정에 속도 제한이 빠지고, 칸 글자는 "켬 (600/분)"', () => {
+    const off = rpm(100, { waf: false, rate_limit: false });
+    expect(checkSecurity(off, ctx).find((h) => h.ruleId === 'sec_public_unguarded')!.why).not.toContain('속도 제한');
+    const { rate_limit: _r, ...noFlag } = safe['B-01'];
+    const unset = withSec({ ...safe, 'B-01': { ...noFlag, rate_limit_rpm: 100 } }, safeEdges);
+    expect(checkSecurity(unset).filter((h) => h.ruleId === 'sec_unset' && h.why.includes('속도 제한'))).toEqual([]);
+    expect(fieldText(rpm(600, { rate_limit: false }).nodes.find((n) => n.id === 'B-01')!, 'rate_limit')).toBe('켬 (600/분)');
   });
 });

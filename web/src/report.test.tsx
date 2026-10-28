@@ -97,19 +97,20 @@ describe('설계서: 네트워크·보안 장', () => {
     const p0 = load('ledger-fastapi.json');
     const p = {
       ...p0,
-      nodes: p0.nodes.map((n) => (n.id === 'B-01' ? { ...n, security: { exposure: 'public' as const, tls: true, waf: false } } : n)),
+      nodes: p0.nodes.map((n) => (n.id === 'B-01' ? { ...n, security: { exposure: 'public' as const, tls: true, waf: false, rate_limit_rpm: 600 } } : n)),
       edges: p0.edges.map((e) => (e.from === 'U-01' && e.to === 'B-01' ? { ...e, security: { tls: 'none' as const } } : e)),
     };
     const html = renderToStaticMarkup(
       <Report project={p} analysis={run(p, today).analysis} positions={autoLayout(p)} today={today} onClose={() => {}} />,
     ).replace(/<!-- -->/g, '');
     const sec = html.slice(html.indexOf('네트워크 · 보안</h2>'), html.indexOf('확인 필요 조문</h2>'));
-    // B-01 행: 공개 범위·TLS·저장 암호화(—)·비밀 보관(미정)·WAF(끔)·속도 제한(미정)
-    expect(sec).toContain('<tr><td>장부 API (FastAPI)</td><td>인터넷 공개</td><td>켬</td><td>—</td><td>미정</td><td>끔</td><td>미정</td>');
+    // B-01 행: 공개 범위·TLS·저장 암호화(—)·비밀 보관(미정)·WAF(끔)·속도 제한(켬 600/분)
+    expect(sec).toContain('<tr><td>장부 API (FastAPI)</td><td>인터넷 공개</td><td>켬</td><td>—</td><td>미정</td><td>끔</td><td>켬 (600/분)</td>');
     expect(sec).not.toContain('<td>Google Vision OCR</td>');
     expect(sec).toContain('<td>장부 PWA → 장부 API (FastAPI)</td><td>암호화 없음</td><td>인터넷 (짐작)</td>');
     expect(sec.indexOf('❌')).toBeLessThan(sec.indexOf('⚠️'));
     expect(sec).toContain('<th colSpan="2">장부 API (FastAPI)</th>');
-    expect(sec).toContain('대량 요청을 막는지 (WAF 끔 · 속도 제한 미정)');
+    expect(sec).toContain('대량 요청을 막는지 (WAF 끔 · 속도 제한 켬 (600/분))');
+    expect(html).toContain('효과가 적습니다');
   });
 });

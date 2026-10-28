@@ -434,6 +434,8 @@ export const NodeSecurity = z.object({
   secrets: z.enum(SECRET_STORES).optional(),
   waf: z.boolean().optional(),
   rate_limit: z.boolean().optional(),
+  /** 클라이언트(사용자·IP) 1개의 분당 요청 한도. 있으면 rate_limit을 켬으로 본다 */
+  rate_limit_rpm: z.number().positive().optional(),
   audit_log: z.boolean().optional(),
   tenant_isolation: z.enum(TENANT_ISOLATIONS).optional(),
 });

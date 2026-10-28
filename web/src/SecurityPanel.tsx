@@ -2,7 +2,8 @@
 import type { Analysis } from '../../engine/analyze';
 import type { ProjectEdge, ProjectNode } from '../../engine/schema';
 import { EDGE_NET_NAMES, EDGE_TLS_NAMES, EXPOSURE_NAMES, LEVEL_MARK, relevant, SECRET_NAMES, SECURITY_FIELD_NAMES, TENANT_NAMES, edgeNet, type SecurityHit } from '../../engine/security';
-import { Row, Section } from './fields';
+import { Fragment } from 'react';
+import { NumField, Row, Section } from './fields';
 import { Select } from './Select';
 import { usePick } from './store';
 import { updateEdge, updateNode } from './edit';
@@ -60,8 +61,17 @@ export function NodeSecuritySection({ node: n, analysis }: { node: ProjectNode; 
   const set = (key: keyof NodeSec, v: unknown) => edit((p) => updateNode(p, n.id, { security: patched<NodeSec>(n.security, key, v) }));
   const fields = relevant(n);
   const hits = analysis?.security.filter((h) => h.node === n.id) ?? [];
+  // 엔진과 같게: 한도 값이 있으면 속도 제한 켬. 끔·미정으로 바꾸면 한도도 지움
+  const rateOn = s.rate_limit === true || s.rate_limit_rpm !== undefined;
+  const setRate = (on: boolean | undefined, rpm?: number) => edit((p) => updateNode(p, n.id, { security: patched<NodeSec>(patched<NodeSec>(n.security, 'rate_limit', on), 'rate_limit_rpm', rpm) }));
   const bool = (key: 'tls' | 'at_rest' | 'waf' | 'rate_limit' | 'audit_log') => (
-    <Pick key={key} label={SECURITY_FIELD_NAMES[key]} hint={HINTS[key]} value={fromBool(s[key])} names={ONOFF} onChange={(v) => set(key, toBool(v))} />
+    <Fragment key={key}>
+      <Pick label={SECURITY_FIELD_NAMES[key]} hint={HINTS[key]} value={fromBool(key === 'rate_limit' && rateOn ? true : s[key])} names={ONOFF} onChange={(v) => (key === 'rate_limit' ? setRate(toBool(v)) : set(key, toBool(v)))} />
+      {key === 'rate_limit' && rateOn && (
+        <NumField label="클라이언트당 분당 요청 한도" value={s.rate_limit_rpm} step={1} hint="사용자·IP 하나가 1분에 보낼 수 있는 요청 수. 트래픽과 대조해 너무 낮거나 느슨하면 아래에 알립니다 (단위 /분)"
+          onChange={(v) => (v && v > 0 ? setRate(true, v) : setRate(true))} />
+      )}
+    </Fragment>
   );
   return (
     <Section title="네트워크·보안" desc={fields.length ? '비어 있는 칸은 "미정"으로 판정에서 확인 필요로 알려요.' : '이 노드는 우리가 정할 보안 칸이 없어요 (외부 서비스는 그 회사가 관리).'}>

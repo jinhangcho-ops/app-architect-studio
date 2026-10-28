@@ -239,14 +239,14 @@ describe('형식 4: 프로젝트 설계 메모', () => {
   });
 });
 
-describe('형식 5: 네트워크·보안', () => {
+describe('현재 형식: 네트워크·보안', () => {
   it('노드·연결선 보안 값이 저장·열기에서 그대로, 형식 4 파일은 미정으로 열리고, 모르는 값은 그 칸만 빼고 엶', () => {
     const p = parseProject(examples.find((e) => e.name === 'ledger-fastapi.json')!.data, catalog.items);
-    const node = { exposure: 'public' as const, tls: true, at_rest: false, secrets: 'manager' as const, waf: true, rate_limit: true, audit_log: false, tenant_isolation: 'rls' as const };
+    const node = { exposure: 'public' as const, tls: true, at_rest: false, secrets: 'manager' as const, waf: true, rate_limit: true, audit_log: false, tenant_isolation: 'rls' as const, rate_limit_rpm: 600 };
     const edge = { tls: 'mtls' as const, crosses: 'internet' as const };
     const q = { ...p, nodes: p.nodes.map((n, i) => (i === 0 ? { ...n, security: node } : n)), edges: p.edges.map((e, i) => (i === 0 ? { ...e, security: edge } : e)) };
     const saved = JSON.parse(JSON.stringify(exportProject(q, {})));
-    expect(saved.format_version).toBe(5);
+    expect(saved.format_version).toBe(FORMAT_VERSION);
     const back = importProject(saved, 'x').project;
     expect([back.nodes[0].security, back.edges[0].security]).toEqual([node, edge]);
     const { security: _n, ...n0 } = saved.nodes[0];
@@ -258,5 +258,10 @@ describe('형식 5: 네트워크·보안', () => {
     const odd = readProject({ ...saved, nodes: [{ ...saved.nodes[0], security: { ...node, exposure: 'world' } }, ...saved.nodes.slice(1)], edges: [{ ...saved.edges[0], security: { tls: 'ssl3' } }, ...saved.edges.slice(1)] }, catalog.items, 'x', notes);
     expect([odd.nodes[0].security?.exposure, odd.nodes[0].security?.waf, odd.edges[0].security?.tls]).toEqual([undefined, true, undefined]);
     expect(notes.join('\n')).toContain('알 수 없는 보안 값');
+    // 한도가 숫자가 아니면(문자열) 그 칸만 빠지고 알림이 남음
+    const notes2: string[] = [];
+    const str = readProject({ ...saved, nodes: [{ ...saved.nodes[0], security: { ...node, rate_limit_rpm: '600' } }, ...saved.nodes.slice(1)] }, catalog.items, 'x', notes2);
+    expect([str.nodes[0].security?.rate_limit_rpm, str.nodes[0].security?.waf]).toEqual([undefined, true]);
+    expect(notes2.join('\n')).toContain('알 수 없는 보안 값');
   });
 });
