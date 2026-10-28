@@ -42,6 +42,25 @@ describe('닫힌 테이블 편집기 (감사 11)', () => {
   });
 });
 
+describe('데이터 사전 보호 칸', () => {
+  it('개인정보 컬럼에만 보호 Select가 보이고, 토큰화를 고르면 저장, 개인정보를 끄면 사라지고 값도 지워짐', () => {
+    const { el, root, render, col } = mountTable();
+    const name = col().name;
+    const prot = () => el.querySelector(`button[aria-label="${name} 보호"]`) as HTMLButtonElement | null;
+    const check = () => el.querySelector(`input[aria-label="${name} 개인정보"]`) as HTMLInputElement;
+    if (!col().personal) { flushSync(() => check().click()); render(); }
+    expect(prot()).not.toBeNull();
+    flushSync(() => prot()!.click());
+    flushSync(() => ([...document.querySelectorAll('.select-list [role="option"]')].find((o) => o.textContent === '토큰화') as HTMLElement).click()); render();
+    expect(col().protection).toBe('tokenize');
+    flushSync(() => check().click()); render();
+    expect(col().personal).toBe(false);
+    expect(col().protection).toBeUndefined();
+    expect(prot()).toBeNull();
+    root.unmount();
+  });
+});
+
 describe('데이터 사전 칸', () => {
   it('되돌리기 뒤에 칸이 지금 값을 보이고, 칸을 지나가도 옛 값을 다시 저장하지 않음', () => {
     const { el, root, render, col } = mountTable();

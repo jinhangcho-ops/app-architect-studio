@@ -322,11 +322,17 @@ describe('기능별 테이블 · 데이터 사전', () => {
     expect(unusedTables(p)).toEqual(['db.logs']);
   });
 
-  it('데이터 사전 CSV: 컬럼마다 한 줄, 코드 값·개인정보·쓰는·읽는 기능', () => {
+  it('데이터 사전 CSV: 컬럼마다 한 줄, 코드 값·개인정보·보호·보관(일)·쓰는·읽는 기능', () => {
     const lines = dataDictionaryCsv(project('postgresql'), catalog.byId).split('\r\n');
     expect(lines[0].startsWith('\uFEFF노드,테이블')).toBe(true);
-    expect(lines).toContain('매출 DB,sales,매출,하루 매출 (가게\'s),고정장,3,pay,,text,CHAR(1),1,Y,C,,,C=카드; M=현금,,,매출 입력,매출 조회');
-    expect(lines).toContain('매출 DB,sales,매출,하루 매출 (가게\'s),고정장,5,phone,,text,CHAR(20),20,N,,,,,Y,연락처,매출 입력,매출 조회');
+    expect(lines[0]).toContain(',개인정보,보호,보관(일),설명,');
+    expect(lines).toContain('매출 DB,sales,매출,하루 매출 (가게\'s),고정장,3,pay,,text,CHAR(1),1,Y,C,,,C=카드; M=현금,,,,,매출 입력,매출 조회');
+    expect(lines).toContain('매출 DB,sales,매출,하루 매출 (가게\'s),고정장,5,phone,,text,CHAR(20),20,N,,,,,Y,,,연락처,매출 입력,매출 조회');
+    // 보호와 테이블에 직접 정한 보관 일수가 있으면 그 값
+    const p = project('postgresql');
+    const t = p.nodes[1].tables[0];
+    p.nodes[1].tables[0] = { ...t, retention_days: 365, columns: t.columns.map((c) => (c.name === 'phone' ? { ...c, protection: 'encrypt' as const } : c)) };
+    expect(dataDictionaryCsv(p, catalog.byId).split('\r\n')).toContain('매출 DB,sales,매출,하루 매출 (가게\'s),고정장,5,phone,,text,CHAR(20),20,N,,,,,Y,컬럼 암호화,365,연락처,매출 입력,매출 조회');
   });
 
   it('없는 테이블을 연결하면 검증 오류', async () => {

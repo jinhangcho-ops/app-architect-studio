@@ -64,12 +64,18 @@ export function NodeSecuritySection({ node: n, analysis }: { node: ProjectNode; 
   // 엔진과 같게: 한도 값이 있으면 속도 제한 켬. 끔·미정으로 바꾸면 한도도 지움
   const rateOn = s.rate_limit === true || s.rate_limit_rpm !== undefined;
   const setRate = (on: boolean | undefined, rpm?: number) => edit((p) => updateNode(p, n.id, { security: patched<NodeSec>(patched<NodeSec>(n.security, 'rate_limit', on), 'rate_limit_rpm', rpm) }));
+  // 감사 로그를 끔·미정으로 바꾸면 보관 기간도 지움
+  const setAudit = (on: boolean | undefined) => edit((p) => updateNode(p, n.id, { security: patched<NodeSec>(patched<NodeSec>(n.security, 'audit_log', on), 'audit_retention_months', undefined) }));
   const bool = (key: 'tls' | 'at_rest' | 'waf' | 'rate_limit' | 'audit_log') => (
     <Fragment key={key}>
-      <Pick label={SECURITY_FIELD_NAMES[key]} hint={HINTS[key]} value={fromBool(key === 'rate_limit' && rateOn ? true : s[key])} names={ONOFF} onChange={(v) => (key === 'rate_limit' ? setRate(toBool(v)) : set(key, toBool(v)))} />
+      <Pick label={SECURITY_FIELD_NAMES[key]} hint={HINTS[key]} value={fromBool(key === 'rate_limit' && rateOn ? true : s[key])} names={ONOFF} onChange={(v) => (key === 'rate_limit' ? setRate(toBool(v)) : key === 'audit_log' && v !== 'on' ? setAudit(toBool(v)) : set(key, toBool(v)))} />
       {key === 'rate_limit' && rateOn && (
         <NumField label="클라이언트당 분당 요청 한도" value={s.rate_limit_rpm} step={1} hint="사용자·IP 하나가 1분에 보낼 수 있는 요청 수. 트래픽과 대조해 너무 낮거나 느슨하면 아래에 알립니다 (단위 /분)"
           onChange={(v) => (v && v > 0 ? setRate(true, v) : setRate(true))} />
+      )}
+      {key === 'audit_log' && s.audit_log === true && (
+        <NumField label="감사 로그 보관 기간(개월)" value={s.audit_retention_months} step={1} hint="접속기록을 몇 달 보관하는지. 개인정보 안전성 확보조치 기준은 1년, 5만 명 이상·고유식별정보·민감정보는 2년"
+          onChange={(v) => set('audit_retention_months', v && v > 0 ? Math.round(v) : undefined)} />
       )}
     </Fragment>
   );

@@ -293,6 +293,8 @@ export const Column = z.object({
   domain: z.string().optional(),
   codes: z.array(z.object({ code: z.string().min(1), label: z.string().default('') })).optional(),
   personal: z.boolean().default(false),
+  /** 개인정보 컬럼 보호: none = 없음, encrypt = 컬럼 암호화, tokenize = 토큰화, mask = 표시 때 마스킹. 비면 미정 */
+  protection: z.enum(['none', 'encrypt', 'tokenize', 'mask']).optional(),
   default_value: z.string().optional(),
 });
 /** 장 형식: variable = 가변장(문자열은 실제 길이), fixed = 고정장(문자열·바이너리를 선언 길이 CHAR(n)·BINARY(n)로) */
@@ -437,6 +439,8 @@ export const NodeSecurity = z.object({
   /** 클라이언트(사용자·IP) 1개의 분당 요청 한도. 있으면 rate_limit을 켬으로 본다 */
   rate_limit_rpm: z.number().positive().optional(),
   audit_log: z.boolean().optional(),
+  /** 감사 로그(접속기록) 보관 개월. audit_log가 켬일 때만 뜻이 있다 */
+  audit_retention_months: z.number().int().positive().optional(),
   tenant_isolation: z.enum(TENANT_ISOLATIONS).optional(),
 });
 export const EdgeSecurity = z.object({ tls: z.enum(EDGE_TLS).optional(), crosses: z.enum(EDGE_NETS).optional() });

@@ -30,6 +30,12 @@
     "as_of": "2026-10-23", "source": "https://www.law.go.kr/법령/개인정보보호법", "verified": false
   },
   {
+    "id": "kr-21", "law": "개인정보 보호법", "article": "제21조",
+    "trigger": "personal and subject_KR",
+    "reason": "보유 기간 경과·목적 달성 시 파기 절차",
+    "as_of": "2026-10-28", "source": "https://www.law.go.kr/법령/개인정보보호법", "verified": false
+  },
+  {
     "id": "jp-23", "law": "個人情報保護法", "article": "第23条",
     "trigger": "personal and subject_JP",
     "reason": "일본 사용자 개인정보 저장",
@@ -52,5 +58,11 @@
     "trigger": "personal and subject_JP and sends_external",
     "reason": "일본 사용자 개인정보를 외부 연동 노드로 전송",
     "as_of": "2026-10-23", "source": "https://laws.e-gov.go.jp/law/415AC0000000057", "verified": false
+  },
+  {
+    "id": "jp-22", "law": "個人情報保護法", "article": "第22条",
+    "trigger": "personal and subject_JP",
+    "reason": "불필요해진 개인데이터 삭제 노력 의무",
+    "as_of": "2026-10-28", "source": "https://laws.e-gov.go.jp/law/415AC0000000057", "verified": false
   }
 ]

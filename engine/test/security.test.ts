@@ -308,3 +308,113 @@ describe('속도 제한 기준치(rate_limit_rpm)를 트래픽과 대조', () =>
     expect(fieldText(q, q.nodes.find((n) => n.id === 'B-01')!, 'rate_limit')).toBe('켬 (600/분)');
   });
 });
+
+describe('데이터 보호: 감사 로그 보관 기간·개인정보 컬럼 보호·보관 기간', () => {
+  const privacy = { personal: true, sensitive: false, unique_id: false, subjects: ['KR'], sends_external: false };
+  // D-01을 개인정보 노드로 만들고 감사 로그 값을 바꿔 본다
+  const audit = (extra: Sec) => {
+    const p = withSec({ ...safe, 'B-01': { ...safe['B-01'], audit_log: true, audit_retention_months: 12 }, 'D-01': { ...safe['D-01'], ...extra } }, safeEdges);
+    return { ...p, nodes: p.nodes.map((n) => (n.id === 'D-01' ? { ...n, privacy } : n)) };
+  };
+  const d = (p: Project) => p.nodes.find((n) => n.id === 'D-01')!;
+  // D-01 daily_sales의 컬럼을 바꿔 본다 (개인정보 노드 표시와 무관하게 컬럼만 봄)
+  type Col = Project['nodes'][number]['tables'][number]['columns'][number];
+  const col = (name: string, extra: Partial<Col> = {}): Col => ({ name, type: 'text', nullable: false, personal: false, ...extra });
+  const table = (columns: Col[], retention_days?: number) => {
+    const p = withSec(safe, safeEdges);
+    return { ...p, nodes: p.nodes.map((n) => (n.id === 'D-01' ? { ...n, tables: [{ ...n.tables[0], columns, retention_days }] } : n)) };
+  };
+  const rule = (p: Project, id: string) => checkSecurity(p).filter((h) => h.ruleId === id).map((h) => [h.level, h.node, h.target, h.why, h.instead]);
+
+  it('⚠️ sec_audit_short: 감사 로그 켬인데 보관 12개월 미만', () => {
+    expect(rule(audit({ audit_log: true, audit_retention_months: 6 }), 'sec_audit_short')).toEqual([[
+      'conditional', 'D-01', 'Supabase (PostgreSQL)',
+      '접속기록 보관 6개월이 개인정보 안전성 확보조치 기준(12개월: 1년, 5만 명 이상·고유식별정보·민감정보는 2년)보다 짧습니다',
+      '12개월 이상 보관하고 월 1회 점검하세요',
+    ]]);
+    expect(rule(audit({ audit_log: true, audit_retention_months: 12 }), 'sec_audit_short')).toEqual([]);
+    // 감사 로그 끔이면 기간은 따지지 않음 (sec_no_audit가 대신 걸림)
+    expect(rule(audit({ audit_log: false, audit_retention_months: 6 }), 'sec_audit_short')).toEqual([]);
+    // 감사 로그를 정할 노드가 아니면(개인정보 없음) 따지지 않음
+    expect(rule(withSec({ ...safe, 'D-01': { ...safe['D-01'], audit_log: true, audit_retention_months: 6 } }, safeEdges), 'sec_audit_short')).toEqual([]);
+  });
+
+  it('감사 로그 켬인데 보관 기간이 비면 미정 줄에 "감사 로그 보관 기간"', () => {
+    expect(rule(audit({ audit_log: true }), 'sec_unset').map((h) => h[3])).toEqual(['보안 값 미정: 감사 로그 보관 기간']);
+    expect(rule(audit({ audit_log: false }), 'sec_unset')).toEqual([]);
+    expect(rule(audit({}), 'sec_unset').map((h) => h[3])).toEqual(['보안 값 미정: 감사 로그']);
+  });
+
+  it('감사 로그 칸 글자: 켬이고 기간이 있으면 "켬 (18개월)"', () => {
+    const p = audit({ audit_log: true, audit_retention_months: 18 });
+    expect(fieldText(p, d(p), 'audit_log')).toBe('켬 (18개월)');
+    const q = audit({ audit_log: true });
+    expect(fieldText(q, d(q), 'audit_log')).toBe('켬');
+  });
+
+  it('⚠️ sec_column_plain: 테이블마다 한 줄, 보호 없음·미정 컬럼 이름과 미정 수', () => {
+    const p = table([col('id', { type: 'uuid' }), col('phone', { personal: true, protection: 'none' }), col('email', { personal: true }), col('name', { personal: true, protection: 'encrypt' })], 365);
+    expect(rule(p, 'sec_column_plain')).toEqual([[
+      'conditional', 'D-01', 'Supabase (PostgreSQL).daily_sales',
+      '개인정보 컬럼 phone·email에 보호가 없습니다(저장 암호화와 별개로 조회 결과·백업·로그에 그대로 보임) (미정 1개)',
+      '식별자는 토큰화, 연락처·주민번호 류는 컬럼 암호화, 화면 표시는 마스킹',
+    ]]);
+    expect(rule(table([col('phone', { personal: true, protection: 'none' })], 365), 'sec_column_plain')[0][3]).toBe('개인정보 컬럼 phone에 보호가 없습니다(저장 암호화와 별개로 조회 결과·백업·로그에 그대로 보임)');
+    expect(rule(table([col('phone', { personal: true, protection: 'mask' }), col('memo')], 365), 'sec_column_plain')).toEqual([]);
+  });
+
+  it('⚠️ sec_no_retention: 개인정보 컬럼이 있는 테이블에 보관 일수를 직접 정하지 않음 (scale 값은 보지 않음)', () => {
+    const cols = [col('phone', { personal: true, protection: 'encrypt' })];
+    expect(rule(table(cols), 'sec_no_retention')).toEqual([[
+      'conditional', 'D-01', 'Supabase (PostgreSQL).daily_sales',
+      '개인정보 테이블에 보관 기간이 없어 파기 시점을 정할 수 없습니다',
+      '목적 달성 뒤 지체 없이 파기(개인정보 보호법 제21조) — 보관 일수를 정하고 배치로 지우거나 분리 보관',
+    ]]);
+    expect(rule(table(cols, 365), 'sec_no_retention')).toEqual([]);
+  });
+
+  it('sec_audit_short: 고유식별정보·민감정보·5만 명 이상이면 24개월 기준', () => {
+    const with18 = (extra: object, users?: number) => {
+      const p = audit({ audit_log: true, audit_retention_months: 18 });
+      return { ...p, scale: users ? { ...p.scale, users } : p.scale, nodes: p.nodes.map((n) => (n.id === 'D-01' ? { ...n, privacy: { ...privacy, ...extra } } : n)) } as Project;
+    };
+    // 개인정보를 읽고 쓰는 공개 API(B-01, 12개월)도 프로젝트 개인정보 노드 기준으로 24개월
+    expect(rule(with18({ unique_id: true }), 'sec_audit_short')).toEqual([[
+      'conditional', 'B-01', '장부 API (FastAPI)',
+      '접속기록 보관 12개월이 개인정보 안전성 확보조치 기준(24개월: 1년, 5만 명 이상·고유식별정보·민감정보는 2년)보다 짧습니다',
+      '24개월 이상 보관하고 월 1회 점검하세요',
+    ], [
+      'conditional', 'D-01', 'Supabase (PostgreSQL)',
+      '접속기록 보관 18개월이 개인정보 안전성 확보조치 기준(24개월: 1년, 5만 명 이상·고유식별정보·민감정보는 2년)보다 짧습니다',
+      '24개월 이상 보관하고 월 1회 점검하세요',
+    ]]);
+    expect(rule(with18({}), 'sec_audit_short')).toEqual([]);
+    expect(rule(with18({}, 100000), 'sec_audit_short').map((h) => h[1])).toEqual(['B-01', 'D-01']);
+  });
+
+  it('sec_audit_short: 데이터 주체가 일본뿐이면 한국 고시 기준이라 건너뜀', () => {
+    const p = audit({ audit_log: true, audit_retention_months: 6 });
+    const jp = { ...p, nodes: p.nodes.map((n) => (n.id === 'D-01' ? { ...n, privacy: { ...privacy, subjects: ['JP'] } } : n)) } as Project;
+    expect(rule(jp, 'sec_audit_short')).toEqual([]);
+  });
+
+  it('sec_column_plain: 고유식별·민감 노드에서는 마스킹도 보호가 아님', () => {
+    const p = table([col('rrn', { personal: true, protection: 'mask' })], 365);
+    const q = { ...p, nodes: p.nodes.map((n) => (n.id === 'D-01' ? { ...n, privacy: { ...privacy, unique_id: true } } : n)) } as Project;
+    expect(rule(q, 'sec_column_plain')[0]?.[3]).toBe('개인정보 컬럼 rrn에 보호가 없습니다(저장 암호화와 별개로 조회 결과·백업·로그에 그대로 보임) (마스킹은 표시용이라 저장 암호화가 필요)');
+    expect(rule(p, 'sec_column_plain')).toEqual([]);
+  });
+
+  it('개인정보 컬럼이 있는데 노드 개인정보 속성이 비면 미정 줄에 알림', () => {
+    const p = table([col('phone', { personal: true, protection: 'encrypt' })], 365);
+    expect(rule(p, 'sec_unset').map((h) => h[3])).toEqual(['보안 값 미정: 개인정보 속성(개인정보 컬럼 있음)']);
+    // actions 예시의 주문 DB: orders.user_id가 개인정보인데 노드 privacy 없음
+    const ax = loadProject(root('examples/actions.json'), catalog.items);
+    expect(checkSecurity(ax).find((h) => h.ruleId === 'sec_unset' && h.node === 'db')?.why).toContain('개인정보 속성(개인정보 컬럼 있음)');
+  });
+
+  it('개인정보 컬럼이 없으면 컬럼 보호·보관 기간 규칙은 없음', () => {
+    const p = table([col('id', { type: 'uuid' }), col('memo')]);
+    expect(checkSecurity(p).filter((h) => h.ruleId === 'sec_column_plain' || h.ruleId === 'sec_no_retention')).toEqual([]);
+  });
+});

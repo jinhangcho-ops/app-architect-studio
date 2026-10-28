@@ -126,7 +126,7 @@ type Action = Project['actions'][number];
 const mapTables = (p: Project, nodeId: string, fn: (ts: Table[]) => Table[]): Project =>
   ({ ...p, nodes: p.nodes.map((n) => (n.id === nodeId ? { ...n, tables: fn(n.tables) } : n)) });
 
-/** 명세서에 없는 데이터 사전 메타(테이블 논리명·설명·장 형식, 같은 이름 컬럼의 논리명·도메인·코드·개인정보·기본값·설명)는 옛 값을 쓴다.
+/** 명세서에 없는 데이터 사전 메타(테이블 논리명·설명·장 형식·보관 일수, 같은 이름 컬럼의 논리명·도메인·코드·개인정보·보호·기본값·설명)는 옛 값을 쓴다.
  *  shortcut: personal·record는 기본값(false·variable)이면 옛 값을 쓰므로 JSON 명세로 끄거나 가변장으로 되돌릴 수는 없다 — 필요하면 칸에서 바꾼다 */
 function keepMeta(t: Table, old: Table): Table {
   return {
@@ -134,12 +134,14 @@ function keepMeta(t: Table, old: Table): Table {
     label: t.label ?? old.label,
     description: t.description ?? old.description,
     record: t.record === 'variable' ? old.record : t.record,
+    retention_days: t.retention_days ?? old.retention_days,
     columns: t.columns.map((c) => {
       const o = old.columns.find((x) => x.name === c.name);
       return !o ? c : {
         ...c,
         label: c.label ?? o.label, domain: c.domain ?? o.domain, codes: c.codes ?? o.codes,
         personal: c.personal || o.personal, default_value: c.default_value ?? o.default_value, description: c.description ?? o.description,
+        protection: c.protection ?? o.protection,
       };
     }),
   };

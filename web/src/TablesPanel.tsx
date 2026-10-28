@@ -3,6 +3,7 @@ import { Select } from './Select';
 import { useState } from 'react';
 import { COLUMN_TYPES, nodeStorageProfile, selectedFeatures, STORAGE_FORMATS, STORAGE_NAMES, type Project, type ProjectNode } from '../../engine/schema';
 import { parseSpec } from '../../engine/spec';
+import { PROTECTION_NAMES } from '../../engine/security';
 import { schemaWarnings } from '../../engine/ddl';
 import { catalog } from './data';
 import { addTable, freeK, importTables, patchAt, removeColumn, removeTable, renameColumn, setFeature, updateNode, updateTable } from './edit';
@@ -111,7 +112,7 @@ export function TableEditor({ node, t, at, open, onRename }: { node: ProjectNode
           <option value="variable">가변장</option><option value="fixed">고정장</option>
         </Select>
       </Row>
-      <NumField label="보관 일수" value={t.retention_days} hint="비우면 프로젝트 보관 기간" onChange={(v) => upd({ retention_days: v })} />
+      <NumField label="보관 일수" value={t.retention_days} hint="비우면 저장량은 프로젝트 보관 기간으로 계산해요. 개인정보 컬럼이 있으면 여기 직접 정해야 파기 시점 ⚠️가 사라져요" onChange={(v) => upd({ retention_days: v })} />
       <NumField label="갱신 비율" value={t.update_ratio} step={0.05} hint="쓰기 중 새 행이 아니라 기존 행을 고치는 비율" onChange={(v) => upd({ update_ratio: v ?? 0 })} />
       <Row label="기본 키" hint="쉼표로 구분, 순서대로">
         <BlurInput value={csv(t.primary_key)} aria-label="기본 키" onSave={(v) => upd({ primary_key: list(v) })} />
@@ -155,7 +156,7 @@ export function TableEditor({ node, t, at, open, onRename }: { node: ProjectNode
         <summary>데이터 사전 (논리명·도메인·코드 값·기본값·개인정보)</summary>
         <p className="muted">코드 값은 "C=카드; M=현금"처럼 ;로. 넣으면 DDL에 CHECK 제약이 들어가요. 기본값·코드 값은 컬럼 타입에 맞게(정수는 숫자, 참·거짓은 true/false, 시각은 CURRENT_TIMESTAMP나 날짜 글자). 맞지 않으면 경고가 떠요</p>
         <div className="plans"><table className="grid">
-          <thead><tr><th>컬럼</th><th>논리명</th><th>도메인</th><th>코드 값</th><th>기본값</th><th>개인정보</th><th>설명</th></tr></thead>
+          <thead><tr><th>컬럼</th><th>논리명</th><th>도메인</th><th>코드 값</th><th>기본값</th><th>개인정보</th><th>보호</th><th>설명</th></tr></thead>
           <tbody>{t.columns.map((c, i) => (
             <tr key={i}>
               <td>{c.name}</td>
@@ -163,7 +164,13 @@ export function TableEditor({ node, t, at, open, onRename }: { node: ProjectNode
               <td><BlurInput value={c.domain ?? ''} aria-label={`${c.name} 도메인`} placeholder="금액·코드·일시…" onSave={(v) => setCol(i, { domain: v || undefined })} /></td>
               <td><BlurInput value={codesText(c.codes)} aria-label={`${c.name} 코드 값`} onSave={(v) => setCol(i, { codes: parseCodes(v) })} /></td>
               <td><BlurInput value={c.default_value ?? ''} aria-label={`${c.name} 기본값`} onSave={(v) => setCol(i, { default_value: v || undefined })} /></td>
-              <td><input type="checkbox" checked={c.personal} aria-label={`${c.name} 개인정보`} onChange={(e) => setCol(i, { personal: e.target.checked })} /></td>
+              <td><input type="checkbox" checked={c.personal} aria-label={`${c.name} 개인정보`} onChange={(e) => setCol(i, e.target.checked ? { personal: true } : { personal: false, protection: undefined })} /></td>
+              <td>{c.personal ? (
+                <Select aria-label={`${c.name} 보호`} value={c.protection ?? ''} onChange={(e) => setCol(i, { protection: (e.target.value || undefined) as Column['protection'] })}>
+                  <option value="">미정</option>
+                  {(Object.keys(PROTECTION_NAMES) as (keyof typeof PROTECTION_NAMES)[]).map((k) => <option key={k} value={k}>{PROTECTION_NAMES[k]}</option>)}
+                </Select>
+              ) : '—'}</td>
               <td><BlurInput value={c.description ?? ''} aria-label={`${c.name} 설명`} onSave={(v) => setCol(i, { description: v || undefined })} /></td>
             </tr>
           ))}</tbody>

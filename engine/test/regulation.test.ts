@@ -53,6 +53,15 @@ describe('관문: 설계서 15절 표시 예시', () => {
     expect(r.find((h) => h.article === '第20条第2項')!.verified).toBe(false);
   });
 
+  it('파기: 한국 사용자 개인정보 → 제21조, 일본 사용자 → 第22条 (미확인)', () => {
+    expect(of('member')).toContain('개인정보 보호법 제21조');
+    expect(of('log')).toContain('個人情報保護法 第22条');
+    expect(of('log')).not.toContain('개인정보 보호법 제21조');
+    expect(of('member')).not.toContain('個人情報保護法 第22条');
+    expect(of('local')).toEqual(expect.arrayContaining(['개인정보 보호법 제21조', '個人情報保護法 第22条']));
+    expect(hits.find((h) => h.nodeId === 'log' && h.article === '第22条')!.verified).toBe(false);
+  });
+
   it('조문 내용은 없고, 원문 대조 여부와 출처·기준일이 붙음', () => {
     for (const h of hits) {
       expect(Object.keys(h).sort()).toEqual(['article', 'asOf', 'law', 'nodeId', 'reason', 'source', 'verified']);

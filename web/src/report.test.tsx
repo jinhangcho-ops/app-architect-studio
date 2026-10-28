@@ -116,6 +116,18 @@ describe('설계서: 네트워크·보안 장', () => {
   });
 });
 
+describe('설계서: 개인정보 컬럼 보호', () => {
+  it('개인정보 컬럼에 보호가 없으면 설계서에 보호가 없다는 줄이 나옴', () => {
+    const p0 = load('ledger-fastapi.json');
+    const i = p0.nodes.findIndex((n) => n.tables.length);
+    const p = { ...p0, nodes: p0.nodes.map((n, k) => (k === i ? { ...n, tables: n.tables.map((t, j) => (j === 0 ? { ...t, columns: t.columns.map((c, m) => (m === 0 ? { ...c, personal: true } : c)) } : t)) } : n)) };
+    const html = renderToStaticMarkup(
+      <Report project={p} analysis={run(p, today).analysis} positions={autoLayout(p)} today={today} onClose={() => {}} />,
+    ).replace(/<!-- -->/g, '');
+    expect(html).toContain('보호가 없습니다');
+  });
+});
+
 describe('설계서: 인증·인가 표와 STRIDE 기호', () => {
   it('인증·인가 표(비면 미정)와 STRIDE 줄 앞 ✅·⚠️·미정이 나옴', () => {
     const p0 = load('ledger-fastapi.json');

@@ -16,8 +16,8 @@ export type SecurityHit = {
   instead: string;
 };
 
-// rate_limit_rpm은 rate_limit 칸의 한도 값이라 따로 칸으로 세지 않음
-type Field = Exclude<keyof NonNullable<ProjectNode['security']>, 'rate_limit_rpm'>;
+// rate_limit_rpm·audit_retention_months는 rate_limit·audit_log 칸에 딸린 값이라 따로 칸으로 세지 않음
+type Field = Exclude<keyof NonNullable<ProjectNode['security']>, 'rate_limit_rpm' | 'audit_retention_months'>;
 /** 트래픽과 대조할 때 쓰는 값 (analyze가 채움): 노드 이벤트 피크 RPS, 이벤트 피크 동시 접속자 */
 export type SecurityCtx = { nodeEventRps: (id: string) => number | undefined; concurrentEvent: number };
 export const SECURITY_FIELD_NAMES: Record<Field, string> = {
@@ -35,6 +35,7 @@ export const AUTH_METHOD_NAMES = { none: '없음(공개)', session: '세션 쿠�
 export const MFA_NAMES = { none: '없음', optional: '선택', required: '필수' } as const;
 export const ROLE_NAMES = { none: '없음', rbac: '역할 기반(RBAC)', abac: '속성 기반(ABAC)' } as const;
 export const SERVICE_AUTH_NAMES = { none: '없음', mtls: 'mTLS', service_account: '서비스 계정·키' } as const;
+export const PROTECTION_NAMES = { none: '없음', encrypt: '컬럼 암호화', tokenize: '토큰화', mask: '마스킹(표시 때)' } as const;
 /** STRIDE 줄 상태: 값으로 막혀 있음 · 확인 필요 · 값이 비어 판단 못 함 */
 export type StrideState = 'ok' | 'warn' | 'unset';
 export const STRIDE_MARK: Record<StrideState, string> = { ok: '✅', warn: '⚠️', unset: '미정' };
@@ -62,6 +63,7 @@ export function fieldText(p: Project, n: ProjectNode, f: Field): string {
   if (!relevant(p, n).includes(f)) return '—';
   const v = n.security?.[f], rpm = n.security?.rate_limit_rpm;
   if (f === 'rate_limit' && rpm !== undefined) return `켬 (${rpm}/분)`;
+  if (f === 'audit_log' && v === true && n.security?.audit_retention_months !== undefined) return `켬 (${n.security.audit_retention_months}개월)`;
   if (v === undefined) return f === 'rate_limit' && rateLimited(n) ? '켬 (항목)' : '미정';
   if (typeof v === 'boolean') return v ? '켬' : '끔';
   return ({ exposure: EXPOSURE_NAMES, secrets: SECRET_NAMES, tenant_isolation: TENANT_NAMES } as Record<string, Record<string, string>>)[f][v];
@@ -183,9 +185,34 @@ export function checkSecurity(p: Project, ctx?: SecurityCtx): SecurityHit[] {
     if ((n.privacy?.personal || personalApi(p, n)) && s.audit_log === false) {
       hits.push({ ...at, ruleId: 'sec_no_audit', level: 'conditional', why: `${n.name}이 ${n.privacy?.personal ? '개인정보를 다루는데' : '개인정보를 읽고 쓰는 공개 API인데'} 감사 로그가 없어 누가 언제 열람·변경했는지 확인할 수 없습니다`, instead: '개인정보 열람·변경·내보내기를 누가·언제·무엇을 남기는 로그로 남기세요 (개인정보 보호법의 접속기록 보관과 연결)' });
     }
-    // 미정: 이 노드에서 정해야 하는 칸 중 비어 있는 것
-    const unset = relevant(p, n).filter((f) => s[f] === undefined && !(f === 'rate_limit' && rateLimited(n)));
-    if (unset.length) hits.push({ ...at, ruleId: 'sec_unset', level: 'conditional', why: `보안 값 미정: ${unset.map((f) => SECURITY_FIELD_NAMES[f]).join('·')}`, instead: '노드 패널 › 네트워크·보안에서 정하세요' });
+    // 10. 감사 로그(접속기록) 보관이 개인정보 안전성 확보조치 기준(1년)보다 짧음
+    const months = s.audit_retention_months, auditing = s.audit_log === true && relevant(p, n).includes('audit_log');
+    // 개인정보 노드는 자기 privacy, 공개 API는 프로젝트의 개인정보 노드들로 기준을 정함. 한국 고시라 주체가 정해졌는데 KR이 없으면 건너뜀
+    const owners = n.privacy?.personal ? [n] : p.nodes.filter((x) => x.privacy?.personal);
+    const need = owners.some((x) => x.privacy?.unique_id || x.privacy?.sensitive) || (p.scale?.users ?? 0) >= 50000 ? 24 : 12;
+    const noKr = owners.every((x) => x.privacy?.subjects?.length && !x.privacy.subjects.includes('KR'));
+    if (auditing && months !== undefined && months < need && !noKr) {
+      hits.push({ ...at, ruleId: 'sec_audit_short', level: 'conditional', why: `접속기록 보관 ${months}개월이 개인정보 안전성 확보조치 기준(${need}개월: 1년, 5만 명 이상·고유식별정보·민감정보는 2년)보다 짧습니다`, instead: `${need}개월 이상 보관하고 월 1회 점검하세요` });
+    }
+    // 11·12. 개인정보 컬럼이 있는 테이블: 컬럼 보호 없음·미정, 보관 일수를 테이블에 직접 정하지 않음 (scale 값은 크기 가정이지 파기 결정이 아님)
+    for (const t of n.tables) {
+      const personal = t.columns.filter((c) => c.personal);
+      if (!personal.length) continue;
+      const tat = { node: n.id, target: `${n.name}.${t.name}` };
+      // 고유식별·민감 노드에서 마스킹은 표시만 가려 저장된 값은 그대로라 보호로 치지 않음
+      const strict = n.privacy?.unique_id || n.privacy?.sensitive;
+      const plain = personal.filter((c) => c.protection === undefined || c.protection === 'none' || (c.protection === 'mask' && strict));
+      const undecided = plain.filter((c) => c.protection === undefined).length;
+      const masked = plain.some((c) => c.protection === 'mask');
+      if (plain.length) hits.push({ ...tat, ruleId: 'sec_column_plain', level: 'conditional', why: `개인정보 컬럼 ${plain.map((c) => c.name).join('·')}에 보호가 없습니다(저장 암호화와 별개로 조회 결과·백업·로그에 그대로 보임)${undecided ? ` (미정 ${undecided}개)` : ''}${masked ? ' (마스킹은 표시용이라 저장 암호화가 필요)' : ''}`, instead: '식별자는 토큰화, 연락처·주민번호 류는 컬럼 암호화, 화면 표시는 마스킹' });
+      if (t.retention_days === undefined) hits.push({ ...tat, ruleId: 'sec_no_retention', level: 'conditional', why: '개인정보 테이블에 보관 기간이 없어 파기 시점을 정할 수 없습니다', instead: '목적 달성 뒤 지체 없이 파기(개인정보 보호법 제21조) — 보관 일수를 정하고 배치로 지우거나 분리 보관' });
+    }
+    // 미정: 이 노드에서 정해야 하는 칸 중 비어 있는 것 (감사 로그가 켬이면 보관 기간도)
+    const unset = relevant(p, n).filter((f) => s[f] === undefined && !(f === 'rate_limit' && rateLimited(n))).map((f) => SECURITY_FIELD_NAMES[f]);
+    if (auditing && months === undefined) unset.push('감사 로그 보관 기간');
+    // 법령·감사 로그 판정은 노드 개인정보 속성 기준이라, 컬럼만 표시하고 노드를 비워 두면 알림
+    if (!n.privacy?.personal && n.tables.some((t) => t.columns.some((c) => c.personal))) unset.push('개인정보 속성(개인정보 컬럼 있음)');
+    if (unset.length) hits.push({ ...at, ruleId: 'sec_unset', level: 'conditional', why: `보안 값 미정: ${unset.join('·')}`, instead: '노드 패널 › 네트워크·보안에서 정하세요' });
   }
 
   for (const e of p.edges) {

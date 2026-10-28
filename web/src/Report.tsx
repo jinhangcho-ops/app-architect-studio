@@ -23,7 +23,7 @@ import { FeatureTablesTable } from './ResultsPanel';
 import { dialectOf, keyCols, sqlType } from '../../engine/ddl';
 import { NoteView } from './NoteView';
 import { chapterTitle } from './notes';
-import { EDGE_NET_NAMES, EDGE_TLS_NAMES, fieldText, hasExposure, LEVEL_MARK, SECURITY_FIELD_NAMES, SECURITY_FIELDS, edgeNet, stride, authFields, STRIDE_MARK } from '../../engine/security';
+import { EDGE_NET_NAMES, EDGE_TLS_NAMES, fieldText, hasExposure, LEVEL_MARK, SECURITY_FIELD_NAMES, SECURITY_FIELDS, edgeNet, stride, authFields, STRIDE_MARK, PROTECTION_NAMES } from '../../engine/security';
 
 const H = ({ n, children }: { n: number; children: ReactNode }) => <h2 className="r-h">{n}. {children}</h2>;
 const KV = ({ rows }: { rows: [string, ReactNode][] }) => (
@@ -326,7 +326,7 @@ function WireImage({ screen, frame }: { screen: Screen; frame: { w: number; h: n
 const AUTH_NAMES = { none: '인증 없음', bearer: 'Bearer 토큰', api_key: 'API 키' } as const;
 
 /** 서비스 내부 인터페이스 명세: 연결선마다 호출·메시지, 필드, 인증·에러, 피크 호출, 크기 */
-/** 데이터 사전: 테이블마다 컬럼의 논리명·DB 타입·필수·기본값·코드 값·개인정보 */
+/** 데이터 사전: 테이블마다 컬럼의 논리명·DB 타입·필수·기본값·코드 값·개인정보·보호 */
 function DataDictionary({ project: p }: { project: Project }) {
   return <>
     <h3 className="r-sub">데이터 사전</h3>
@@ -334,12 +334,12 @@ function DataDictionary({ project: p }: { project: Project }) {
       const d = dialectOf(n, catalog.byId), keys = keyCols(t);
       return <div key={n.id + t.name}>
         <p><b>{n.name} · {t.name}</b>{t.label && ` (${t.label})`} · {t.record === 'fixed' ? '고정장' : '가변장'}{t.description && ` — ${t.description}`}</p>
-        <table className="r-grid"><thead><tr><th>컬럼</th><th>논리명</th><th>타입{d ? ` (${d === 'generic' ? 'SQL' : d})` : ''}</th><th>필수</th><th>기본값</th><th>PK</th><th>도메인 · 코드 값</th><th>개인정보</th><th>설명</th></tr></thead><tbody>
+        <table className="r-grid"><thead><tr><th>컬럼</th><th>논리명</th><th>타입{d ? ` (${d === 'generic' ? 'SQL' : d})` : ''}</th><th>필수</th><th>기본값</th><th>PK</th><th>도메인 · 코드 값</th><th>개인정보</th><th>보호</th><th>설명</th></tr></thead><tbody>
           {t.columns.map((c) => <tr key={c.name}>
             <td>{c.name}</td><td>{c.label ?? ''}</td><td>{d ? sqlType(c, d, t.record === 'fixed', keys.has(c.name)) : `${c.type}${c.max_length ? `(${c.max_length})` : ''}`}</td>
             <td>{c.nullable ? '' : 'Y'}</td><td>{c.default_value ?? ''}</td><td>{t.primary_key.includes(c.name) ? 'Y' : ''}</td>
             <td>{[c.domain, c.codes?.map((x) => (x.label ? `${x.code}=${x.label}` : x.code)).join('; ')].filter(Boolean).join(' · ')}</td>
-            <td>{c.personal ? '⚠️ Y' : ''}</td><td>{c.description ?? ''}</td>
+            <td>{c.personal ? '⚠️ Y' : ''}</td><td>{c.personal ? (c.protection ? PROTECTION_NAMES[c.protection] : '') : '—'}</td><td>{c.description ?? ''}</td>
           </tr>)}
         </tbody></table>
       </div>;

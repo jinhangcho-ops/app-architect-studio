@@ -268,5 +268,14 @@ describe('현재 형식: 네트워크·보안', () => {
     const auth = readProject({ ...saved, auth: { method: 'magic', mfa: 'required' } }, catalog.items, 'x', notes3);
     expect(auth.auth).toEqual({ mfa: 'required' });
     expect(notes3.join('\n')).toContain('auth.method = "magic": 알 수 없는 인증·인가 값');
+    // 모르는 컬럼 보호 값도 그 칸만 빼고 엶
+    const notes4: string[] = [];
+    const ti = saved.nodes.findIndex((n: { tables: unknown[] }) => n.tables.length);
+    const tn = saved.nodes[ti], t0 = tn.tables[0];
+    const cols = t0.columns.map((c: object, i: number) => (i ? c : { ...c, personal: true, protection: 'hash' }));
+    const hashed = readProject({ ...saved, nodes: saved.nodes.map((n: object, i: number) => (i === ti ? { ...tn, tables: [{ ...t0, columns: cols }, ...tn.tables.slice(1)] } : n)) }, catalog.items, 'x', notes4);
+    expect(hashed.nodes[ti].tables[0].columns[0]).toMatchObject({ name: t0.columns[0].name, personal: true });
+    expect(hashed.nodes[ti].tables[0].columns[0].protection).toBeUndefined();
+    expect(notes4.join('\n')).toContain('알 수 없는 보호 값 → 빼고 열었습니다 (미정)');
   });
 });

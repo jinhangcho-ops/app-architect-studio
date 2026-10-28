@@ -77,6 +77,36 @@ describe('네트워크·보안 패널', () => {
     root.unmount(); el.remove();
   });
 
+  it('노드: 감사 로그가 켬일 때만 보관 기간(개월) 칸이 보이고, 18 저장, 비우거나 끔으로 바꾸면 키가 지워짐', () => {
+    const base = ledger();
+    const withSec = (security?: object) => ({ ...base, nodes: base.nodes.map((n) => (n.id === 'B-01' ? { ...n, security, privacy: { personal: true, sensitive: false, unique_id: false, subjects: ['KR'], sends_external: false } } : n)) });
+    const sec = () => state().nodes.find((n) => n.id === 'B-01')!.security;
+    useStore.setState({ project: withSec({ exposure: 'public' }), past: [], future: [] });
+    const el = document.createElement('div'); document.body.append(el);
+    const root = createRoot(el);
+    const render = () => flushSync(() => root.render(<NodePanel id="B-01" analysis={run(state(), '2026-10-28').analysis} />));
+    const months = () => [...el.querySelectorAll('label.row')].find((l) => l.textContent?.startsWith('감사 로그 보관 기간(개월)'))?.querySelector('input') as HTMLInputElement | undefined;
+    const type = (v: string) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(months()!, v);
+      months()!.dispatchEvent(new Event('input', { bubbles: true }));
+      months()!.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+      render();
+    };
+    render();
+    expect(months()).toBeUndefined();
+    choose(el, '감사 로그', '켬'); render();
+    expect(months()).toBeDefined();
+    type('18');
+    expect(sec()).toEqual({ exposure: 'public', audit_log: true, audit_retention_months: 18 });
+    type('');
+    expect(sec()).toEqual({ exposure: 'public', audit_log: true });
+    type('18');
+    choose(el, '감사 로그', '끔'); render();
+    expect(sec()).toEqual({ exposure: 'public', audit_log: false });
+    expect(months()).toBeUndefined();
+    root.unmount(); el.remove();
+  });
+
   it('연결선: 암호화·지나는 망, 비우면 짐작한 망을 안내하고 암호화 없음은 ❌', () => {
     useStore.setState({ project: ledger(), past: [], future: [] });
     const el = document.createElement('div'); document.body.append(el);

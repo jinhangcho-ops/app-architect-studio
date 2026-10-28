@@ -1,6 +1,7 @@
 // 테이블 명세 → DB별 스키마(CREATE TABLE·INDEX, 주석)와 데이터 사전 CSV
 import { csvCell, safe, uniqueNames } from './interfaces';
 import { featureTables } from './tables';
+import { PROTECTION_NAMES } from './security';
 import { dupes, fitsType, isNullText, nodeStorageProfile, storageOf, type CatalogItem, type Column, type Project, type ProjectNode, type Table } from './schema';
 
 /** postgres·mysql·sqlite는 그 문법 그대로, generic은 표준 SQL에 가까운 형태(대상 시스템에 맞게 고쳐 씀). document·kv 저장소와 캐시는 DDL이 없다 */
@@ -203,13 +204,13 @@ export function ddlFiles(p: Project, byId: Map<string, CatalogItem>): { name: st
 export function dataDictionaryCsv(p: Project, byId: Map<string, CatalogItem>): string {
   const feats = featureTables(p);
   const who = (node: string, table: string, op: 'read' | 'write') => feats.filter((f) => f.tables.some((t) => t.node === node && t.table === table && t.op === op)).map((f) => f.name).join(' / ');
-  const cols = ['노드', '테이블', '테이블 논리명', '테이블 설명', '장 형식', '순번', '컬럼', '논리명', '타입', 'DB 타입', '최대 길이(B)', '필수', '기본값', 'PK', '도메인', '코드 값', '개인정보', '설명', '쓰는 기능', '읽는 기능'];
+  const cols = ['노드', '테이블', '테이블 논리명', '테이블 설명', '장 형식', '순번', '컬럼', '논리명', '타입', 'DB 타입', '최대 길이(B)', '필수', '기본값', 'PK', '도메인', '코드 값', '개인정보', '보호', '보관(일)', '설명', '쓰는 기능', '읽는 기능'];
   const rows = p.nodes.flatMap((n) => {
     const d = dialectOf(n, byId);
     return n.tables.flatMap((t) => { const keys = keyCols(t); return t.columns.map((c, k) => [
       n.name, t.name, t.label, t.description, t.record === 'fixed' ? '고정장' : '가변장', k + 1, c.name, c.label, c.type, d ? sqlType(c, d, t.record === 'fixed', keys.has(c.name)) : '', c.max_length,
       c.nullable ? 'N' : 'Y', c.default_value, t.primary_key.includes(c.name) ? 'Y' : '', c.domain, c.codes?.map((x) => (x.label ? `${x.code}=${x.label}` : x.code)).join('; '),
-      c.personal ? 'Y' : '', c.description, who(n.id, t.name, 'write'), who(n.id, t.name, 'read'),
+      c.personal ? 'Y' : '', c.protection && PROTECTION_NAMES[c.protection], t.retention_days, c.description, who(n.id, t.name, 'write'), who(n.id, t.name, 'read'),
     ]); });
   });
   return '\uFEFF' + [cols, ...rows].map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';

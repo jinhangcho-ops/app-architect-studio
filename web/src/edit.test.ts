@@ -334,4 +334,12 @@ describe('명세서 다시 붙여 넣기', () => {
     expect(t.columns[1]).toMatchObject({ name: 'memo', description: '새 설명', personal: false });
     expect(t.columns[1].label).toBeUndefined();
   });
+  it('컬럼 보호·테이블 보관 일수도 옛 값을 유지', () => {
+    const t0 = p0.nodes.find((n) => n.id === 'db')!.tables.find((t) => t.name === 'orders')!;
+    const id = t0.columns[0].name;
+    const meta = updateTable(p0, 'db', 'orders', { retention_days: 365, columns: t0.columns.map((c, i) => (i ? c : { ...c, personal: true, protection: 'encrypt' as const })) });
+    const spec = parseSpec(`테이블\t컬럼\t타입\t설명\norders\t${id}\tbigint\t`);
+    const t = importTables(meta, 'db', spec.tables).project.nodes.find((n) => n.id === 'db')!.tables.find((x) => x.name === 'orders')!;
+    expect([t.retention_days, t.columns[0].protection]).toEqual([365, 'encrypt']);
+  });
 });
