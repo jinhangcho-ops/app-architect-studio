@@ -6,7 +6,7 @@ import { catalog, examples } from './data';
 import { findPlans, run } from './edit';
 import { autoLayout } from './layout';
 import { Report } from './Report';
-import { nodeCard, openIssues } from './reportData';
+import { netLines, nodeCard, openIssues } from './reportData';
 
 const today = '2026-10-24';
 const load = (name: string) => { const ex = examples.find((e) => e.name === name)!; return parseProject(ex.data, catalog.items, ex.name); };
@@ -122,6 +122,24 @@ describe('설계서 노드 카드: 자동 확장 줄', () => {
     const p = { ...p0, nodes: p0.nodes.map((n) => (n.id === 'api' ? { ...n, autoscale: {} } : n)) };
     const calc = nodeCard(p, run(p, today).analysis!, catalog.byId, 'api').rows.find((r) => r.label === '📊 계산 결과')!.lines;
     expect(calc.find((l) => l.startsWith('자동 확장 평소'))).toMatch(/^자동 확장 평소 \d+~\d+대, 넘침 [\d.]+분\(최대 사용률 \d+%\) \/ 이벤트 \d+~\d+대, 넘침 [\d.]+분\(최대 사용률 \d+%\)/);
+  });
+});
+
+describe('설계서 노드 카드: 대역폭·동시 연결 줄', () => {
+  it('진입 게이트웨이 카드에 대역폭·동시 연결 평소/이벤트 줄이 나옴', () => {
+    const p = load('phase3.json');
+    const calc = nodeCard(p, run(p, today).analysis!, catalog.byId, 'lb').rows.find((r) => r.label === '📊 계산 결과')!.lines;
+    expect(calc.some((l) => l.startsWith('대역폭 평소/이벤트'))).toBe(true);
+    expect(calc.some((l) => l.startsWith('동시 연결 평소/이벤트'))).toBe(true);
+  });
+  it('한도가 연결에만 있으면 연결 줄에만 평소 / 이벤트 한도가 붙음', () => {
+    const p = load('phase3.json');
+    const q = { ...p, nodes: p.nodes.map((n) => (n.id === 'lb' ? { ...n, net: { max_connections: 5000 } } : n)) };
+    const na = run(q, today).analysis!.nodes.lb;
+    const [bw, cn] = netLines(na.net);
+    expect(bw).not.toContain('한도');
+    expect(cn).toContain(`(한도 ${(5000 * na.instances!.normal.value).toLocaleString()}`);
+    expect(cn).toContain(` / ${(5000 * na.instances!.event.value).toLocaleString()}`);
   });
 });
 

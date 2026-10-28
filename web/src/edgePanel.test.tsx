@@ -84,4 +84,19 @@ describe('노드 패널 자동 확장', () => {
     expect(draw('api')).toContain('자동 확장');
     expect(draw('db')).not.toContain('자동 확장');
   });
+
+  it('진입 서버(게이트웨이)에는 대당 대역폭 한도 칸이 있고 DB에는 없음', () => {
+    const ex = examples.find((e) => e.name === 'phase3.json')!;
+    useStore.setState({ project: parseProject(ex.data, catalog.items, ex.name) });
+    const draw = (id: string) => {
+      const el = document.createElement('div');
+      const root = createRoot(el);
+      flushSync(() => root.render(<NodePanel id={id} />));
+      const out = el.innerHTML;
+      root.unmount();
+      return out;
+    };
+    expect(draw('lb')).toContain('대당 대역폭 한도');
+    expect(draw('db')).not.toContain('대당 대역폭 한도');
+  });
 });

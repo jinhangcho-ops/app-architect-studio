@@ -36,7 +36,7 @@ export function buildPrices(files: JsonFile[]): PriceRow[] {
 
 /** 저장 파일 형식 버전. 저장 파일의 모양이 바뀌면(필드 이름·뜻이 바뀜) 올리고 MIGRATIONS에 옛 모양을 새 모양으로 바꾸는 함수를 더한다.
  *  format_version이 없는 파일은 1 (버전을 넣기 전에 만든 파일) */
-export const FORMAT_VERSION = 6;
+export const FORMAT_VERSION = 7;
 type Raw = Record<string, unknown>;
 /** MIGRATIONS[v]: 형식 v인 파일을 v + 1로 바꾼다 */
 export const MIGRATIONS: Record<number, (d: Raw) => Raw> = {
@@ -50,6 +50,8 @@ export const MIGRATIONS: Record<number, (d: Raw) => Raw> = {
   4: (d) => d,
   // 6: 노드 security.rate_limit_rpm(클라이언트당 분당 요청 한도)이 새로 생김 (v1.4.0). 바꿀 것 없이 버전만 올림
   5: (d) => d,
+  // 7: 노드 net(대당 대역폭·동시 연결 한도)이 새로 생김 (v1.4.0). 바꿀 것 없이 버전만 올림
+  6: (d) => d,
 };
 
 /** 저장 파일을 지금 형식으로 바꾼다. 이 앱보다 새 버전에서 만든 파일은 모르는 값이 버려져 다시 저장할 때 사라지므로 열지 않는다 */

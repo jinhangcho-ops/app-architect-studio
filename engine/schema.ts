@@ -478,6 +478,8 @@ export const Project = z.object({
     hit_ratio: z.number().min(0).max(1).optional(),
     /** 이 노드 1대가 DB에 여는 연결 풀 크기. 없으면 10 (HikariCP·node-postgres 기본값) */
     db_pool: z.number().int().positive().optional(),
+    /** 사용자 트래픽을 직접 받는 서버 노드(화면에서 오는 gateway·backend)의 대당 네트워크 한도. 비면 주 항목 기준값 thresholds.mbps·client_connections */
+    net: z.object({ max_mbps: z.number().positive().optional(), max_connections: z.number().int().positive().optional() }).optional(),
     /** 큐 노드의 파티션 수 (Kafka·Redpanda). 소비자 병렬 수가 이것을 넘지 못한다. 없으면 제한 없음 */
     partitions: z.number().int().positive().optional(),
     /** 큐 지연 허용(초): 메시지가 들어와 처리될 때까지. 큐 노드나 소비자 노드에 둔다. 없으면 300초 (예시값) */
@@ -794,6 +796,11 @@ export function selectedFeatures(sp: StorageProfile, node: { storage_features?: 
 /** 주 항목 바꾸기. 저장 기능 선택은 이전 시스템 것이라 지워서 새 시스템의 권장 기능으로 돌아가게 한다 */
 /** 사용자가 들어오는 노드(화면 계층). 부하·지연·가용성·API 계산이 모두 여기서 시작한다 */
 export const entryNodes = (p: Project) => p.nodes.filter((n) => n.layer === 'ui');
+/** 사용자 트래픽을 직접 받는 서버 노드: 화면 노드에서 오는 연결선이 있는 gateway·backend (대역폭·동시 연결 한도를 보는 노드) */
+export const entryServers = (p: Project) => {
+  const ui = new Set(entryNodes(p).map((n) => n.id));
+  return p.nodes.filter((n) => (n.layer === 'gateway' || n.layer === 'backend') && p.edges.some((e) => e.to === n.id && ui.has(e.from)));
+};
 /** 노드가 놓인 리전: 노드에 없으면 프로젝트 기본 리전. 'local' = 사용자 기기 (비용·법령이 같은 규칙) */
 export const nodeRegion = (n: ProjectNode, p: Project) => n.region ?? p.cost.region;
 

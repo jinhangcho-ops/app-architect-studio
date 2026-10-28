@@ -74,7 +74,7 @@ export function p99Series(p: Project, a: Analysis, byId: Map<string, CatalogItem
     if (!load || !per.rps || !n.perf) return [];
     const pts = xs.map((u): [number, number] => {
       const rps = (load.rps.event * u) / users;
-      return [u, sizeAt(n, per.rps!.value, per.max, rps, p.target_utilization, primaryShape(n, byId, load)).p99!.value];
+      return [u, sizeAt(n, per.rps!.value, per.max, rps, p.target_utilization, primaryShape(n, byId, load), a.nodes[n.id]?.net?.size).p99!.value];
     });
     return [{ id: n.id, name: n.name, color: COLOR[healthOf(a, users, n.id).health], lim: a.nodes[n.id]?.limitUsers?.value, pts }];
   });

@@ -83,4 +83,15 @@ describe('p99', () => {
     });
     expect(curved).toBe(true);
   });
+  it('진입 서버에 연결 한도가 있으면 대수가 RPS 기준보다 많아 p99가 엔진과 같게 낮음', () => {
+    // 사용자 100만, 게이트웨이 nginx(대당 10,000 연결): 연결로 대수가 RPS 기준보다 늘어남
+    const q = { ...p, scale: { ...p.scale!, users: 1_000_000 },
+      nodes: p.nodes.map((n) => (n.id === 'lb' ? { ...n, primary: 'nginx', extras: [], perf: { service_ms: 2, workers: 1 } } : n)) };
+    const b = run(q, today).analysis!;
+    expect(b.nodes.lb.net!.size).toBeDefined();
+    const at = (x: typeof b) => p99Series(q, x, catalog.byId, [q.scale.users]).find((l) => l.id === 'lb')!.pts[0][1];
+    expect(at(b)).toBeCloseTo(b.nodes.lb.p99!.event.value, 6);
+    const rpsOnly = { ...b, nodes: { ...b.nodes, lb: { ...b.nodes.lb, net: undefined } } };
+    expect(at(b)).toBeLessThan(at(rpsOnly));
+  });
 });

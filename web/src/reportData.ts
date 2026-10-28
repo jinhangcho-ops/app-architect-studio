@@ -24,6 +24,15 @@ const pair = (label: string, a?: Metric, b?: Metric) =>
 export const scaleDay = (label: string, d: ApiScaleDay) =>
   `${label} ${d.min}~${d.max}대, 넘침 ${+d.overMin.value.toFixed(1)}분(최대 사용률 ${Number.isFinite(d.peakUtil.value) ? `${Math.round(d.peakUtil.value * 100)}%` : '떠 있는 서버가 0대'})`;
 const some = (xs: (string | undefined | false)[]) => xs.filter((x): x is string => !!x);
+type NetPair = { normal: Metric; event: Metric };
+/** 진입 서버의 대역폭·동시 연결 줄 (설계서 카드와 노드 패널이 같이 씀). 한도가 있으면 평소/이벤트 한도(대당 × 그 피크의 대수)를 줄 끝에 붙임 */
+export const netLines = (net?: NonNullable<Analysis['nodes'][string]['net']>) => {
+  const line = (label: string, x?: NetPair, max?: NetPair) => {
+    const l = pair(label, x?.normal, x?.event);
+    return l && max ? `${l} (한도 ${fmtMetric(max.normal)} / ${fmtMetric(max.event)}: 대당 × 대수)` : l;
+  };
+  return some([line('대역폭 평소/이벤트', net?.mbps, net?.maxMbps), line('동시 연결 평소/이벤트', net?.conns, net?.maxConns)]);
+};
 
 export function nodeCard(p: Project, a: Analysis, byId: Map<string, CatalogItem>, nodeId: string): NodeCard {
   const n = p.nodes.find((x) => x.id === nodeId)!;
@@ -60,6 +69,7 @@ export function nodeCard(p: Project, a: Analysis, byId: Map<string, CatalogItem>
         withHow('월 비용', cost),
         withHow('한계 사용자', na?.limitUsers),
         pair('DB 연결 수 평소/이벤트', na?.connections?.normal, na?.connections?.event),
+        ...netLines(na?.net),
         na?.autoscale && `자동 확장 ${scaleDay('평소', na.autoscale.normal)} / ${scaleDay('이벤트', na.autoscale.event)}`,
         ...a.pipeline.filter((f) => f.from === nodeId || f.to === nodeId).map((f) => flowLine(f, name)),
         ...(a.failure ? failureLines(a.failure, name, nodeId) : []),

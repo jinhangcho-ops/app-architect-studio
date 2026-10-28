@@ -1,7 +1,7 @@
 // 5절 판정: 노드에 붙은 카탈로그 항목마다 됨·조건부·안 됨·판단 불가와 이유, 통과하는 대안을 낸다.
 import { MissingVar, test, type Value, type Vars } from './expr';
 import { calibrate } from './calibrate';
-import { LAYER_TIER, VERDICT_RANK, type Layer, type Verdict } from './model';
+import { fmt, LAYER_TIER, VERDICT_RANK, type Layer, type Verdict } from './model';
 import { secs } from './pipeline';
 import { itemIds, type CatalogItem, type Project, type ProjectNode, type Rule } from './schema';
 
@@ -76,7 +76,7 @@ export const mergeScenario = (node: ProjectNode, computed?: Scenario): Scenario 
 
 const num = (v: Value | undefined) => (typeof v === 'number' ? v : undefined);
 
-/** 항목 조건과 별개로 노드의 주 항목에 거는 문제: 사용률 100% 초과, 큐 지연이 허용을 넘음, 배치가 실행 창 안에 안 끝남, 자동 확장 API 서버가 넘침.
+/** 항목 조건과 별개로 노드의 주 항목에 거는 문제: 사용률 100% 초과, 큐 지연이 허용을 넘음, 배치가 실행 창 안에 안 끝남, 자동 확장 API 서버가 넘침, 응답 대역폭·동시 연결이 대수 × 대당 한도를 넘음.
  *  평소 피크에서 걸리면 안 됨, 이벤트 피크에서만 걸리면 조건부 (사용률 초과는 어느 쪽이든 안 됨: 늘릴 대수가 없어 요청이 끝없이 쌓인다) */
 export const nodeIssues = (s: Scenario) => issues(s, false);
 
@@ -96,6 +96,13 @@ function issues(s: Scenario, recovery: boolean): { verdict: Verdict; reasons: st
     const over = num(x.autoscale_over_min), pu = num(x.autoscale_peak_util) ?? 0;
     if (over !== undefined && over > 0) {
       hit(soft, `${name}에 자동 확장이 따라오기 전 ${Math.round(over * 10) / 10}분 동안 ${Number.isFinite(pu) ? `사용률 ${Math.round(pu * 100)}%` : '떠 있는 서버가 0대'} — 새 서버가 뜨는 동안 요청이 밀립니다 (최소·최대 대수를 올리거나 뜨는 시간을 줄이세요)`);
+    }
+    const mb = num(x.peak_mbps), mbMax = num(x.max_mbps_total), cn = num(x.concurrent_conns), cnMax = num(x.max_conns_total), nN = num(x.net_instances) ?? 1;
+    if (mb !== undefined && mbMax !== undefined && mb > mbMax) {
+      hit(soft, `${name}에 응답 대역폭 ${fmt(mb)} Mbps가 ${nN}대 한도 ${fmt(mbMax)} Mbps를 넘습니다 (대당 ${fmt(num(x.max_mbps_per) ?? mbMax / nN)} Mbps) — 대수·네트워크 사양을 올리거나 응답을 줄이세요(압축·CDN)`);
+    }
+    if (cn !== undefined && cnMax !== undefined && cn > cnMax) {
+      hit(soft, `${name}에 동시 연결 ${fmt(cn)}개가 ${nN}대 한도 ${fmt(cnMax)}개를 넘습니다 (대당 ${fmt(num(x.max_conns_per) ?? cnMax / nN)}) — 대수나 대당 연결 한도(worker_connections·ulimit)를 올리세요`);
     }
     if (verdict === 'fail') break;
   }

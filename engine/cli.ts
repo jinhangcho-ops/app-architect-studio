@@ -72,6 +72,11 @@ try {
     if (x.utilization) parts.push(`사용률 ${show(x.utilization.normal)} / ${show(x.utilization.event)}`);
     if (x.autoscale) parts.push(`자동 확장 평소 ${x.autoscale.normal.min}~${x.autoscale.normal.max}대 넘침 ${fmt(x.autoscale.normal.overMin.value)}분 / 이벤트 ${x.autoscale.event.min}~${x.autoscale.event.max}대 넘침 ${fmt(x.autoscale.event.overMin.value)}분`);
     if (x.p99) parts.push(`p99 ${fmt(x.p99.normal.value)} / ${fmt(x.p99.event.value)} ms`);
+    if (x.net) {
+      const lim = (y?: { normal: Metric; event: Metric }) => (y ? ` (한도 ${fmt(y.normal.value)} / ${fmt(y.event.value)})` : '');
+      parts.push(`대역폭 ${fmt(x.net.mbps.normal.value)} / ${fmt(x.net.mbps.event.value)} Mbps${lim(x.net.maxMbps)}`,
+        `동시 연결 ${fmt(x.net.conns.normal.value)} / ${fmt(x.net.conns.event.value)}${lim(x.net.maxConns)}`);
+    }
     if (x.limitUsers) parts.push(x.limitUsers.value === 0 ? '부하와 무관하게 이미 안 됨' : `한계 ${fmt(x.limitUsers.value)}명`);
     console.log(`  ${n.name}: ${parts.join(' · ')}`);
   }

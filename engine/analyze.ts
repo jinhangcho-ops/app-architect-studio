@@ -13,13 +13,13 @@ import type { Vars } from './expr';
 import { checkRules, judgeNode, mergeScenario, type NodeJudgement, type RuleHit, type Scenario } from './judge';
 import { MAX_PATHS, nodeP99, pathP99, syncPaths } from './latency';
 import { limitFactor } from './limits';
-import { apiLoads, type ApiLoad } from './api';
-import { computedScenarios, nodeLoads, type NodeLoad } from './load';
+import { apiLoads, callSplit, type ApiLoad } from './api';
+import { computedScenarios, edgeFlow, nodeLoads, type NodeLoad } from './load';
 import { metric, type Metric } from './model';
 import { failureScenarios, recoveryVars, type Failure } from './failure';
 import { autoscaleDay, DEFAULT_COOLDOWN_S, DEFAULT_POLL_S, DEFAULT_SCALE_DELAY_S, minuteShape, pipelineFlows, type AutoscaleDay, type PipelineFlow } from './pipeline';
 import { checkRegulation, type LawHit } from './regulation';
-import type { CatalogItem, LawRow, PriceRow, Project, ProjectNode, Rule } from './schema';
+import { entryNodes, entryServers, type CatalogItem, type LawRow, type PriceRow, type Project, type ProjectNode, type Rule } from './schema';
 import { tableSizes, type TableAnalysis } from './tables';
 import { dayCurve, spikeFactors, traffic, type Traffic } from './traffic';
 
@@ -37,6 +37,11 @@ export type NodeAnalysis = {
   connections?: { normal: Metric; event: Metric };
   /** 자동 확장을 켠 API 서버(backend·gateway): 1분 곡선(급증 포함)으로 돌린 하루 */
   autoscale?: { normal: ApiScaleDay; event: ApiScaleDay };
+  /** 진입 서버 노드(entryServers): 응답 대역폭(Mbps, 노드 전체 부하)·동시 연결(개, 화면에서 직접 오는 몫). maxMbps·maxConns = 대당 한도 × 그 피크의 대수 (한도가 없으면 없음) */
+  net?: { mbps: { normal: Metric; event: Metric }; conns: { normal: Metric; event: Metric };
+    maxMbps?: { normal: Metric; event: Metric }; maxConns?: { normal: Metric; event: Metric };
+    /** sizeAt에 넘기는 비율·대당 한도 (한도가 있을 때만). 화면의 p99 그래프가 같은 대수를 쓰게 */
+    size?: NetSize };
 };
 
 /** API 서버 자동 확장 하루: 넘친 시간(분), 가장 큰 도착 / 떠 있는 대수의 처리량(비율, 0대에 도착이 있으면 Infinity), 하루 중 가장 적은·많은 대수 */
@@ -120,10 +125,16 @@ export function primaryShape(n: ProjectNode, catalog: Map<string, CatalogItem>, 
 // 늘 떠 있는 대수: 최소 대수와 이중화(2대 이상) 중 큰 쪽, 최대 대수 이하 (비용·가용성·연결 수·장애·API 자동 확장이 같은 대수를 쓰게)
 const floorOf = (n: ProjectNode, maxInstances: number) => Math.max(n.min_instances, n.replicas > 1 ? Math.min(maxInstances, n.replicas) : 0);
 
-export function sizeAt(n: ProjectNode, perRps: number, maxInstances: number, rps: number, u: number, db?: PrimaryShape) {
+/** 진입 서버의 대역폭·연결 비율 (노드 부하 1 RPS당): 평균 응답 KB, 동시 연결 수, 대당 한도. 대수를 RPS·대역폭·연결 중 가장 많이 필요한 것으로 정하는 데 쓴다 */
+export type NetSize = { kbPerReq: number; connsPerRps: number; perMbps?: number; perConns?: number };
+
+export function sizeAt(n: ProjectNode, perRps: number, maxInstances: number, rps: number, u: number, db?: PrimaryShape, net?: NetSize) {
   const floor = floorOf(n, maxInstances);
   if (!db) {
-    const N = instancesNeeded(rps, perRps, u, floor, maxInstances);
+    // 대수 = RPS·대역폭·연결 중 가장 많이 필요한 것 (같은 목표 사용률). 사용률은 RPS 기준 그대로
+    const N = Math.max(instancesNeeded(rps, perRps, u, floor, maxInstances),
+      net?.perMbps ? instancesNeeded((rps * net.kbPerReq * 8) / 1000, net.perMbps, u, floor, maxInstances) : 0,
+      net?.perConns ? instancesNeeded(rps * net.connsPerRps, net.perConns, u, floor, maxInstances) : 0);
     return { N, util: N ? rps / (N * perRps) : 0, p99: n.perf && nodeP99(rps, n.perf.service_ms, N * n.perf.workers, n.perf.service_p99_ms) };
   }
   const reads = rps * (1 - db.writeShare), onPrimary = db.replicas ? rps - reads : rps;
@@ -145,6 +156,29 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
   const nodes: Record<string, NodeAnalysis> = {};
   // 대당 처리량(사양·실측 보정)은 노드마다 한 번만: 성장 타임라인이 달마다 다시 쓴다
   const perOf = new Map(p.nodes.map((n) => [n.id, perInstance(n, d.catalog)]));
+  // 대역폭·동시 연결: 진입 서버 노드만. 대역폭은 노드 전체 부하의 응답, 연결은 화면에서 직접 오는 흐름 몫(다른 진입 서버가 넘긴 부하는 연결을 새로 열지 않음).
+  // 대당 한도 = 노드 net 칸, 없으면 주 항목 기준값 thresholds.mbps·client_connections
+  const servers = t && loads ? entryServers(p) : [];
+  const ui = new Set(entryNodes(p).map((n) => n.id));
+  const direct = (id: string, s: 'normal' | 'event') => p.edges.filter((e) => e.to === id && ui.has(e.from))
+    .reduce((a, e) => a + edgeFlow(e, loads!.get(e.from)!, callSplit(p, p.nodes.find((x) => x.id === e.from)!), s).rps, 0);
+  const directSum = servers.reduce((a, x) => a + direct(x.id, 'event'), 0);
+  const avgKb = t && t.dailyRequests.value > 0 ? (t.egressGbPerDay.value * 1e6) / t.dailyRequests.value : 0;
+  const netPer = new Map<string, { mbps?: Metric; conns?: Metric }>();
+  const netOf = new Map<string, NetSize>();
+  for (const n of servers) {
+    const load = loads!.get(n.id);
+    if (!load) continue;
+    const th = n.primary ? d.catalog.get(n.primary)?.thresholds : undefined;
+    const limit = (own: number | undefined, unit: string, key: string) => (own !== undefined
+      ? m(own, unit, '노드에 넣은 대당 한도', { 대당: own }) : th?.[key] && calibrate(th[key], n.spec, n.measured[key]));
+    const per = { mbps: limit(n.net?.max_mbps, 'Mbps', 'mbps'), conns: limit(n.net?.max_connections, '연결', 'client_connections') };
+    netPer.set(n.id, per);
+    // 동시 접속과 부하는 평소·이벤트 모두 같은 이벤트 배수를 곱하므로 비율은 이벤트 값 하나로 충분
+    const le = load.rps.event;
+    const connsPerRps = directSum > 0 && le > 0 ? (t!.concurrentPeakEvent.value * direct(n.id, 'event')) / directSum / le : 0;
+    netOf.set(n.id, { kbPerReq: avgKb, connsPerRps, perMbps: per.mbps?.value, perConns: per.conns?.value });
+  }
   for (const n of p.nodes) {
     const load = loads?.get(n.id);
     const per = perOf.get(n.id)!;
@@ -159,14 +193,18 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     if (load && per.rps && enabled(p.deploy, 'scale')) {
       const at = (s: 'normal' | 'event') => {
         // 비용(hourlyOf)과 같은 최소 대수를 쓴다. 0대까지 줄어드는 노드는 부하가 0일 때 0대
-        const { N, util, p99 } = sizeAt(n, per.rps!.value, per.max, load.rps[s], u, db);
+        const ns = netOf.get(n.id);
+        const { N, util, p99 } = sizeAt(n, per.rps!.value, per.max, load.rps[s], u, db, ns);
         return db ? {
           N: m(N, '대', db.replicas ? '주 서버 1대(쓰기) + 읽기 복제본 ceil(읽기 / (대당 처리량 × 목표 사용률)), 최소·이중화 대수 이상' : '주 서버 1대 (쓰기·읽기 모두, 대수를 늘려도 처리량이 늘지 않음), 최소·이중화 대수만큼 대기 서버',
             { 부하: load.rps[s], 쓰기: load.writeRps[s], 대당: per.rps!.value, 목표사용률: u, 최소: n.min_instances, 이중화: n.replicas }),
           util: m(util, '비율', db.replicas ? 'max(쓰기 / 대당 처리량, 읽기 / (복제본 수 × 대당 처리량))' : '부하 / 주 서버 1대 처리량', { 부하: load.rps[s], 쓰기: load.writeRps[s], 대수: N }),
           p99,
         } : {
-          N: m(N, '대', 'ceil(부하 / (대당 처리량 × 목표 사용률)), 최소·이중화 대수 이상, 최대 대수 이하', { 부하: load.rps[s], 대당: per.rps!.value, 목표사용률: u, 최소: n.min_instances, 이중화: n.replicas }),
+          N: ns && (ns.perMbps || ns.perConns)
+            ? m(N, '대', 'ceil(max(부하 / 대당 처리량, 대역폭 / 대당 Mbps, 동시 연결 / 대당 연결) / 목표 사용률), 최소·이중화 대수 이상, 최대 대수 이하',
+              { 부하: load.rps[s], 대당: per.rps!.value, 목표사용률: u, 최소: n.min_instances, 이중화: n.replicas, ...(ns.perMbps && { 대당Mbps: ns.perMbps }), ...(ns.perConns && { 대당연결: ns.perConns }) })
+            : m(N, '대', 'ceil(부하 / (대당 처리량 × 목표 사용률)), 최소·이중화 대수 이상, 최대 대수 이하', { 부하: load.rps[s], 대당: per.rps!.value, 목표사용률: u, 최소: n.min_instances, 이중화: n.replicas }),
           util: m(util, '비율', '부하 / (대수 × 대당 처리량)', { 부하: load.rps[s], 대수: N }),
           p99,
         };
@@ -184,7 +222,7 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
   const instAt = (f: number) => (id: string, s: 'normal' | 'event') => {
     if (f === 1) return nodes[id].instances?.[s].value;
     const c = p.nodes.find((x) => x.id === id)!, cl = loads?.get(id), per = perOf.get(id)!;
-    return cl && per.rps && enabled(p.deploy, 'scale') ? sizeAt(c, per.rps.value, per.max, cl.rps[s] * f, u, primaryShape(c, d.catalog, cl)).N : undefined;
+    return cl && per.rps && enabled(p.deploy, 'scale') ? sizeAt(c, per.rps.value, per.max, cl.rps[s] * f, u, primaryShape(c, d.catalog, cl), netOf.get(id)).N : undefined;
   };
   // 큐 소비자·배치 1회 양은 1분 단위 트래픽 곡선(페르소나·하루 피크·일시적 급증의 기대 곡선)으로 돈다
   // 자동 확장을 켠 API 서버(대수만큼 늘어나는 주 항목)도 같은 곡선으로 하루를 돈다
@@ -242,6 +280,34 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     });
     nodes[n.id].autoscale = { normal: day(an), event: day(ae) };
   }
+  // 대역폭·동시 연결 결과 (비율·대당 한도는 위 netOf·netPer)
+  for (const n of servers) {
+    const load = loads!.get(n.id), ns = netOf.get(n.id), per = netPer.get(n.id);
+    if (!load || !ns || !per) continue;
+    const mbps = (s: 'normal' | 'event') => m((load.rps[s] * ns.kbPerReq * 8) / 1000, 'Mbps', '이 노드 부하 × 평균 응답 크기(하루 송신 / 하루 요청) × 8 / 1000', { 부하: load.rps[s], 평균응답KB: ns.kbPerReq });
+    const conns = (s: 'normal' | 'event') => m(load.rps[s] * ns.connsPerRps, '개', '동시 접속 × 화면에서 이 노드로 직접 오는 흐름 / 진입 서버 노드 직접 흐름 합',
+      { 동시접속: s === 'event' ? t!.concurrentPeakEvent.value : t!.concurrentPeak.value, 직접흐름: direct(n.id, s), 직접흐름합: servers.reduce((a, x) => a + direct(x.id, s), 0) });
+    const total = (x: Metric) => {
+      const at = (s: 'normal' | 'event') => {
+        const N = nodes[n.id].instances?.[s].value ?? 1;
+        return m(x.value * N, x.unit, '대당 한도 × 그 피크의 대수', { 대당: x.value, 대수: N });
+      };
+      return { normal: at('normal'), event: at('event') };
+    };
+    nodes[n.id].net = { mbps: { normal: mbps('normal'), event: mbps('event') }, conns: { normal: conns('normal'), event: conns('event') },
+      ...(per.mbps && { maxMbps: total(per.mbps) }), ...(per.conns && { maxConns: total(per.conns) }), ...((per.mbps || per.conns) && { size: ns }) };
+  }
+  /** 대역폭·연결 판정 변수 (배수 f: 대역폭·연결은 부하에 비례, 한도 총량은 그 배수의 대수로) */
+  const netVars = (id: string, f: number, s: 'normal' | 'event'): Vars => {
+    const x = nodes[id].net, per = netPer.get(id);
+    if (!x || !per) return {};
+    const N = instAt(f)(id, s) ?? 1;
+    return {
+      peak_mbps: x.mbps[s].value * f, concurrent_conns: x.conns[s].value * f, net_instances: N,
+      ...(per.mbps && { max_mbps_per: per.mbps.value, max_mbps_total: per.mbps.value * N }),
+      ...(per.conns && { max_conns_per: per.conns.value, max_conns_total: per.conns.value * N }),
+    };
+  };
   /** 받는 노드의 파이프라인 판정 변수: 큐 지연·허용 지연, 배치 실행·실행 창 (여럿이면 가장 나쁜 것) */
   const pipeVars = (flows: PipelineFlow[], id: string, s: 'normal' | 'event'): Vars => {
     const q = flows.filter((x) => x.to === id && x.kind === 'queue' && x.lag), b = flows.filter((x) => x.to === id && x.kind === 'batch' && x.run);
@@ -281,7 +347,7 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     const floor = n.replicas > 1 ? Math.min(per.max, n.replicas) : 0;
     const db = primaryShape(n, d.catalog, load);
     const hourly = autoOf(n.id, factor, 'normal')?.hourly ?? apiDay(n, factor, 'normal')?.hourly ?? (load && per.rps && shape
-      ? shape.map((s) => sizeAt(n, per.rps!.value, per.max, load.rps.normal * factor * s, u, db).N)
+      ? shape.map((s) => sizeAt(n, per.rps!.value, per.max, load.rps.normal * factor * s, u, db, netOf.get(n.id)).N)
       : Array<number>(24).fill(n.min_instances));
     return hourly.map((x) => Math.max(x, floor));
   };
@@ -309,7 +375,7 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
         const cl = loads?.get(c.id), per = perOf.get(c.id)!;
         const auto = autoOf(c.id, f, s);
         const N = auto ? auto.max : cl && per.rps && enabled(p.deploy, 'scale')
-          ? sizeAt(c, per.rps.value, per.max, cl.rps[s] * f, u, primaryShape(c, d.catalog, cl)).N
+          ? sizeAt(c, per.rps.value, per.max, cl.rps[s] * f, u, primaryShape(c, d.catalog, cl), netOf.get(c.id)).N
           : Math.max(1, c.replicas, c.min_instances);
         return N * (c.db_pool ?? DEFAULT_DB_POOL);
       });
@@ -359,6 +425,7 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
       ...freshness(n.id),
       ...pipeVars(pipeline, n.id, s),
       ...apiVars(n, 1, s),
+      ...netVars(n.id, 1, s),
       ...recoveryVars(failure, p, n, s, dataGb(n.id)),
     });
     judged.set(n.id, mergeScenario(n, { normal: add('normal'), event: add('event') }));
@@ -372,14 +439,16 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
       const conn = n.vars.event.db_connections === undefined ? connAt.get(n.id) : undefined;
       const load = loads?.get(n.id), per = perOf.get(n.id)!, db = primaryShape(n, d.catalog, load);
       const util = nodes[n.id].utilization && load && per.rps && n.vars.event.utilization === undefined
-        ? (x: number) => sizeAt(n, per.rps!.value, per.max, load.rps.event * x, u, db).util : undefined;
+        ? (x: number) => sizeAt(n, per.rps!.value, per.max, load.rps.event * x, u, db, netOf.get(n.id)).util : undefined;
       // 이 노드로 들어오는 파이프라인이 있으면 배수마다 적체·실행 시간을 다시 계산한다
       const piped = pipeline.some((x) => x.to === n.id && (x.lag || x.run)) && n.vars.event.queue_lag_s === undefined;
       // 한계 탐색에서는 넘침을 보지 않음: 사용자 수에 단조롭지 않아 이분 탐색이 안 됨 (f=1 값이 남지 않게 0으로 지움)
       const scaled = !!nodes[n.id].autoscale && n.vars.event.autoscale_over_min === undefined;
-      const f = limitFactor(n, d.catalog, judged.get(n.id)!, conn || util || piped || scaled
+      // 대역폭·연결은 부하에 비례하고 한도 총량은 대수를 따라 늘어난다
+      const net = !!nodes[n.id].net && n.vars.event.peak_mbps === undefined;
+      const f = limitFactor(n, d.catalog, judged.get(n.id)!, conn || util || piped || scaled || net
         ? (x) => ({ ...(conn && { db_connections: conn(x, 'event').total }), ...(util && { utilization: util(x) }), ...(piped && pipeVars(flowsAt(x), n.id, 'event')),
-          ...(scaled && { autoscale_over_min: 0 }) }) : undefined);
+          ...(scaled && { autoscale_over_min: 0 }), ...(net && netVars(n.id, x, 'event')) }) : undefined);
       if (f === undefined) continue;
       // 한계 없음(∞)은 화면 그래프 축·성장 타임라인을 깨므로 노드 값으로 두지 않고 표시만 한다
       if (f === Infinity) { unbounded = true; continue; }

@@ -6,14 +6,14 @@ import { DEFAULT_COOLDOWN_S, DEFAULT_MAX_LAG_S, DEFAULT_POLL_S, DEFAULT_SCALE_DE
 import { failureLines } from '../../engine/failure';
 import { judgeItem } from '../../engine/judge';
 import { LAYERS, LAYER_NAMES, VERDICT_NAMES, type Layer } from '../../engine/model';
-import { REGIONS, TABLE_LAYERS } from '../../engine/schema';
+import { REGIONS, TABLE_LAYERS, entryServers } from '../../engine/schema';
 import { catalog, prices } from './data';
 import { parseHtml, type ApiCall } from './htmlImport';
 import { callSplit } from '../../engine/api';
 import { addEdge, applyAlternative, removeEdge, removeNode, setVar, updateEdge, updateNode } from './edit';
 import { NumField, Row, Section, TextField } from './fields';
 import { fmtMetric, howMetric } from './format';
-import { scaleDay } from './reportData';
+import { netLines, scaleDay } from './reportData';
 import { usePick } from './store';
 import { StorageSection, TablesSection } from './TablesPanel';
 import { NodeSummary } from './NodeSummary';
@@ -39,6 +39,15 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
   const j = analysis?.judgements.find((x) => x.nodeId === id);
   const na = analysis?.nodes[id];
   const isApi = (n.layer === 'backend' || n.layer === 'gateway') && !!n.primary && catalog.byId.get(n.primary)?.scaling !== 'single_primary' && !!catalog.byId.get(n.primary)?.thresholds?.rps;
+  const isEntry = entryServers(project).some((x) => x.id === n.id);
+  const netHint = (what: string, base?: number, unit = '') => `서버 1대가 받을 수 있는 ${what}. 비우면 ${base !== undefined ? `항목 기준값 ${base}${unit} (예시값)` : '비교하지 않음'}`;
+  const prim = n.primary ? catalog.byId.get(n.primary) : undefined;
+  const updNet = (patch: Partial<NonNullable<typeof n.net>>) => {
+    const net = { ...n.net, ...patch };
+    if (net.max_mbps === undefined) delete net.max_mbps;
+    if (net.max_connections === undefined) delete net.max_connections;
+    upd({ net: Object.keys(net).length ? net : undefined });
+  };
   const scenario = analysis?.scenarios[id];
   const fits = catalog.items.filter((i) => i.attaches_to.includes(n.layer));
   const goals = [...new Set(fits.flatMap((i) => Object.keys(i.goals)))].sort();
@@ -127,6 +136,7 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
         {analysis?.pipeline.filter((f) => f.from === id || f.to === id).map((f) => (
           <p key={`${f.from}>${f.to}`} className="muted pipe-line" title={howMetric(f.lag?.event ?? f.capacity)}>{flowLine(f, (x) => project.nodes.find((y) => y.id === x)?.name ?? x)}</p>
         ))}
+        {netLines(na?.net).map((l) => <p key={l} className="muted pipe-line">{l}</p>)}
         {na?.autoscale && <p className="muted pipe-line">자동 확장 {scaleDay('평소', na.autoscale.normal)} / {scaleDay('이벤트', na.autoscale.event)}</p>}
       </Section>
 
@@ -160,6 +170,10 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
         <NumField label="1대 가용성" value={n.availability} step={0.0001} hint="비우면 프로젝트 기본값" onChange={(v) => upd({ availability: v })} />
         <NumField label="평균 처리(ms)" value={n.perf?.service_ms} onChange={(v) => upd({ perf: v ? { workers: n.perf?.workers ?? 8, ...n.perf, service_ms: v } : undefined })} />
         <NumField label="대당 동시 처리" value={n.perf?.workers} step={1} onChange={(v) => n.perf && upd({ perf: { ...n.perf, workers: v ?? 1 } })} />
+        {isEntry && <>
+          <NumField label="대당 대역폭 한도(Mbps)" value={n.net?.max_mbps} hint={netHint('대역폭', prim?.thresholds?.mbps?.value ?? undefined, ' Mbps')} onChange={(v) => updNet({ max_mbps: v && v > 0 ? v : undefined })} />
+          <NumField label="대당 동시 연결 한도" value={n.net?.max_connections} step={1} hint={netHint('동시 연결 수', prim?.thresholds?.client_connections?.value ?? undefined)} onChange={(v) => updNet({ max_connections: v && v > 0 ? Math.round(v) : undefined })} />
+        </>}
         {n.layer === 'cache' && <NumField label="캐시 적중률" value={n.hit_ratio} step={0.05} hint={`읽기 중 캐시에서 끝나는 몫. 이 캐시를 부르는 노드가 DB로 보내는 읽기가 (1 − 적중률)로 줄어요. 비우면 ${DEFAULT_HIT_RATIO} (예시값) — 실측 적중률로 바꾸세요. 캐시가 멈추면 줄여 주던 읽기가 DB로 다시 가는 장애 시나리오도 이 값으로 계산해요`} onChange={(v) => upd({ hit_ratio: v === undefined ? undefined : Math.min(1, Math.max(0, v)) })} />}
         {n.layer === 'queue' && <>
           <NumField label="파티션 수" value={n.partitions} step={1} hint="Kafka·Redpanda처럼 파티션으로 나누는 큐: 소비자 병렬 수가 이 수를 넘지 못해요. 비우면 제한 없음" onChange={(v) => upd({ partitions: v && v > 0 ? Math.round(v) : undefined })} />
