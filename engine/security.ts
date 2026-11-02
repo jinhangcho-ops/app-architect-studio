@@ -42,6 +42,10 @@ export const AUTH_METHOD_NAMES = { none: '없음(공개)', session: '세션 쿠�
 export const MFA_NAMES = { none: '없음', optional: '선택', required: '필수' } as const;
 export const ROLE_NAMES = { none: '없음', rbac: '역할 기반(RBAC)', abac: '속성 기반(ABAC)' } as const;
 export const SERVICE_AUTH_NAMES = { none: '없음', mtls: 'mTLS', service_account: '서비스 계정·키' } as const;
+export const WEB_CORS_NAMES = { off: '끔(같은 출처만)', allowlist: '허용 목록', any: '모든 출처(Origin 반사)' } as const;
+export const COOKIE_SAMESITE_NAMES = { strict: '엄격(strict)', lax: '느슨(lax)', none: '없음(none)' } as const;
+export const CSP_NAMES = { enforce: '강제', report_only: '보고만', none: '없음' } as const;
+export const TOKEN_STORAGE_NAMES = { cookie: '쿠키', memory: '메모리', local_storage: 'localStorage' } as const;
 export const PROTECTION_NAMES = { none: '없음', encrypt: '컬럼 암호화', tokenize: '토큰화', mask: '마스킹(표시 때)' } as const;
 /** STRIDE 줄 상태: 값으로 막혀 있음 · 확인 필요 · 값이 비어 판단 못 함 */
 export type StrideState = 'ok' | 'warn' | 'unset';
@@ -95,6 +99,27 @@ export function authFields(p: Project): [string, string][] {
     ['서비스 간 인증', name(SERVICE_AUTH_NAMES, a.service_auth)],
   ];
 }
+
+type WebKey = keyof NonNullable<Project['web']>;
+const WEB_LABELS: [WebKey, string][] = [
+  ['cors', '출처 허용(CORS)'], ['cookie_samesite', '쿠키 SameSite'], ['cookie_httponly', '쿠키 HttpOnly'], ['cookie_secure', '쿠키 Secure'], ['csrf', 'CSRF 토큰'], ['csp', 'CSP'], ['hsts', 'HSTS'], ['token_storage', '토큰 보관'],
+];
+/** 프로젝트 웹 클라이언트 보안 값을 [칸 이름, 글자]로 (설계서 표·명령줄 한 줄). 비면 미정 */
+export function webFields(p: Project): [string, string][] {
+  const w = p.web ?? {};
+  const names: Partial<Record<WebKey, Record<string, string>>> = { cors: WEB_CORS_NAMES, cookie_samesite: COOKIE_SAMESITE_NAMES, csp: CSP_NAMES, token_storage: TOKEN_STORAGE_NAMES };
+  return WEB_LABELS.map(([k, label]) => {
+    const v = w[k];
+    return [label, typeof v === 'boolean' || v === undefined ? state(v) : names[k]![v]];
+  });
+}
+
+const layerOf = (p: Project, id: string) => p.nodes.find((n) => n.id === id)?.layer;
+const publicApis = (p: Project) => p.nodes.filter((n) => n.security?.exposure === 'public' && (n.layer === 'gateway' || n.layer === 'backend'));
+/** 인증·인가를 따지는 문: 인터넷 공개 gateway·backend가 있거나, 화면이 외부 서비스를 바로 부를 때(BaaS) */
+export const authGate = (p: Project) => publicApis(p).length > 0 || p.edges.some((e) => layerOf(p, e.from) === 'ui' && layerOf(p, e.to) === 'external');
+/** 웹 클라이언트 보안을 따지는 문: 인증 문이 열리고 브라우저에서 도는 앱(deploy.mode web·hybrid) */
+export const webGate = (p: Project) => authGate(p) && (p.deploy.mode === 'web' || p.deploy.mode === 'hybrid');
 
 /** 인터넷 공개 노드의 위협 점검표 (STRIDE: 위장·변조·부인·정보 노출·서비스 거부·권한 상승). [이름, 문구, 상태]. 값으로 알 수 있는 것은 그 상태를 붙인다 */
 export function stride(p: Project, n: ProjectNode): [string, string, StrideState][] {
@@ -311,9 +336,8 @@ export function checkSecurity(p: Project, ctx?: SecurityCtx): SecurityHit[] {
   }
 
   // 인증·인가 (프로젝트 단위): 인터넷 공개 gateway·backend가 있거나, 화면이 외부 서비스를 바로 부를 때(BaaS)만
-  const pub = p.nodes.filter((n) => n.security?.exposure === 'public' && (n.layer === 'gateway' || n.layer === 'backend'));
-  const layerOf = (id: string) => p.nodes.find((n) => n.id === id)?.layer;
-  if (pub.length || p.edges.some((e) => layerOf(e.from) === 'ui' && layerOf(e.to) === 'external')) {
+  const pub = publicApis(p);
+  if (authGate(p)) {
     const a = p.auth ?? {}, at = { target: '프로젝트' };
     const sensitive = guarded(p);
     if (!a.method) {
@@ -346,6 +370,61 @@ export function checkSecurity(p: Project, ctx?: SecurityCtx): SecurityHit[] {
     }
     if (a.service_auth === 'none' && p.nodes.filter((n) => hasExposure(n) && !STORE.includes(n.layer)).length >= 2) {
       hits.push({ ...at, ruleId: 'sec_service_auth_none', level: 'info', why: '서비스끼리 인증이 없어 한 서버가 뚫리면 다른 서비스를 그대로 부를 수 있습니다(측면 이동)', instead: '내부망이라도 mTLS나 서비스 계정 키를 두세요' });
+    }
+    // 웹 클라이언트 보안 (브라우저에서 도는 앱만): CORS·쿠키·CSRF·CSP·HSTS·토큰 보관
+    if (webGate(p)) {
+      const w = p.web ?? {};
+      // 인증 방식이 미정이면 쿠키·토큰 기반 둘 다 아님
+      const cookie = a.method === 'session' || w.token_storage === 'cookie';
+      const token = a.method === 'jwt' || a.method === 'oauth_oidc';
+      // 공개 gateway·backend가 없으면(BaaS만) CORS·HSTS는 사업자가 정하므로 묻지도 판정하지도 않음
+      const api = publicApis(p).length > 0;
+      const ask = (k: WebKey) => (k === 'cors' || k === 'hsts' ? api : k === 'token_storage' ? token : k === 'csp' ? true : cookie);
+      const hint = a.method === undefined ? ' (인증 방식을 정하면 쿠키·토큰 칸도 묻습니다)' : '';
+      if (WEB_LABELS.every(([k]) => w[k] === undefined)) {
+        hits.push({ ...at, ruleId: 'sec_web_unset', level: 'conditional', why: `웹 클라이언트 보안 미정: ${WEB_LABELS.filter(([k]) => ask(k)).map(([, l]) => l).join('·')} 값이 설계에 없습니다${hint}`, instead: '설정 › 웹 클라이언트 보안에서 정하세요' });
+      } else {
+        const unset = WEB_LABELS.filter(([k]) => w[k] === undefined && ask(k)).map(([, l]) => l);
+        if (unset.length) hits.push({ ...at, ruleId: 'sec_web_partial', level: 'conditional', why: `웹 클라이언트 보안 값 미정: ${unset.join('·')}${hint}`, instead: '설정 › 웹 클라이언트 보안에서 정하세요' });
+      }
+      if (api && w.cors === 'any' && cookie) {
+        hits.push({ ...at, ruleId: 'sec_cors_any', level: 'conditional', why: '모든 출처를 자격 증명과 함께 허용(Origin 반사 + Allow-Credentials)하면 다른 사이트의 스크립트가 로그인한 사용자 권한으로 API를 부릅니다', instead: '앱 도메인만 허용 목록에 넣으세요' });
+      } else if (api && w.cors === 'any' && token) {
+        hits.push({ ...at, ruleId: 'sec_cors_any_token', level: 'info', why: '모든 출처 허용은 토큰이 메모리에 있으면 당장 위험하지 않지만, 허용 목록이 없어 다른 사이트의 호출을 걸러 내지 못합니다', instead: '허용 목록으로 좁히세요' });
+      }
+      if (a.method === 'api_key') {
+        hits.push({ ...at, ruleId: 'sec_api_key_in_browser', level: 'conditional', why: '브라우저 앱에 넣은 API 키는 번들·개발자 도구에서 누구나 볼 수 있어 사실상 공개됩니다', instead: '사용자 로그인 토큰을 쓰거나, 키에 도메인·범위·속도 제한을 두세요' });
+      }
+      if (cookie && w.csrf === false && w.cookie_samesite !== 'strict') {
+        const lax = w.cookie_samesite === 'lax';
+        hits.push({
+          ...at, ruleId: 'sec_cookie_no_csrf', level: 'conditional',
+          why: lax
+            ? 'SameSite=lax는 다른 사이트의 POST는 막지만 상태를 바꾸는 GET과 같은 사이트의 다른 서브도메인에서 오는 요청은 못 막습니다 (CSRF 토큰은 다층 방어)'
+            : `세션 쿠키를 쓰는데 CSRF 토큰이 없고 SameSite가 strict가 아니라, 다른 사이트가 사용자 몰래 쓰기 요청을 보낼 수 있습니다${w.cookie_samesite === undefined ? ' (Safari·Firefox는 미정을 none으로 다룹니다)' : ''}`,
+          instead: 'CSRF 토큰(더블 서브밋 또는 동기화 토큰)을 두거나 SameSite=strict',
+        });
+      }
+      if (cookie && w.cookie_httponly === false) {
+        hits.push({ ...at, ruleId: 'sec_cookie_js', level: 'conditional', why: '세션 쿠키를 스크립트가 읽을 수 있어 XSS 한 번에 세션이 통째로 새나갑니다', instead: 'HttpOnly 켬' });
+      }
+      if (cookie && w.cookie_secure === false) {
+        hits.push({ ...at, ruleId: 'sec_cookie_insecure', level: 'conditional', why: `쿠키에 Secure가 없어 http 요청 한 번에 세션 쿠키가 평문으로 나갑니다${w.cookie_samesite === 'none' ? ' (SameSite=none 쿠키는 Secure 없이는 브라우저가 거부합니다)' : ''}`, instead: 'Secure 켬' });
+      }
+      if (w.token_storage === 'local_storage') {
+        hits.push({ ...at, ruleId: 'sec_token_in_storage', level: 'conditional', why: '토큰을 localStorage에 두면 XSS 스크립트가 그대로 읽어 갑니다', instead: '메모리에 두고 갱신 토큰만 HttpOnly 쿠키로' });
+      }
+      if (w.csp === 'none') {
+        hits.push({ ...at, ruleId: 'sec_no_csp', level: 'conditional', why: 'CSP가 없어 XSS가 들어오면 막을 둘째 벽이 없습니다', instead: 'script-src를 앱 출처·nonce로 좁힌 CSP를 강제 모드로' });
+      } else if (w.csp === 'report_only') {
+        hits.push({ ...at, ruleId: 'sec_csp_report_only', level: 'info', why: 'CSP가 보고 모드라 위반을 기록만 하고 막지 않습니다', instead: '위반 보고가 잦아들면 강제 모드로' });
+      }
+      if (api && w.hsts === false) {
+        hits.push({ ...at, ruleId: 'sec_no_hsts', level: 'conditional', why: 'HSTS가 없어 첫 접속이나 공용 와이파이에서 http로 끌어내려 가로챌 수 있습니다', instead: 'Strict-Transport-Security max-age 1년 이상, preload' });
+      }
+      if (cookie && w.cookie_samesite === 'none' && w.csrf === true) {
+        hits.push({ ...at, ruleId: 'sec_cookie_samesite_none', level: 'info', why: 'SameSite=none은 다른 사이트에서도 쿠키가 붙습니다 (CSRF 토큰이 있어 막히지만 꼭 필요한지 확인)', instead: '임베드가 필요 없으면 lax 이상' });
+      }
     }
   }
   return hits;

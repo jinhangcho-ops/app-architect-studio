@@ -190,6 +190,17 @@ flowchart TD
 | 권한 모델 없음인데 개인정보 노드나 고객 구분 컬럼이 있음 | ⚠️ |
 | 개인정보 노드나 고객 구분 컬럼이 있는데 관리자 기능을 따로 두지 않음 | ⚠️ |
 | 서비스 간 인증 없음인데 서버 노드(화면·외부 서비스·저장 노드 제외)가 2개 이상 | ℹ️ |
+| 웹 클라이언트 보안(프로젝트 단위, 위 인증·인가 문이 열리고 구동 방식이 웹·하이브리드일 때만): 출처 허용(CORS)·쿠키 SameSite·쿠키 HttpOnly·쿠키 Secure·CSRF 토큰·CSP·HSTS·토큰 보관이 모두 빔 (`sec_web_unset`, 문구에는 묻는 칸만 나열) | ⚠️ |
+| 웹 클라이언트 보안 일부만 빔 (`sec_web_partial`, 한 줄). CSP는 늘 묻고, CORS·HSTS는 공개 gateway·backend가 있을 때만(화면 → 외부 서비스만 있으면 사업자가 정하므로 묻지 않고 판정하지 않음), 쿠키 SameSite·HttpOnly·Secure·CSRF 토큰은 쿠키 기반(인증 방식 세션 쿠키이거나 토큰 보관이 쿠키)일 때만, 토큰 보관은 토큰 기반(JWT·OAuth2/OIDC)일 때만 묻는다. 인증 방식이 비면 쿠키·토큰 칸은 묻지 않고 문구에 그렇게 안내 | ⚠️ |
+| 쿠키 기반인데 CORS가 모든 출처(Origin 반사 + Allow-Credentials) (`sec_cors_any`) ⚠️, 토큰 기반인데 모든 출처 (`sec_cors_any_token`) ℹ️. 인증 방식이 비면 없음 | ⚠️ · ℹ️ |
+| 인증 방식이 API 키인데 브라우저 앱 (`sec_api_key_in_browser`, 번들에 키가 드러남) | ⚠️ |
+| 쿠키 기반인데 CSRF 토큰 없음이고 SameSite가 strict가 아님 (`sec_cookie_no_csrf`, lax이면 "다른 사이트의 POST만 막음·다층 방어" 문구, none·미정이면 기존 문구) | ⚠️ |
+| 쿠키 기반인데 쿠키 HttpOnly 끔 (`sec_cookie_js`) | ⚠️ |
+| 쿠키 기반인데 쿠키 Secure 끔 (`sec_cookie_insecure`) | ⚠️ |
+| 토큰을 localStorage에 둠 (`sec_token_in_storage`) | ⚠️ |
+| CSP 없음 (`sec_no_csp`) ⚠️, CSP 보고만 (`sec_csp_report_only`) ℹ️ | ⚠️ · ℹ️ |
+| HSTS 끔 (`sec_no_hsts`) | ⚠️ |
+| 쿠키 기반인데 SameSite=none이고 CSRF 토큰 있음 (`sec_cookie_samesite_none`, 막히지만 꼭 필요한지 확인) | ℹ️ |
 
 인터넷 공개 노드마다 설계서에 위협 점검표(STRIDE: 위장·변조·부인·정보 노출·서비스 거부·권한 상승)를 붙이고, 이미 정한 값은 괄호로 보여 줍니다. 줄마다 상태를 붙입니다: ✅ 값으로 막혀 있음, ⚠️ 확인 필요(값이 끔이거나 인증 없는 인터페이스가 있음), 미정(값이 비어 판단 못 함). 위장은 인증 없는 인터페이스·인증 방식·토큰 수명(위 점검과 같은 기준)·MFA(개인정보나 고객 구분 컬럼이 있는데 없음이면 ⚠️), 권한 상승은 권한 모델·관리자 분리(비면 미정)·테넌트 분리(고객 구분 컬럼이 있는 저장 노드가 나누지 않음이면 ⚠️)로 정하고, 부인은 프로젝트에 개인정보 노드가 없으면 해당 없음(✅)입니다.
 

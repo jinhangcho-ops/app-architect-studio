@@ -36,7 +36,7 @@ export function buildPrices(files: JsonFile[]): PriceRow[] {
 
 /** 저장 파일 형식 버전. 저장 파일의 모양이 바뀌면(필드 이름·뜻이 바뀜) 올리고 MIGRATIONS에 옛 모양을 새 모양으로 바꾸는 함수를 더한다.
  *  format_version이 없는 파일은 1 (버전을 넣기 전에 만든 파일) */
-export const FORMAT_VERSION = 12;
+export const FORMAT_VERSION = 13;
 type Raw = Record<string, unknown>;
 /** MIGRATIONS[v]: 형식 v인 파일을 v + 1로 바꾼다 */
 export const MIGRATIONS: Record<number, (d: Raw) => Raw> = {
@@ -62,6 +62,8 @@ export const MIGRATIONS: Record<number, (d: Raw) => Raw> = {
   10: (d) => d,
   // 12: 노드 backup.encrypted·immutable·retention_days·restore_tested·restore_tested_on(백업 보호·복구 훈련)이 새로 생김 (v1.4.0). 바꿀 것 없이 버전만 올림
   11: (d) => d,
+  // 13: 프로젝트 web(웹 클라이언트 보안: CORS·쿠키·CSRF·CSP·HSTS·토큰 보관)이 새로 생김 (v1.4.0). 바꿀 것 없이 버전만 올림
+  12: (d) => d,
 };
 
 /** 저장 파일을 지금 형식으로 바꾼다. 이 앱보다 새 버전에서 만든 파일은 모르는 값이 버려져 다시 저장할 때 사라지므로 열지 않는다 */
@@ -140,6 +142,10 @@ function repair(src: unknown, issues: z.core.$ZodIssue[], lines: string[]): unkn
     } else if (i.path[0] === 'auth' && i.path.length === 2) {
       // 모르는 인증·인가 값(method: "magic" 등)도 같은 방식: 빼면 미정
       lines.push(`${where} = ${JSON.stringify(o[key])}: 알 수 없는 인증·인가 값 → 빼고 열었습니다 (미정)`);
+      delete o[key];
+    } else if (i.path[0] === 'web' && i.path.length === 2) {
+      // 모르는 웹 클라이언트 보안 값(cors: "world", hsts: "yes" 등)도 빼면 미정
+      lines.push(`${where} = ${JSON.stringify(o[key])}: 알 수 없는 웹 클라이언트 보안 값 → 빼고 열었습니다 (미정)`);
       delete o[key];
     } else if ((i.code === 'invalid_format' || i.code === 'invalid_type') && key === 'python' && i.path[0] === 'nodes' && i.path.length === 3) {
       // 따옴표 없이 쓴 3.12(숫자)도: 3.10은 숫자로 3.1이 되어 글자로 바꿀 수 없으니 뺀다

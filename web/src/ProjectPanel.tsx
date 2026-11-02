@@ -12,7 +12,7 @@ import { addAction, patchAt, removeAction, removePersona, setActionRate, updateA
 import { usePick } from './store';
 import { desktop, setUpdateCheck, updateCheckOn } from './desktop';
 import { NotesSection } from './NotesPanel';
-import { AUTH_METHOD_NAMES, MFA_NAMES, ROLE_NAMES, SERVICE_AUTH_NAMES } from '../../engine/security';
+import { AUTH_METHOD_NAMES, COOKIE_SAMESITE_NAMES, CSP_NAMES, MFA_NAMES, ROLE_NAMES, SERVICE_AUTH_NAMES, TOKEN_STORAGE_NAMES, WEB_CORS_NAMES, webGate } from '../../engine/security';
 
 export function ProjectPanel() {
   const { project: p, edit } = usePick('project', 'edit');
@@ -214,6 +214,8 @@ export function ProjectPanel() {
 
       <AuthSection />
 
+      <WebSection />
+
       <AppSection />
     </div>
   );
@@ -262,6 +264,50 @@ function AuthSection() {
       {pick('권한 모델', 'roles', ROLE_NAMES)}
       {flag('관리자 분리', 'admin_separate', '관리자 기능을 일반 사용자와 따로 두는지')}
       {pick('서비스 간 인증', 'service_auth', SERVICE_AUTH_NAMES, '서버끼리 서로를 확인하는 방법')}
+    </Section>
+  );
+}
+
+type Web = NonNullable<Project['web']>;
+
+/** 웹 클라이언트 보안: 비운 칸은 지우고, 다 비면 web 자체를 지운다. 문이 닫혀 있으면 안내만 */
+function WebSection() {
+  const { project: p, edit } = usePick('project', 'edit');
+  const w = p.web ?? {};
+  const open = webGate(p);
+  const put = (patch: Partial<Web>) => edit((x) => {
+    const next = Object.fromEntries(Object.entries({ ...x.web, ...patch }).filter(([, v]) => v !== undefined)) as Web;
+    return { ...x, web: Object.keys(next).length ? next : undefined };
+  });
+  const pick = (label: string, key: 'cors' | 'cookie_samesite' | 'csp' | 'token_storage', names: Record<string, string>, hint?: string) => (
+    <Row label={label} hint={hint}>
+      <Select aria-label={label} value={w[key] ?? ''} onChange={(e) => put({ [key]: e.target.value || undefined })}>
+        <option value="">미정</option>
+        {Object.entries(names).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </Select>
+    </Row>
+  );
+  const flag = (label: string, key: 'cookie_httponly' | 'cookie_secure' | 'csrf' | 'hsts', hint: string) => (
+    <Row label={label} hint={hint}>
+      <Select aria-label={label} value={w[key] === undefined ? '' : w[key] ? 'on' : 'off'} onChange={(e) => put({ [key]: e.target.value ? e.target.value === 'on' : undefined })}>
+        <option value="">미정</option>
+        {Object.entries(ONOFF).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </Select>
+    </Row>
+  );
+  return (
+    <Section id="s-web" title="웹 클라이언트 보안" desc="브라우저 앱이 공개 API를 부를 때 브라우저 쪽 방어예요. 비어 있는 값을 ⚠️로 알려요.">
+      {!open && !Object.keys(w).length ? <p className="muted">브라우저 앱(web·hybrid)이 공개 API를 부를 때 뜻이 있어요. 지금 설계에는 해당 없음</p> : <>
+        {!open && <p className="muted">브라우저 앱(web·hybrid)이 공개 API를 부를 때 뜻이 있어요. (지금 설계에는 해당 없음 — 저장된 값이 있어 보여요)</p>}
+        {pick('출처 허용(CORS)', 'cors', WEB_CORS_NAMES, '다른 사이트의 스크립트가 이 API를 부를 수 있는지')}
+        {pick('쿠키 SameSite', 'cookie_samesite', COOKIE_SAMESITE_NAMES, '다른 사이트에서 오는 요청에 쿠키를 붙이는 정도')}
+        {flag('쿠키 HttpOnly', 'cookie_httponly', '스크립트가 쿠키를 읽지 못하게 하는지')}
+        {flag('쿠키 Secure', 'cookie_secure', 'https로만 쿠키를 보내게 하는지')}
+        {flag('CSRF 토큰', 'csrf', '다른 사이트가 몰래 보내는 쓰기 요청을 토큰으로 막는지')}
+        {pick('CSP', 'csp', CSP_NAMES, '허용한 출처의 스크립트만 실행하게 하는 응답 헤더')}
+        {flag('HSTS', 'hsts', '브라우저가 항상 https로만 접속하게 하는 응답 헤더')}
+        {pick('토큰 보관', 'token_storage', TOKEN_STORAGE_NAMES, '로그인 토큰을 브라우저 어디에 두는지')}
+      </>}
     </Section>
   );
 }

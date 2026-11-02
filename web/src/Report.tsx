@@ -23,7 +23,7 @@ import { FeatureTablesTable } from './ResultsPanel';
 import { dialectOf, keyCols, sqlType } from '../../engine/ddl';
 import { NoteView } from './NoteView';
 import { chapterTitle } from './notes';
-import { EDGE_NET_NAMES, EDGE_TLS_NAMES, fieldText, hasExposure, LEVEL_MARK, SECURITY_FIELD_NAMES, SECURITY_FIELDS, edgeNet, stride, authFields, STRIDE_MARK, PROTECTION_NAMES } from '../../engine/security';
+import { EDGE_NET_NAMES, EDGE_TLS_NAMES, fieldText, hasExposure, LEVEL_MARK, SECURITY_FIELD_NAMES, SECURITY_FIELDS, edgeNet, stride, authFields, STRIDE_MARK, PROTECTION_NAMES, webFields, webGate } from '../../engine/security';
 
 const H = ({ n, children }: { n: number; children: ReactNode }) => <h2 className="r-h">{n}. {children}</h2>;
 const KV = ({ rows }: { rows: [string, ReactNode][] }) => (
@@ -40,6 +40,7 @@ function NetSecChapter({ n, p, a, name }: { n: number; p: Project; a: Analysis; 
       <H n={n}>네트워크 · 보안</H>
       <h3>인증 · 인가</h3>
       <KV rows={authFields(p)} />
+      {webGate(p) && <><h3>웹 클라이언트 보안</h3><KV rows={webFields(p)} /></>}
       <table className="r-grid">
         <thead><tr><th>노드</th>{SECURITY_FIELDS.map((f) => <th key={f}>{SECURITY_FIELD_NAMES[f]}</th>)}</tr></thead>
         <tbody>{p.nodes.filter((x) => x.layer !== 'external').map((x) => <tr key={x.id}><td>{x.name}</td>{SECURITY_FIELDS.map((f) => <td key={f}>{fieldText(p, x, f)}</td>)}</tr>)}</tbody>

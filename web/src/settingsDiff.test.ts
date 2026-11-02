@@ -64,3 +64,13 @@ describe('인증·인가 설정 (s-auth)', () => {
     expect(resetSettings(now, base).auth).toEqual(base.auth);
   });
 });
+
+describe('웹 클라이언트 보안 설정 (s-web)', () => {
+  it('web을 바꾸면 s-web 수가 세어지고 되돌리면 불러온 값으로 돌아옴', () => {
+    const b2 = { ...base, web: { cors: 'allowlist' as const } };
+    const now = { ...b2, web: { cors: 'any' as const } };
+    expect(changedCounts(now, b2)['s-web']).toBe(1);
+    expect(changedCounts({ ...base, web: { hsts: true } }, { ...base, web: undefined })['s-web']).toBe(2); // 칸이 새로 생기면 has까지 센다
+    expect(resetSettings(now, b2).web).toEqual(b2.web);
+  });
+});

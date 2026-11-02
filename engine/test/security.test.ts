@@ -8,9 +8,10 @@ const root = (rel: string) => fileURLToPath(new URL(`../../${rel}`, import.meta.
 const catalog = loadCatalog(root('data/catalog'));
 // 장부 앱: PWA(U-01) → FastAPI(B-01) → Supabase(D-01), FastAPI → Google Vision(X-01), 크론(J-01) → FastAPI
 const example = loadProject(root('examples/ledger-fastapi.json'), catalog.items);
-// D-01에는 다 정해 둔 백업을 둔다 (백업 점검은 backup.test.ts에서)
+// D-01에는 다 정해 둔 백업을, 프로젝트에는 다 정해 둔 웹 클라이언트 보안을 둔다 (백업·웹 점검은 backup.test.ts·webSecurity.test.ts에서)
 const ledger: Project = {
   ...example,
+  web: { cors: 'allowlist', cookie_samesite: 'strict', cookie_httponly: true, csrf: true, csp: 'enforce', hsts: true, token_storage: 'memory' },
   nodes: example.nodes.map(({ security: _, ...n }) => (n.id === 'D-01' ? { ...n, backup: { every_h: 24, pitr: true, encrypted: true, immutable: true, retention_days: 14, restore_tested: true, restore_tested_on: '2026-10-01' } } : n)),
   edges: example.edges.map(({ security: _, ...e }) => e),
 };
@@ -41,7 +42,8 @@ describe('네트워크·보안 점검', () => {
       // 장부 예시 D-01은 테이블이 있는데 백업·복사본이 없음
       'conditional:sec_public_unguarded:B-01', 'conditional:sec_no_backup:D-01', 'conditional:sec_unset:D-01', 'conditional:sec_unset:J-01',
       'conditional:sec_edge_unset:U-01>B-01', 'conditional:sec_edge_unset:J-01>B-01', 'conditional:sec_edge_unset:B-01>D-01', 'conditional:sec_edge_unset:B-01>X-01',
-      'conditional:sec_auth_unset:프로젝트',
+      // 장부 예시는 web이고 공개 API(B-01)가 있어 웹 클라이언트 보안도 묻는다
+      'conditional:sec_auth_unset:프로젝트', 'conditional:sec_web_unset:프로젝트',
     ]);
   });
 

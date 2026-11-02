@@ -444,6 +444,10 @@ export const NodeSecurity = z.object({
   tenant_isolation: z.enum(TENANT_ISOLATIONS).optional(),
 });
 export const EdgeSecurity = z.object({ tls: z.enum(EDGE_TLS).optional(), crosses: z.enum(EDGE_NETS).optional() });
+export const WEB_CORS = ['off', 'allowlist', 'any'] as const;
+export const COOKIE_SAMESITE = ['strict', 'lax', 'none'] as const;
+export const CSP_MODES = ['enforce', 'report_only', 'none'] as const;
+export const TOKEN_STORAGES = ['cookie', 'memory', 'local_storage'] as const;
 
 export const Project = z.object({
   name: z.string(),
@@ -618,6 +622,25 @@ export const Project = z.object({
     admin_separate: z.boolean().optional(),
     /** 서비스 간 인증 */
     service_auth: z.enum(['none', 'mtls', 'service_account']).optional(),
+  }).optional(),
+  /** 웹 클라이언트 보안 (v1.4.0, 형식 13). deploy.mode가 web·hybrid일 때만 판정에 쓴다. 비면 미정 */
+  web: z.object({
+    /** 다른 출처 요청 허용(CORS): 끔(같은 출처만)·허용 목록·모든 출처 */
+    cors: z.enum(WEB_CORS).optional(),
+    /** 세션·인증 쿠키의 SameSite 속성 */
+    cookie_samesite: z.enum(COOKIE_SAMESITE).optional(),
+    /** 쿠키에 HttpOnly(스크립트가 못 읽음)를 붙임 */
+    cookie_httponly: z.boolean().optional(),
+    /** 쿠키에 Secure(https로만 보냄)를 붙임 */
+    cookie_secure: z.boolean().optional(),
+    /** 쓰기 요청에 CSRF 토큰을 요구 */
+    csrf: z.boolean().optional(),
+    /** 콘텐츠 보안 정책(CSP): 강제·보고만·없음 */
+    csp: z.enum(CSP_MODES).optional(),
+    /** Strict-Transport-Security(HSTS) 헤더를 보냄 */
+    hsts: z.boolean().optional(),
+    /** 브라우저가 로그인 토큰을 두는 곳: 쿠키·메모리·localStorage */
+    token_storage: z.enum(TOKEN_STORAGES).optional(),
   }).optional(),
   /** 14절 월 성장률, 보는 기간, 교체 준비 기간 */
   exchange: Exchange.optional(),

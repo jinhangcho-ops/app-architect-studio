@@ -1,6 +1,6 @@
 // 사용법: npm run judge -- <프로젝트.json> [카탈로그 폴더] [가격표 폴더]
 import { fileURLToPath } from 'node:url';
-import { authFields, hasExposure, LEVEL_MARK, stride, STRIDE_MARK } from './security';
+import { authFields, hasExposure, LEVEL_MARK, stride, STRIDE_MARK, webFields, webGate } from './security';
 import { analyze } from './analyze';
 import { PATHS_CUT_TEXT } from './latency';
 import { loadCatalog, loadLaws, loadPrices, loadProject } from './io';
@@ -156,6 +156,7 @@ try {
   if (a.security.length || pub.length) {
     console.log('\n## 네트워크·보안');
     console.log(`🔐 인증·인가: ${authFields(project).map(([k, v]) => `${k} ${v}`).join(' · ')}`);
+    if (webGate(project)) console.log(`🌐 웹 클라이언트 보안: ${webFields(project).map(([k, v]) => `${k} ${v}`).join(' · ')}`);
   }
   for (const h of [...a.security].sort((x, y) => order[x.level] - order[y.level])) console.log(`${LEVEL_MARK[h.level]} ${h.target}\n    ${h.why}\n    → ${h.instead}`);
   for (const n of pub) {

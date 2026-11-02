@@ -158,7 +158,7 @@ describe('장애 줄의 백업 상태', () => {
 
 describe('형식 버전 12', () => {
   it('버전 11 파일은 그대로 열림', () => {
-    expect(FORMAT_VERSION).toBe(12);
+    expect(FORMAT_VERSION).toBeGreaterThanOrEqual(12);
     expect(migrate({ name: 'p', format_version: 11 })).toEqual({ name: 'p' });
   });
 

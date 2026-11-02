@@ -116,6 +116,25 @@ describe('설계서: 네트워크·보안 장', () => {
   });
 });
 
+describe('설계서: 웹 클라이언트 보안 표', () => {
+  const render = (mode: 'web' | 'mobile') => {
+    const p0 = load('ledger-fastapi.json');
+    const p = {
+      ...p0, deploy: { ...p0.deploy, mode }, web: { cors: 'allowlist' as const },
+      nodes: p0.nodes.map((n) => (n.id === 'B-01' ? { ...n, security: { ...n.security, exposure: 'public' as const } } : n)),
+    };
+    return renderToStaticMarkup(
+      <Report project={p} analysis={run(p, today).analysis} positions={autoLayout(p)} today={today} onClose={() => {}} />,
+    ).replace(/<!-- -->/g, '');
+  };
+  it('web이면 소제목과 값이 나오고 mobile이면 안 나옴', () => {
+    const html = render('web');
+    expect(html).toContain('<h3>웹 클라이언트 보안</h3>');
+    expect(html).toContain('허용 목록');
+    expect(render('mobile')).not.toContain('<h3>웹 클라이언트 보안</h3>');
+  });
+});
+
 describe('설계서: 개인정보 컬럼 보호', () => {
   it('개인정보 컬럼에 보호가 없으면 설계서에 보호가 없다는 줄이 나옴', () => {
     const p0 = load('ledger-fastapi.json');
