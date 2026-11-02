@@ -209,3 +209,20 @@ describe('설계서: 존 간 전송·로그 비용 줄', () => {
     expect(html).toContain('로그 저장');
   });
 });
+
+describe('설계서: 연결선 타임아웃·재시도 열', () => {
+  it('연결선 표에 타임아웃·재시도 열이 나오고 값은 800ms · 1회 · 브레이커, 비동기는 —', () => {
+    const p0 = load('ledger-fastapi.json');
+    const sec = (breaker?: boolean) => {
+      const p = { ...p0, edges: p0.edges.map((e) => (e.from === 'U-01' && e.to === 'B-01' ? { ...e, sync: true, timeout_ms: 800, retries: 1, breaker } : e)) };
+      const html = renderToStaticMarkup(
+        <Report project={p} analysis={run(p, today).analysis} positions={autoLayout(p)} today={today} onClose={() => {}} />,
+      ).replace(/<!-- -->/g, '');
+      return html.slice(html.indexOf('네트워크 · 보안</h2>'), html.indexOf('확인 필요 조문</h2>'));
+    };
+    expect(sec(true)).toContain('<th>타임아웃</th><th>재시도</th>');
+    expect(sec(true)).toContain('<td>800ms</td><td>1회 · 브레이커</td>');
+    expect(sec(false)).toContain('<td>800ms</td><td>1회 · 브레이커 없음</td>');
+    expect(sec()).toContain('<td>800ms</td><td>1회</td>');
+  });
+});

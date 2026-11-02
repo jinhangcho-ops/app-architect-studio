@@ -1,7 +1,7 @@
 // 네트워크·보안 점검 (v1.3.0): 노드·연결선의 보안 값과 구조로 ❌(막아야 함)·⚠️(확인 필요)·ℹ️(알아 둘 것)을 낸다.
 // 비어 있는 값은 "미정"으로 노드·연결선마다 한 줄로 묶어 ⚠️ (사용자 결정: 비면 모두 확인 필요). 기존 항목 판정(judgements)과 따로 낸다.
 import type { Layer } from './model';
-import { itemIds, nodeRegion, type Project, type ProjectNode } from './schema';
+import { itemIds, nodeRegion, type Project, type ProjectEdge, type ProjectNode } from './schema';
 
 export type SecurityLevel = 'fail' | 'conditional' | 'info';
 export type SecurityHit = {
@@ -18,8 +18,13 @@ export type SecurityHit = {
 
 // rate_limit_rpm·audit_retention_months는 rate_limit·audit_log 칸에 딸린 값이라 따로 칸으로 세지 않음
 type Field = Exclude<keyof NonNullable<ProjectNode['security']>, 'rate_limit_rpm' | 'audit_retention_months'>;
-/** 트래픽과 대조할 때 쓰는 값 (analyze가 채움): 노드 이벤트 피크 RPS, 이벤트 피크 동시 접속자 */
-export type SecurityCtx = { nodeEventRps: (id: string) => number | undefined; concurrentEvent: number };
+/** 트래픽과 대조할 때 쓰는 값 (analyze가 채움): 노드 이벤트 피크 RPS, 이벤트 피크 동시 접속자,
+ *  노드부터 그 뒤 동기 호출까지의 p99(ms)·노드 사용률(타임아웃·재시도 점검. perf·대수 계산이 있는 노드만) */
+export type SecurityCtx = {
+  nodeEventRps: (id: string) => number | undefined; concurrentEvent: number;
+  downstreamP99Ms?: (id: string, s: 'normal' | 'event') => number | undefined;
+  nodeUtil?: (id: string, s: 'normal' | 'event') => number | undefined;
+};
 export const SECURITY_FIELD_NAMES: Record<Field, string> = {
   exposure: '공개 범위', tls: 'TLS', at_rest: '저장 암호화', secrets: '비밀 보관',
   waf: 'WAF', rate_limit: '속도 제한', audit_log: '감사 로그', tenant_isolation: '테넌트 분리',
@@ -222,7 +227,39 @@ export function checkSecurity(p: Project, ctx?: SecurityCtx): SecurityHit[] {
     if (net === 'internet' && tls === 'none') {
       hits.push({ ...at, ruleId: 'sec_plain_internet', level: 'fail', why: `${target} 연결이 인터넷을 지나는데 암호화하지 않아 중간에서 토큰·데이터를 엿보거나 바꿀 수 있습니다`, instead: 'HTTPS(TLS)로 바꾸세요. 서비스끼리는 mTLS로 서로를 확인할 수 있습니다' });
     }
-    if (tls === undefined) hits.push({ ...at, ruleId: 'sec_edge_unset', level: 'conditional', why: `보안 값 미정: 암호화${net ? '' : '·지나는 망'}`, instead: '연결선 패널 › 네트워크·보안에서 정하세요' });
+    // 암호화·망·타임아웃 중 하나라도 비면 한 줄 (타임아웃 미정은 별도 줄 없이 여기에 붙인다)
+    const edgeUnset = [tls === undefined && '암호화', tls === undefined && !net && '지나는 망', e.sync && e.timeout_ms === undefined && '타임아웃'].filter(Boolean);
+    if (edgeUnset.length) hits.push({ ...at, ruleId: 'sec_edge_unset', level: 'conditional', why: `보안 값 미정: ${edgeUnset.join('·')}`, instead: '연결선 패널 › 네트워크·보안에서 정하세요' });
+    // 타임아웃·재시도 (동기 연결선만). retries가 비면 재시도 없음
+    if (e.sync) {
+      const t = e.timeout_ms, r = e.retries ?? 0;
+      const p99 = ctx?.downstreamP99Ms?.(e.to, 'event'), u = ctx?.nodeUtil?.(e.to, 'event');
+      if (t !== undefined && p99 !== undefined && t < p99) {
+        hits.push({ ...at, ruleId: 'net_timeout_short', level: 'conditional', why: `타임아웃 ${t}ms가 받는 쪽과 그 뒤 동기 호출의 p99 ${Math.ceil(p99)}ms보다 짧아 정상 요청도 끊깁니다`, instead: 'p99의 1.5~2배로 두고, 더 줄이려면 받는 노드를 빠르게 하세요' });
+      } else if (t !== undefined && p99 !== undefined && t < 1.5 * p99) {
+        hits.push({ ...at, ruleId: 'net_timeout_tight', level: 'info', why: `타임아웃 ${t}ms가 p99 ${Math.ceil(p99)}ms에 가까워 느린 1%가 끊깁니다`, instead: 'p99의 1.5~2배로' });
+      }
+      if (r >= 1 && t === undefined) {
+        hits.push({ ...at, ruleId: 'net_retry_no_timeout', level: 'conditional', why: '타임아웃 없이 재시도하면 느린 요청이 끝날 때까지 기다렸다 또 보내 스레드·연결이 쌓입니다', instead: '타임아웃을 먼저 정하세요' });
+      }
+      // shortcut: 최악(모든 요청이 실패해 retries번 다시 보냄)만 보고, 받는 노드 부하가 모두 이 연결선에서 온다고 봄. 실패율·연결선별 부하를 받게 되면 1 + 실패율 × retries를 이 선의 몫에만 곱하기로
+      if (r >= 1 && u !== undefined && u * (1 + r) > 1) {
+        const why = `받는 노드가 느려져 모두 재시도하면 부하가 ${1 + r}배가 되어 사용률 ${Math.round(u * (1 + r) * 100)}% — 재시도가 장애를 키웁니다`;
+        const instead = r >= 2 ? '재시도는 1회로 줄이고 지수 백오프·지터로, 서킷 브레이커로 끊으세요' : '지수 백오프·지터를 두고 서킷 브레이커로 끊으세요';
+        hits.push(e.breaker === true
+          ? { ...at, ruleId: 'net_retry_storm', level: 'info', why: `${why} (브레이커가 끊어 주지만 끊기 전까지는 같음)`, instead }
+          : { ...at, ruleId: 'net_retry_storm', level: 'conditional', why, instead });
+      }
+      if (r >= 1 && e.breaker === false) {
+        hits.push({ ...at, ruleId: 'net_no_breaker', level: 'info', why: '재시도만 있고 서킷 브레이커가 없어 받는 쪽이 죽어 있어도 계속 두드립니다', instead: '연속 실패 N회면 잠시 끊는 브레이커를 두세요' });
+      }
+      // 받는 노드에서 나가는 동기 연결선 중 재시도까지 포함한 최대 대기(타임아웃 × (1 + 재시도))가 가장 긴 것
+      const most = (x: ProjectEdge) => x.timeout_ms! * (1 + (x.retries ?? 0));
+      const inner = p.edges.filter((x) => x.from === e.to && x.sync && x.timeout_ms !== undefined).sort((a, b) => most(b) - most(a))[0];
+      if (t !== undefined && inner && most(inner) >= t) {
+        hits.push({ ...at, ruleId: 'net_timeout_chain', level: 'conditional', why: `${target} 타임아웃 ${t}ms보다 안쪽 ${nameOf(inner.from)} → ${nameOf(inner.to)} 타임아웃 ${inner.timeout_ms}ms(재시도 포함 최대 ${most(inner)}ms)가 같거나 길어, 바깥이 먼저 포기한 뒤에도 안쪽은 계속 돕니다`, instead: '안쪽 타임아웃을 바깥보다 짧게(바깥 ≥ Σ 안쪽 + 처리 시간)' });
+      }
+    }
     // 5. 인증 없는 쓰기 API
     for (const i of e.interfaces) {
       if (i.kind === 'rest' && i.auth === 'none' && i.method && i.method !== 'GET') {

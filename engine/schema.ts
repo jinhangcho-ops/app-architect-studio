@@ -553,6 +553,10 @@ export const Project = z.object({
     interfaces: z.array(Interface).default([]),
     /** 네트워크·보안 (v1.3.0) */
     security: EdgeSecurity.optional(),
+    /** 타임아웃·재시도 (v1.4.0, 형식 11). 동기 연결선에서만 뜻이 있다. retries = 첫 시도 뒤 다시 보내는 횟수, breaker = 서킷 브레이커. 비면 타임아웃 미정·재시도 없음 */
+    timeout_ms: z.number().positive().optional(),
+    retries: z.number().int().nonnegative().optional(),
+    breaker: z.boolean().optional(),
   })).default([]),
   /** 9절 목표 사용률: 필요 대수 = ceil(부하 / (대당 처리량 × 이 값)) */
   target_utilization: z.number().gt(0).max(1).default(0.7),

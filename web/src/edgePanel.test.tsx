@@ -127,3 +127,30 @@ describe('노드 패널 요청당 로그', () => {
     done();
   });
 });
+
+describe('연결선 패널 타임아웃·재시도', () => {
+  it('동기 연결선에만 타임아웃(ms)·재시도 횟수·서킷 브레이커 칸이 있고, 800을 넣으면 timeout_ms에 저장', () => {
+    const ex = examples.find((e) => e.name === 'global-commerce.json')!;
+    const p = parseProject(ex.data, catalog.items, ex.name);
+    useStore.setState({ project: p, past: [], future: [] });
+    const sync = p.edges.find((e) => e.sync)!, async = p.edges.find((e) => !e.sync)!;
+    const draw = (e: typeof sync) => {
+      const el = document.createElement('div');
+      document.body.append(el);
+      const root = createRoot(el);
+      flushSync(() => root.render(<EdgePanel from={e.from} to={e.to} />));
+      return { el, done: () => { root.unmount(); el.remove(); } };
+    };
+    const a = draw(async);
+    expect(a.el.innerHTML).not.toContain('타임아웃(ms)');
+    a.done();
+    const { el, done } = draw(sync);
+    expect(el.innerHTML).toContain('재시도 횟수');
+    expect(el.innerHTML).toContain('서킷 브레이커');
+    const inp = [...el.querySelectorAll('label.row')].find((r) => r.querySelector('span')?.firstChild?.textContent === '타임아웃(ms)')!.querySelector('input') as HTMLInputElement;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(inp, '800');
+    flushSync(() => inp.dispatchEvent(new Event('input', { bubbles: true })));
+    expect(useStore.getState().project.edges.find((e) => e.from === sync.from && e.to === sync.to)!.timeout_ms).toBe(800);
+    done();
+  });
+});

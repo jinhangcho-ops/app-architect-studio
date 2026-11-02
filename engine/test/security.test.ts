@@ -16,7 +16,8 @@ const safeAuth: NonNullable<Project['auth']> = { method: 'jwt', issuer: 'B-01', 
 const withSec = (nodes: Record<string, Sec>, edges: Record<string, NonNullable<Project['edges'][number]['security']>> = {}, p: Project = { ...ledger, auth: safeAuth }): Project => ({
   ...p,
   nodes: p.nodes.map((n) => (nodes[n.id] ? { ...n, security: nodes[n.id] } : n)),
-  edges: p.edges.map((e) => (edges[`${e.from}>${e.to}`] ? { ...e, security: edges[`${e.from}>${e.to}`] } : e)),
+  // 동기 연결선은 타임아웃도 정해 둬야 미정 줄이 없다 (정책: 비면 ⚠️)
+  edges: p.edges.map((e) => ({ ...(edges[`${e.from}>${e.to}`] ? { ...e, security: edges[`${e.from}>${e.to}`] } : e), timeout_ms: e.from === 'B-01' ? 500 : 1000 })), // 안쪽(B-01에서 나감)을 짧게: 같으면 net_timeout_chain
 });
 // 다 정해 둔 안전한 설정 (여기서 하나씩 바꿔 본다)
 const safe: Record<string, Sec> = {
@@ -32,7 +33,8 @@ const ids = (p: Project) => checkSecurity(p).filter((h) => h.ruleId !== 'sec_cro
 describe('네트워크·보안 점검', () => {
   it('예시 장부 앱: 정해 둔 값은 미정에서 빠지고, 인터넷 공개 API의 WAF 끔이 ⚠️로 보임, 인증 방식 미정', () => {
     expect(ids(example)).toEqual([
-      'conditional:sec_public_unguarded:B-01', 'conditional:sec_unset:D-01', 'conditional:sec_unset:J-01', 'conditional:sec_edge_unset:J-01>B-01',
+      'conditional:sec_public_unguarded:B-01', 'conditional:sec_unset:D-01', 'conditional:sec_unset:J-01',
+      'conditional:sec_edge_unset:U-01>B-01', 'conditional:sec_edge_unset:J-01>B-01', 'conditional:sec_edge_unset:B-01>D-01', 'conditional:sec_edge_unset:B-01>X-01',
       'conditional:sec_auth_unset:프로젝트',
     ]);
   });
@@ -51,10 +53,10 @@ describe('네트워크·보안 점검', () => {
     ]);
     // 외부 서비스(X-01)는 우리가 정할 칸이 없음. 연결선은 모두 미정, 지나는 망을 짐작할 수 없는 선은 망도 미정
     expect(hits.filter((h) => h.ruleId === 'sec_edge_unset').map((h) => [h.edge!.join('>'), h.why])).toEqual([
-      ['U-01>B-01', '보안 값 미정: 암호화'],
-      ['J-01>B-01', '보안 값 미정: 암호화·지나는 망'],
-      ['B-01>D-01', '보안 값 미정: 암호화'],
-      ['B-01>X-01', '보안 값 미정: 암호화'],
+      ['U-01>B-01', '보안 값 미정: 암호화·타임아웃'],
+      ['J-01>B-01', '보안 값 미정: 암호화·지나는 망·타임아웃'],
+      ['B-01>D-01', '보안 값 미정: 암호화·타임아웃'],
+      ['B-01>X-01', '보안 값 미정: 암호화·타임아웃'],
     ]);
     expect(hits.filter((h) => h.level !== 'info').every((h) => h.level === 'conditional')).toBe(true);
     // AWS의 FastAPI ↔ Supabase는 인터넷을 지나는 다른 클라우드 연결 (ℹ️)

@@ -113,8 +113,22 @@ describe('테이블·연결 검증 (감사 2)', () => {
     expect(checkProject(proj({ auth: { method: 'jwt', issuer: 'a' } }), [])).toEqual([]);
   });
 
-  it('형식 버전 10: 버전 1~9 파일(또는 버전 없음)은 그대로 열림', () => {
-    expect(FORMAT_VERSION).toBe(10);
+  it('연결선 타임아웃·재시도·브레이커 (형식 11): 받고, 범위 밖은 앱 열기에서 빼고 엶', () => {
+    const p = proj({ edges: [{ from: 'a', to: 'db', timeout_ms: 500, retries: 2, breaker: true }] });
+    expect(p.edges[0]).toMatchObject({ timeout_ms: 500, retries: 2, breaker: true });
+    expect(proj({ edges: [{ from: 'a', to: 'db' }] }).edges[0].timeout_ms).toBeUndefined();
+    expect(() => proj({ edges: [{ from: 'a', to: 'db', timeout_ms: 0 }] })).toThrow();
+    expect(() => proj({ edges: [{ from: 'a', to: 'db', retries: 1.5 }] })).toThrow();
+    const notes: string[] = [];
+    const r = readProject({ name: 'p', nodes: [], edges: [{ from: 'a', to: 'b', timeout_ms: -5, retries: -1 }] }, [], '파일', notes);
+    expect(r.edges[0].timeout_ms).toBeUndefined();
+    expect(r.edges[0].retries).toBeUndefined();
+    expect(notes).toHaveLength(2);
+  });
+
+  it('형식 버전 11: 버전 1~10 파일(또는 버전 없음)은 그대로 열림', () => {
+    expect(FORMAT_VERSION).toBe(11);
+    expect(migrate({ name: 'p', format_version: 10 })).toEqual({ name: 'p' });
     expect(migrate({ name: 'p', format_version: 9 })).toEqual({ name: 'p' });
     expect(migrate({ name: 'p', format_version: 8 })).toEqual({ name: 'p' });
     expect(migrate({ name: 'p', format_version: 7 })).toEqual({ name: 'p' });

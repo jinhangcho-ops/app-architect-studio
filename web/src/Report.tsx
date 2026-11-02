@@ -45,10 +45,10 @@ function NetSecChapter({ n, p, a, name }: { n: number; p: Project; a: Analysis; 
         <tbody>{p.nodes.filter((x) => x.layer !== 'external').map((x) => <tr key={x.id}><td>{x.name}</td>{SECURITY_FIELDS.map((f) => <td key={f}>{fieldText(p, x, f)}</td>)}</tr>)}</tbody>
       </table>
       {p.edges.length > 0 && <table className="r-grid">
-        <thead><tr><th>연결</th><th>암호화</th><th>지나는 망</th></tr></thead>
+        <thead><tr><th>연결</th><th>암호화</th><th>지나는 망</th><th>타임아웃</th><th>재시도</th></tr></thead>
         <tbody>{p.edges.map((e) => {
           const net = edgeNet(p, e);
-          return <tr key={e.from + '>' + e.to}><td>{name(e.from)} → {name(e.to)}</td><td>{e.security?.tls ? EDGE_TLS_NAMES[e.security.tls] : '미정'}</td><td>{net ? EDGE_NET_NAMES[net] + (e.security?.crosses ? '' : ' (짐작)') : '미정'}</td></tr>;
+          return <tr key={e.from + '>' + e.to}><td>{name(e.from)} → {name(e.to)}</td><td>{e.security?.tls ? EDGE_TLS_NAMES[e.security.tls] : '미정'}</td><td>{net ? EDGE_NET_NAMES[net] + (e.security?.crosses ? '' : ' (짐작)') : '미정'}</td><td>{!e.sync ? '—' : e.timeout_ms !== undefined ? `${e.timeout_ms}ms` : '미정'}</td><td>{!e.sync ? '—' : `${e.retries ?? 0}회${e.breaker === true ? ' · 브레이커' : e.breaker === false ? ' · 브레이커 없음' : ''}`}</td></tr>;
         })}</tbody>
       </table>}
       <h3>점검 결과</h3>

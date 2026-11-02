@@ -94,6 +94,8 @@ export function NodeSecuritySection({ node: n, analysis }: { node: ProjectNode; 
 export function EdgeSecuritySection({ edge: e, analysis }: { edge: ProjectEdge; analysis?: Analysis }) {
   const { project, edit } = usePick('project', 'edit');
   const set = (key: keyof EdgeSec, v: unknown) => edit((p) => updateEdge(p, e.from, e.to, { security: patched<EdgeSec>(e.security, key, v) }));
+  // 비우면 undefined (JSON 저장에서 빠지고 점검은 !== undefined로 본다)
+  const setCall = (key: 'timeout_ms' | 'retries' | 'breaker', v: unknown) => edit((p) => updateEdge(p, e.from, e.to, { [key]: v }));
   const guessed = !e.security?.crosses && edgeNet(project, e);
   const hits = analysis?.security.filter((h) => h.edge?.[0] === e.from && h.edge[1] === e.to) ?? [];
   return (
@@ -101,6 +103,11 @@ export function EdgeSecuritySection({ edge: e, analysis }: { edge: ProjectEdge; 
       <Pick label="암호화" value={e.security?.tls} names={EDGE_TLS_NAMES} onChange={(v) => set('tls', v)} hint="이 연결로 오가는 데이터를 암호화하는지. 서비스끼리 서로를 확인하려면 mTLS" />
       <Pick label="지나는 망" value={e.security?.crosses} names={EDGE_NET_NAMES} onChange={(v) => set('crosses', v)}
         hint={guessed ? `비우면 "${EDGE_NET_NAMES[guessed]}"으로 짐작해요 (화면·외부 서비스·다른 클라우드와 잇는 선은 인터넷)` : '같은 서버·내부망·인터넷 중 어디를 지나는지'} />
+      {e.sync && <>
+        <NumField label="타임아웃(ms)" value={e.timeout_ms} step={1} hint="받는 쪽이 이보다 오래 걸리면 끊어요. 받는 노드 p99의 1.5~2배가 보통" onChange={(v) => setCall('timeout_ms', v !== undefined && v > 0 ? v : undefined)} />
+        <NumField label="재시도 횟수" value={e.retries} step={1} hint="첫 시도 뒤 다시 보내는 횟수. 1회·지수 백오프 권장" onChange={(v) => setCall('retries', v !== undefined && v >= 0 ? Math.round(v) : undefined)} />
+        <Pick label="서킷 브레이커" value={fromBool(e.breaker)} names={ONOFF} onChange={(v) => setCall('breaker', toBool(v))} hint="연속으로 실패하면 잠시 호출을 끊어 받는 쪽이 살아나게 하는 장치" />
+      </>}
       <SecurityList hits={hits} />
     </Section>
   );

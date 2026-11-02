@@ -416,7 +416,10 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     const base = scenarios.get(n.id)!;
     const na = nodes[n.id];
     const pathAv = Math.min(...pathResults.filter((x) => x.nodes.includes(n.id)).map((x) => x.availability.value));
+    // 외부 서비스의 has_timeout: 들어오는 동기 연결선 모두에 타임아웃이 있으면 true, 하나라도 비면 false, 동기 연결선이 없으면 넣지 않음
+    const syncIn = n.layer === 'external' ? p.edges.filter((e) => e.to === n.id && e.sync) : [];
     const add = (s: 'normal' | 'event') => ({
+      ...(syncIn.length > 0 && { has_timeout: syncIn.every((e) => e.timeout_ms !== undefined) }),
       ...base[s],
       ...(na.utilization && { utilization: na.utilization[s].value }),
       ...(na.p99 && { node_p99_ms: na.p99[s].value }),
@@ -491,7 +494,16 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
     growth,
     judgements: p.nodes.map((n) => judgeNode(n, d.catalog, judged.get(n.id))),
     rules: checkRules(p, d.rules, tables.map((x) => ({ target: `${p.nodes.find((n) => n.id === x.nodeId)!.name}.${x.table}`, vars: x.vars }))),
-    security: checkSecurity(p, loads && t ? { nodeEventRps: (id) => loads.get(id)?.rps.event, concurrentEvent: t.concurrentPeakEvent.value } : undefined),
+    security: checkSecurity(p, loads && t ? {
+      nodeEventRps: (id) => loads.get(id)?.rps.event, concurrentEvent: t.concurrentPeakEvent.value,
+      downstreamP99Ms: (id, s) => {
+        // id부터 동기 경로 끝까지의 p99 중 가장 큰 것. p99 있는 노드가 하나도 없는 뒷부분은 빼고, 경로가 없으면 노드 p99
+        const m = new Map(Object.entries(nodes).flatMap(([k, x]) => (x.p99 ? [[k, x.p99[s]] as const] : [])));
+        const tails = paths.filter((x) => x.includes(id)).map((x) => x.slice(x.indexOf(id))).filter((x) => x.some((k) => m.has(k)));
+        return tails.length ? Math.max(...tails.map((x) => pathP99(p, x, m).value)) : m.get(id)?.value;
+      },
+      nodeUtil: (id, s) => nodes[id]?.utilization?.[s].value,
+    } : undefined),
     tables,
     api: loads ? apiLoads(p, loads) : [],
     ...(t && {
