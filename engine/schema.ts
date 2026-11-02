@@ -508,7 +508,19 @@ export const Project = z.object({
       instances: z.number().int().positive().optional(),
     }).optional(),
     /** 데이터 노드 백업: every_h시간마다, pitr = 시점 복구(로그를 계속 보관), restore_mb_s = 되살리는 속도 */
-    backup: z.object({ every_h: z.number().positive(), pitr: z.boolean().default(false), restore_mb_s: z.number().positive().optional() }).optional(),
+    backup: z.object({
+      every_h: z.number().positive(), pitr: z.boolean().default(false), restore_mb_s: z.number().positive().optional(),
+      /** 백업 파일 암호화 (비면 미정) */
+      encrypted: z.boolean().optional(),
+      /** 변조·삭제 불가 잠금(WORM·삭제 잠금) (비면 미정) */
+      immutable: z.boolean().optional(),
+      /** 백업 보관 일수 */
+      retention_days: z.number().int().positive().optional(),
+      /** 백업에서 되살려 본 적이 있는지 (비면 미정) */
+      restore_tested: z.boolean().optional(),
+      /** 마지막 복구 훈련 날짜 YYYY-MM-DD (기록용, 판정 없음) */
+      restore_tested_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((v) => !Number.isNaN(Date.parse(v)), '존재하지 않는 날짜입니다').optional(),
+    }).optional(),
     /** 13절 1대의 가용성. 없으면 project.default_availability */
     availability: z.number().min(0).max(1).optional(),
     /** 9절 가격표의 인스턴스 상품 id (시간당 과금 또는 월 정액) */

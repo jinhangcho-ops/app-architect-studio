@@ -8,7 +8,12 @@ const root = (rel: string) => fileURLToPath(new URL(`../../${rel}`, import.meta.
 const catalog = loadCatalog(root('data/catalog'));
 // 장부 앱: PWA(U-01) → FastAPI(B-01) → Supabase(D-01), FastAPI → Google Vision(X-01), 크론(J-01) → FastAPI
 const example = loadProject(root('examples/ledger-fastapi.json'), catalog.items);
-const ledger: Project = { ...example, nodes: example.nodes.map(({ security: _, ...n }) => n), edges: example.edges.map(({ security: _, ...e }) => e) };
+// D-01에는 다 정해 둔 백업을 둔다 (백업 점검은 backup.test.ts에서)
+const ledger: Project = {
+  ...example,
+  nodes: example.nodes.map(({ security: _, ...n }) => (n.id === 'D-01' ? { ...n, backup: { every_h: 24, pitr: true, encrypted: true, immutable: true, retention_days: 14, restore_tested: true, restore_tested_on: '2026-10-01' } } : n)),
+  edges: example.edges.map(({ security: _, ...e }) => e),
+};
 
 type Sec = NonNullable<Project['nodes'][number]['security']>;
 // 다 정해 둔 안전한 인증·인가 (인증·인가 시험에서 하나씩 바꿔 본다)
@@ -33,7 +38,8 @@ const ids = (p: Project) => checkSecurity(p).filter((h) => h.ruleId !== 'sec_cro
 describe('네트워크·보안 점검', () => {
   it('예시 장부 앱: 정해 둔 값은 미정에서 빠지고, 인터넷 공개 API의 WAF 끔이 ⚠️로 보임, 인증 방식 미정', () => {
     expect(ids(example)).toEqual([
-      'conditional:sec_public_unguarded:B-01', 'conditional:sec_unset:D-01', 'conditional:sec_unset:J-01',
+      // 장부 예시 D-01은 테이블이 있는데 백업·복사본이 없음
+      'conditional:sec_public_unguarded:B-01', 'conditional:sec_no_backup:D-01', 'conditional:sec_unset:D-01', 'conditional:sec_unset:J-01',
       'conditional:sec_edge_unset:U-01>B-01', 'conditional:sec_edge_unset:J-01>B-01', 'conditional:sec_edge_unset:B-01>D-01', 'conditional:sec_edge_unset:B-01>X-01',
       'conditional:sec_auth_unset:프로젝트',
     ]);

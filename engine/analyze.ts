@@ -503,7 +503,8 @@ export function analyze(p: Project, d: Data, today: string, reuse?: { traffic: T
         return tails.length ? Math.max(...tails.map((x) => pathP99(p, x, m).value)) : m.get(id)?.value;
       },
       nodeUtil: (id, s) => nodes[id]?.utilization?.[s].value,
-    } : undefined),
+      today,
+    } : { nodeEventRps: () => undefined, concurrentEvent: 0, today }),
     tables,
     api: loads ? apiLoads(p, loads) : [],
     ...(t && {

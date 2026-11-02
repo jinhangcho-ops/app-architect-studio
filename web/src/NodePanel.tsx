@@ -54,6 +54,14 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
     if (o.log_retention_days === undefined) delete o.log_retention_days;
     upd({ observability: Object.keys(o).length ? o : undefined });
   };
+  // 백업 칸 하나를 바꾼다. undefined인 키는 지워 파일에 남지 않게 한다
+  const updBackup = (patch: Partial<NonNullable<typeof n.backup>>) => {
+    const b = { ...n.backup!, ...patch };
+    for (const k of Object.keys(b) as (keyof typeof b)[]) if (b[k] === undefined) delete b[k];
+    upd({ backup: b });
+  };
+  const tri = (b?: boolean) => (b === undefined ? '' : b ? 'on' : 'off');
+  const fromTri = (v: string) => (v === '' ? undefined : v === 'on');
   const scenario = analysis?.scenarios[id];
   const fits = catalog.items.filter((i) => i.attaches_to.includes(n.layer));
   const goals = [...new Set(fits.flatMap((i) => Object.keys(i.goals)))].sort();
@@ -248,6 +256,27 @@ export function NodePanel({ id, analysis }: { id: string; analysis?: Analysis })
                 <input type="checkbox" checked={n.backup.pitr} onChange={(e) => upd({ backup: { ...n.backup!, pitr: e.target.checked } })} />
               </Row>
               <NumField label="되살리는 속도(MB/초)" value={n.backup.restore_mb_s} step={10} hint="복구 훈련에서 잰 값. 비우면 100 (예시값)" onChange={(v) => upd({ backup: { ...n.backup!, restore_mb_s: v && v > 0 ? v : undefined } })} />
+              <NumField label="백업 보관(일)" value={n.backup.retention_days} step={1} hint="최소 7일. 비우면 미정" onChange={(v) => updBackup({ retention_days: v && v > 0 ? Math.round(v) : undefined })} />
+              <Row label="백업 암호화" hint="백업 파일을 암호화해 저장하는지. 키는 KMS에 두세요">
+                <Select aria-label="백업 암호화" value={tri(n.backup.encrypted)} onChange={(e) => updBackup({ encrypted: fromTri(e.target.value) })}>
+                  <option value="">미정</option><option value="on">켬</option><option value="off">끔</option>
+                </Select>
+              </Row>
+              <Row label="변조 방지(삭제 잠금)" hint="백업을 지우거나 덧쓸 수 없게 잠그는지 (WORM·삭제 잠금). 랜섬웨어·실수 삭제 대비">
+                <Select aria-label="변조 방지(삭제 잠금)" value={tri(n.backup.immutable)} onChange={(e) => updBackup({ immutable: fromTri(e.target.value) })}>
+                  <option value="">미정</option><option value="on">켬</option><option value="off">끔</option>
+                </Select>
+              </Row>
+              <Row label="복구 훈련(되살려 봄)" hint="백업을 실제로 되살려 정상인지, 복구 시간이 맞는지 확인한 적이 있는지">
+                <Select aria-label="복구 훈련(되살려 봄)" value={tri(n.backup.restore_tested)} onChange={(e) => updBackup({ restore_tested: fromTri(e.target.value), restore_tested_on: undefined })}>
+                  <option value="">미정</option><option value="on">했음</option><option value="off">없음</option>
+                </Select>
+              </Row>
+              {n.backup.restore_tested === true && (
+                <Row label="훈련 날짜">
+                  <input type="date" aria-label="훈련 날짜" value={n.backup.restore_tested_on ?? ''} onChange={(e) => updBackup({ restore_tested_on: e.target.value || undefined })} />
+                </Row>
+              )}
             </>}
           </>}
           {analysis?.failure && failureLines(analysis.failure, (x) => project.nodes.find((y) => y.id === x)?.name ?? x, id).map((l) => <p key={l} className="muted pipe-line">{l}</p>)}

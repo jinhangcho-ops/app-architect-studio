@@ -24,6 +24,8 @@ export type SecurityCtx = {
   nodeEventRps: (id: string) => number | undefined; concurrentEvent: number;
   downstreamP99Ms?: (id: string, s: 'normal' | 'event') => number | undefined;
   nodeUtil?: (id: string, s: 'normal' | 'event') => number | undefined;
+  /** 오늘 'YYYY-MM-DD' (복구 훈련이 오래됐는지 볼 때) */
+  today?: string;
 };
 export const SECURITY_FIELD_NAMES: Record<Field, string> = {
   exposure: '공개 범위', tls: 'TLS', at_rest: '저장 암호화', secrets: '비밀 보관',
@@ -162,7 +164,7 @@ export function checkSecurity(p: Project, ctx?: SecurityCtx): SecurityHit[] {
     }
     // 3. 개인정보를 저장하는데 저장 암호화 없음
     if (n.privacy?.personal && STORE.includes(n.layer) && s.at_rest === false) {
-      hits.push({ ...at, ruleId: 'sec_personal_plain', level: 'fail', why: `${n.name}에 개인정보가 있는데 저장 암호화가 꺼져 있어 디스크·백업이 새면 그대로 읽힙니다`, instead: 'DB·디스크 암호화를 켜고(대부분의 관리형 DB는 기본값), 민감 컬럼은 따로 암호화하세요' });
+      hits.push({ ...at, ruleId: 'sec_personal_plain', level: 'fail', why: `${n.name}에 개인정보가 있는데 저장 암호화가 꺼져 있어 ${n.backup?.encrypted === true ? '디스크가' : '디스크·백업이'} 새면 그대로 읽힙니다`, instead: 'DB·디스크 암호화를 켜고(대부분의 관리형 DB는 기본값), 민감 컬럼은 따로 암호화하세요' });
     }
     // 4. 인터넷 공개 백엔드·게이트웨이에 WAF·속도 제한 없음
     if (s.exposure === 'public' && (n.layer === 'gateway' || n.layer === 'backend')) {
@@ -212,12 +214,42 @@ export function checkSecurity(p: Project, ctx?: SecurityCtx): SecurityHit[] {
       if (plain.length) hits.push({ ...tat, ruleId: 'sec_column_plain', level: 'conditional', why: `개인정보 컬럼 ${plain.map((c) => c.name).join('·')}에 보호가 없습니다(저장 암호화와 별개로 조회 결과·백업·로그에 그대로 보임)${undecided ? ` (미정 ${undecided}개)` : ''}${masked ? ' (마스킹은 표시용이라 저장 암호화가 필요)' : ''}`, instead: '식별자는 토큰화, 연락처·주민번호 류는 컬럼 암호화, 화면 표시는 마스킹' });
       if (t.retention_days === undefined) hits.push({ ...tat, ruleId: 'sec_no_retention', level: 'conditional', why: '개인정보 테이블에 보관 기간이 없어 파기 시점을 정할 수 없습니다', instead: '목적 달성 뒤 지체 없이 파기(개인정보 보호법 제21조) — 보관 일수를 정하고 배치로 지우거나 분리 보관' });
     }
-    // 미정: 이 노드에서 정해야 하는 칸 중 비어 있는 것 (감사 로그가 켬이면 보관 기간도)
+    // 13~17. 데이터 노드 백업: 없음(다른 리전 복사본도 없음)·암호화 끔(개인정보)·변조 방지 끔·보관 짧음·복구 훈련 없음
+    const bk = n.backup;
+    if ((n.layer === 'db' || n.layer === 'analytics') && (n.tables.length || n.privacy?.personal) && !bk) {
+      const note = n.dr?.mode === 'backup' ? ' (다른 리전 백업을 골랐지만 백업 주기가 비어 있습니다)' : n.dr ? ' (다른 리전 복제본은 삭제·손상도 함께 복제되어 백업을 대신하지 못합니다)' : '';
+      hits.push({ ...at, ruleId: 'sec_no_backup', level: 'conditional', why: `데이터가 망가지거나 지워지면 되살릴 길이 없습니다${note}`, instead: '백업 주기를 정하고(관리형 DB는 자동 백업 켬), 시점 복구를 켜세요' });
+    }
+    if (bk && n.privacy?.personal && bk.encrypted === false) {
+      hits.push({ ...at, ruleId: 'sec_backup_plain', level: 'conditional', why: '백업이 암호화되지 않아 백업 파일이 새면 개인정보가 그대로 읽힙니다', instead: '백업 암호화를 켜고 키는 KMS에' });
+    }
+    if (bk && bk.immutable === false) {
+      hits.push({ ...at, ruleId: 'sec_backup_mutable', level: 'conditional', why: '백업을 지우거나 덧쓸 수 있어 랜섬웨어·실수 삭제 때 원본과 함께 사라집니다', instead: '변조 불가(WORM)·삭제 잠금을 켜고 다른 계정·리전에 복사본을 두세요' });
+    }
+    // 백업 주기 두 번은 남아야 손상을 알아챈 뒤 깨끗한 것을 고를 수 있음
+    const minDays = bk ? Math.max(7, (2 * bk.every_h) / 24) : 0;
+    if (bk && bk.retention_days !== undefined && bk.retention_days < minDays) {
+      hits.push({ ...at, ruleId: 'sec_backup_retention_short', level: 'conditional', why: `보관 ${bk.retention_days}일이 기준 ${Math.ceil(minDays)}일(7일 또는 백업 주기 2번)보다 짧아 손상을 늦게 알아채면 깨끗한 백업이 이미 지워진 뒤입니다`, instead: '백업 주기 2번 이상, 최소 7일, 규제 데이터는 더 길게' });
+    }
+    if (bk && bk.restore_tested === false) {
+      hits.push({ ...at, ruleId: 'sec_restore_untested', level: 'conditional', why: '되살려 본 적이 없어 백업이 정상인지, 복구 시간이 맞는지 알 수 없습니다', instead: '분기마다 복구 훈련을 하고 날짜와 되살리는 속도를 적으세요' });
+    }
+    // 훈련 날짜가 오래되면 지금 데이터 크기·스키마로 되살려지는지 모름 (1년 넘음 ⚠️, 반년 넘음 ℹ️)
+    if (bk?.restore_tested === true && bk.restore_tested_on && ctx?.today) {
+      const d = Math.floor((Date.parse(ctx.today) - Date.parse(bk.restore_tested_on)) / 86_400_000);
+      if (d > 180) hits.push({ ...at, ruleId: 'sec_restore_stale', level: d > 365 ? 'conditional' : 'info', why: `마지막 복구 훈련이 ${d}일 전이라 지금 데이터 크기·스키마로도 되살려지는지 알 수 없습니다`, instead: '분기마다 복구 훈련을 하고 날짜를 갱신하세요' });
+    }
+    // 미정: 이 노드에서 정해야 하는 칸 중 비어 있는 것 (감사 로그가 켬이면 보관 기간도, 백업이 있으면 백업 보호 칸도)
     const unset = relevant(p, n).filter((f) => s[f] === undefined && !(f === 'rate_limit' && rateLimited(n))).map((f) => SECURITY_FIELD_NAMES[f]);
     if (auditing && months === undefined) unset.push('감사 로그 보관 기간');
+    if (bk && n.privacy?.personal && bk.encrypted === undefined) unset.push('백업 암호화');
+    if (bk && bk.immutable === undefined) unset.push('백업 변조 방지');
+    if (bk && bk.retention_days === undefined) unset.push('백업 보관 일수');
+    if (bk && bk.restore_tested === undefined) unset.push('복구 훈련');
+    if (bk?.restore_tested === true && bk.restore_tested_on === undefined) unset.push('복구 훈련 날짜');
     // 법령·감사 로그 판정은 노드 개인정보 속성 기준이라, 컬럼만 표시하고 노드를 비워 두면 알림
     if (!n.privacy?.personal && n.tables.some((t) => t.columns.some((c) => c.personal))) unset.push('개인정보 속성(개인정보 컬럼 있음)');
-    if (unset.length) hits.push({ ...at, ruleId: 'sec_unset', level: 'conditional', why: `보안 값 미정: ${unset.join('·')}`, instead: '노드 패널 › 네트워크·보안에서 정하세요' });
+    if (unset.length) hits.push({ ...at, ruleId: 'sec_unset', level: 'conditional', why: `보안 값 미정: ${unset.join('·')}`, instead: unset.some((u) => u.startsWith('백업') || u.startsWith('복구 훈련')) ? '노드 패널 › 네트워크·보안에서, 백업 칸은 장애 대비에서 정하세요' : '노드 패널 › 네트워크·보안에서 정하세요' });
   }
 
   for (const e of p.edges) {

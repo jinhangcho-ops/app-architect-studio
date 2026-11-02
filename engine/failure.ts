@@ -38,7 +38,8 @@ export type RegionCase = {
   /** 넘긴 직후 복사본의 사용률 (사용률을 계산하는 노드만) */
   util: Record<string, { normal: Metric; event: Metric }>;
 };
-export type DataCase = { nodeId: string; rpo: Metric; restore?: Metric };
+/** backup: 장애 줄 끝에 붙는 백업 보호 상태 글자 (백업이 있을 때만) */
+export type DataCase = { nodeId: string; rpo: Metric; restore?: Metric; backup?: string };
 /** 캐시 노드 전부 멈춤: 적중률을 0으로 두고 다시 계산하면 부하가 늘어나는 노드(보통 DB) */
 export type CacheCase = { cacheId: string; affected: { nodeId: string; rps: { normal: Metric; event: Metric }; util?: { normal: Metric; event: Metric } }[] };
 export type Failure = { zone: ZoneCase[]; regions: RegionCase[]; data: DataCase[]; cache: CacheCase[] };
@@ -102,10 +103,13 @@ export function failureScenarios(p: Project, info: (n: ProjectNode) => NodeInfo,
     };
   });
 
+  const onOff = (v?: boolean) => (v === undefined ? '미정' : v ? '켬' : '끔');
   const data = servers.filter(isData).map((n): DataCase => {
-    const gb = info(n).dataGb, r = restoreS(n, gb);
+    const gb = info(n).dataGb, r = restoreS(n, gb), bk = n.backup;
+    const drill = bk?.restore_tested === undefined ? '미정' : bk.restore_tested ? bk.restore_tested_on ?? '했음' : '없음';
     return {
       nodeId: n.id,
+      ...(bk && { backup: `${bk.retention_days !== undefined ? ` · 백업 보관 ${bk.retention_days}일` : ' · 백업 보관 미정'}${n.privacy?.personal || bk.encrypted !== undefined ? ` · 암호화 ${onOff(bk.encrypted)}` : ''} · 변조 방지 ${onOff(bk.immutable)} · 복구 훈련 ${drill}` }),
       rpo: m(rpoS(n), '초', 'min(백업 주기 또는 시점 복구 간격, 리전 복제 지연). 둘 다 없으면 되살릴 수 없음', { 백업주기시간: n.backup?.every_h ?? 0 }),
       ...(r !== undefined && { restore: m(r, '초', '새 서버 준비 + 데이터 크기 / 되살리는 속도', { 준비초: PROVISION_S, 데이터GB: gb!, 'MB/초': n.backup!.restore_mb_s ?? RESTORE_MB_S }) }),
     };
@@ -160,7 +164,7 @@ export function failureLines(f: Failure, nameOf: (id: string) => string, id?: st
   const zone = f.zone.filter((z) => !id || z.nodeId === id).map((z) => `${nameOf(z.nodeId)} — 존 하나 장애: ${z.down
     ? (z.servers === 1 ? '서버가 1대뿐이라 멈춤' : `서버 ${z.servers}대가 모두 한 존에 있어 멈춤`)
     : `${z.servers}대 중 ${z.lost}대를 잃음${z.util ? ` · 남은 서버 사용률 ${pct(z.util.normal.value)} / ${pct(z.util.event.value)}` : ''}${z.rto.value ? ` · 넘기는 데 ${secs(z.rto.value)}` : ''}`}`);
-  const data = f.data.filter((x) => !id || x.nodeId === id).map((x) => `${nameOf(x.nodeId)} — 데이터: ${Number.isFinite(x.rpo.value) ? `잃는 데이터 최대 ${secs(x.rpo.value)}` : '백업·복사본이 없어 되살릴 수 없음'}${x.restore ? ` · 백업에서 되살리기 ${secs(x.restore.value)}` : ''}`);
+  const data = f.data.filter((x) => !id || x.nodeId === id).map((x) => `${nameOf(x.nodeId)} — 데이터: ${Number.isFinite(x.rpo.value) ? `잃는 데이터 최대 ${secs(x.rpo.value)}` : '백업·복사본이 없어 되살릴 수 없음'}${x.restore ? ` · 백업에서 되살리기 ${secs(x.restore.value)}` : ''}${x.backup ?? ''}`);
   const cache = f.cache.filter((c) => !id || c.cacheId === id || c.affected.some((a) => a.nodeId === id)).map((c) => `${nameOf(c.cacheId)} — 캐시 장애: ${c.affected
     .map((a) => `${nameOf(a.nodeId)} 부하 ${fmt(a.rps.normal.inputs['지금부하'])} → ${fmt(a.rps.normal.value)} RPS${a.util ? `, 사용률 ${pct(a.util.normal.value)} / ${pct(a.util.event.value)}` : ''}`).join(', ')}`);
   return [...zone, ...data, ...cache, ...regionLines(f, nameOf, id)];

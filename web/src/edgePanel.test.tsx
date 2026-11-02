@@ -128,6 +128,60 @@ describe('노드 패널 요청당 로그', () => {
   });
 });
 
+describe('노드 패널 백업 보호', () => {
+  const setup = (withBackup: boolean) => {
+    const ex = examples.find((e) => e.name === 'phase3.json')!;
+    const p = parseProject(ex.data, catalog.items, ex.name);
+    const nodes = p.nodes.map((n) => {
+      if (n.id !== 'db') return n;
+      const { backup: _drop, ...rest } = n;
+      return withBackup ? { ...rest, backup: { every_h: 24, pitr: false } } : rest;
+    });
+    useStore.setState({ project: { ...p, nodes }, past: [], future: [] });
+    const el = document.createElement('div');
+    document.body.append(el);
+    const root = createRoot(el);
+    flushSync(() => root.render(<NodePanel id="db" />));
+    return { el, done: () => { root.unmount(); el.remove(); } };
+  };
+  const backupOf = () => useStore.getState().project.nodes.find((n) => n.id === 'db')!.backup!;
+  const choose = (el: HTMLElement, label: string, option: string) => {
+    flushSync(() => (el.querySelector(`button[aria-label="${label}"]`) as HTMLButtonElement).click());
+    const o = [...document.querySelectorAll('.select-list [role="option"]')].find((x) => x.textContent === option) as HTMLElement;
+    flushSync(() => o.click());
+  };
+
+  it('backup이 있는 노드에는 칸 5개(날짜는 했음일 때)가 보이고 값이 저장됨', () => {
+    const { el, done } = setup(true);
+    for (const t of ['백업 보관(일)', '백업 암호화', '변조 방지(삭제 잠금)', '복구 훈련(되살려 봄)']) expect(el.innerHTML).toContain(t);
+    expect(el.querySelector('input[type="date"]')).toBeNull();
+    choose(el, '변조 방지(삭제 잠금)', '켬');
+    expect(backupOf().immutable).toBe(true);
+    choose(el, '백업 암호화', '끔');
+    expect(backupOf().encrypted).toBe(false);
+    choose(el, '백업 암호화', '미정');
+    expect('encrypted' in backupOf()).toBe(false);
+    choose(el, '복구 훈련(되살려 봄)', '했음');
+    expect(backupOf().restore_tested).toBe(true);
+    const d = el.querySelector('input[type="date"]') as HTMLInputElement;
+    expect(d).toBeTruthy();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(d, '2026-10-01');
+    flushSync(() => d.dispatchEvent(new Event('input', { bubbles: true })));
+    expect(backupOf().restore_tested_on).toBe('2026-10-01');
+    choose(el, '복구 훈련(되살려 봄)', '없음');
+    expect(backupOf().restore_tested).toBe(false);
+    expect('restore_tested_on' in backupOf()).toBe(false);
+    done();
+  });
+
+  it('backup이 없는 노드에는 안 보임', () => {
+    const { el, done } = setup(false);
+    expect(el.innerHTML).not.toContain('백업 암호화');
+    expect(el.innerHTML).not.toContain('변조 방지(삭제 잠금)');
+    done();
+  });
+});
+
 describe('연결선 패널 타임아웃·재시도', () => {
   it('동기 연결선에만 타임아웃(ms)·재시도 횟수·서킷 브레이커 칸이 있고, 800을 넣으면 timeout_ms에 저장', () => {
     const ex = examples.find((e) => e.name === 'global-commerce.json')!;

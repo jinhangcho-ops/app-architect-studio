@@ -194,6 +194,18 @@ describe('설계서 노드 카드: 캐시 장애 줄', () => {
   });
 });
 
+describe('설계서: 장애 장 백업 상태', () => {
+  it('백업 보호 값을 넣으면 장애 줄에 백업 보관·변조 방지 글자가 나옴', () => {
+    const p0 = load('phase3.json');
+    const p = { ...p0, nodes: p0.nodes.map((n) => (n.id === 'db' ? { ...n, backup: { every_h: 24, pitr: false, retention_days: 14, immutable: true } } : n)) };
+    const html = renderToStaticMarkup(
+      <Report project={p} analysis={run(p, today).analysis} positions={autoLayout(p)} today={today} onClose={() => {}} />,
+    ).replace(/<!-- -->/g, '');
+    expect(html).toContain('백업 보관 14일');
+    expect(html).toContain('변조 방지 켬');
+  });
+});
+
 describe('설계서: 존 간 전송·로그 비용 줄', () => {
   it('존 2개·요청당 로그·두 상품을 넣으면 비용 표에 두 줄이 나옴', () => {
     const p0 = load('phase3.json');

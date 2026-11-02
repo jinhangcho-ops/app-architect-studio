@@ -36,7 +36,7 @@ export function buildPrices(files: JsonFile[]): PriceRow[] {
 
 /** 저장 파일 형식 버전. 저장 파일의 모양이 바뀌면(필드 이름·뜻이 바뀜) 올리고 MIGRATIONS에 옛 모양을 새 모양으로 바꾸는 함수를 더한다.
  *  format_version이 없는 파일은 1 (버전을 넣기 전에 만든 파일) */
-export const FORMAT_VERSION = 11;
+export const FORMAT_VERSION = 12;
 type Raw = Record<string, unknown>;
 /** MIGRATIONS[v]: 형식 v인 파일을 v + 1로 바꾼다 */
 export const MIGRATIONS: Record<number, (d: Raw) => Raw> = {
@@ -60,6 +60,8 @@ export const MIGRATIONS: Record<number, (d: Raw) => Raw> = {
   9: (d) => d,
   // 11: 연결선 timeout_ms·retries·breaker(타임아웃·재시도·서킷 브레이커)가 새로 생김 (v1.4.0). 바꿀 것 없이 버전만 올림
   10: (d) => d,
+  // 12: 노드 backup.encrypted·immutable·retention_days·restore_tested·restore_tested_on(백업 보호·복구 훈련)이 새로 생김 (v1.4.0). 바꿀 것 없이 버전만 올림
+  11: (d) => d,
 };
 
 /** 저장 파일을 지금 형식으로 바꾼다. 이 앱보다 새 버전에서 만든 파일은 모르는 값이 버려져 다시 저장할 때 사라지므로 열지 않는다 */
@@ -130,6 +132,10 @@ function repair(src: unknown, issues: z.core.$ZodIssue[], lines: string[]): unkn
     } else if (i.path[0] === 'nodes' && i.path[2] === 'tables' && i.path[4] === 'columns' && key === 'protection' && i.path.length === 7) {
       // 모르는 컬럼 보호 값(protection: "hash" 등): 빼면 미정 → 판정이 "보호 없음(미정)"으로 알린다
       lines.push(`${where} = ${JSON.stringify(o[key])}: 알 수 없는 보호 값 → 빼고 열었습니다 (미정)`);
+      delete o[key];
+    } else if (i.path[0] === 'nodes' && i.path[2] === 'backup' && i.path.length === 4 && ['encrypted', 'immutable', 'restore_tested', 'restore_tested_on'].includes(String(key))) {
+      // 모르는 백업 보호 값(encrypted: "yes", 날짜 2026/10/01 등)도 빼면 미정
+      lines.push(`${where} = ${JSON.stringify(o[key])}: 알 수 없는 백업 값 → 빼고 열었습니다 (미정)`);
       delete o[key];
     } else if (i.path[0] === 'auth' && i.path.length === 2) {
       // 모르는 인증·인가 값(method: "magic" 등)도 같은 방식: 빼면 미정
